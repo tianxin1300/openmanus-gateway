@@ -4909,11 +4909,11 @@ async function fsLLMMsgs(env, msgs, info, total, accept) {      // 多轮 messag
     launch();
   });
 }
-// ===== v99z 模型探针：/api/debug/llmprobe?token=REG_TOKEN —— 对 7 个模型源（Zhipu / Groq / OpenRouter / Gemini / NVIDIA / Coze / Volcano）各发一条“在线?”，逐个报谁通 / 耗时 / 为什么不通（status / hasKey / error）；不返回任何密钥值 =====
+// ===== v99z 模型探针：/api/debug/llmprobe?token=REG_TOKEN —— 对 8 个模型源（Zhipu / Groq / OpenRouter / Gemini / NVIDIA / GitHubModels / Coze / Volcano）各发一条“在线?”，逐个报谁通 / 耗时 / 为什么不通（status / hasKey / error）；不返回任何密钥值 =====
 async function llmProbeReport(env, url) {
   const tok = String(url.searchParams.get("token") || "").trim(), want = String(env.REG_TOKEN || "").trim();
   if (!want || tok !== want) return json({ ok: false, msg: "token 不对：要 ?token=REG_TOKEN（Worker 没配 REG_TOKEN 就用不了）" }, 403);
-  const PROBE_SRCS = ["Zhipu", "Groq", "OpenRouter", "Gemini", "NVIDIA", "Coze", "Volcano"];
+  const PROBE_SRCS = ["Zhipu", "Groq", "OpenRouter", "Gemini", "NVIDIA", "GitHubModels", "Coze", "Volcano"];
   const PROBE_MS = 30000, probeMsgs = [{ role: "user", content: "请只回复两个字：在线" }];
   // 错误文本：取对方返回里的 message，压成一行，抹掉密钥，只留前 200 字
   const pickErr = (raw, status, key) => {
