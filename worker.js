@@ -4928,43 +4928,69 @@ async function llmProbeReport(env, url) {
   const timeoutOf = (e) => !!e && (e.name === "TimeoutError" || e.name === "AbortError" || /timeout|aborted/i.test(String(e.message || "")));
   // OpenAI 兼容的 5 个源：url / 首个模型 / 读 Key 的环境变量
   const oaiSpec = (name) => {
-    if (name === "Zhipu") return { url: "https://open.bigmodel.cn/api/paas/v4/chat/completions", model: "glm-4.7-flash", keyEnv: "ZHIPU_KEYS" };
-    if (name === "Groq") return { url: "https://api.groq.com/openai/v1/chat/completions", model: WORK_MODELS.groq[0], keyEnv: "GROQ_KEYS" };
-    if (name === "OpenRouter") return { url: "https://openrouter.ai/api/v1/chat/completions", model: WORK_MODELS.openrouter[0], keyEnv: "OPENROUTER_KEYS" };
+    if (name === "Zhipu") return { url: "https://open.bigmodel.cn/api/paas/v4/chat/completions", models: ["glm-4.7-flash", "glm-4.6v-flash"], keyEnv: "ZHIPU_KEYS", thinkOff: true };
+    if (name === "Groq") return { url: "https://api.groq.com/openai/v1/chat/completions", models: WORK_MODELS.groq, keyEnv: "GROQ_KEYS" };
+    if (name === "OpenRouter") return { url: "https://openrouter.ai/api/v1/chat/completions", models: WORK_MODELS.openrouter, keyEnv: "OPENROUTER_KEYS" };
     const p = EXTRA.find((x) => x.name === name);
     if (!p) return null;
-    const models = name === "Volcano" ? volcanoModels(env) : p.models;
-    return { url: p.url, model: models[0], keyEnv: p.keys };
+    return { url: p.url, models: name === "Volcano" ? volcanoModels(env) : p.models, keyEnv: p.keys };
   };
   const probeOAI = async (name) => {
     const spec = oaiSpec(name), keys = getKeys(env[spec.keyEnv]);
     if (!keys.length) return { status: "nokey", hasKey: false, err: "没有配置 " + spec.keyEnv };
-    const key = keys[0];
-    try {
-      const res = await chatOpenAI(spec.url, key, { model: spec.model, messages: probeMsgs, max_tokens: 64 }, {}, PROBE_MS);
-      if (!res.ok) return { status: res.status, hasKey: true, err: pickErr(await res.text().catch(() => ""), res.status, key) };
+    const key = keys[0], deadline = Date.now() + PROBE_MS;
+    let last = { status: "error", hasKey: true, err: "没有返回内容" }, tried = 0;
+    for (const model of (spec.models || []).slice(0, 6)) {
+      const left = deadline - Date.now(); if (left < 3000) break;
+      const body = { model, messages: probeMsgs, max_tokens: 512, temperature: 0 };
+      if (spec.thinkOff) body.thinking = { type: "disabled" };          // 智谱：关思考，否则小预算全被推理吃光
+      if (/gpt-oss/i.test(model)) body.reasoning_effort = "low";        // Groq 推理型模型：少想一点
+      tried++;
+      let res;
+      try { res = await chatOpenAI(spec.url, key, body, {}, left); }
+      catch (e) { const t = timeoutOf(e); last = { status: t ? "timeout" : "error", hasKey: true, err: pickErr(e && e.message, "error", key) }; if (t) return last; continue; }
+      if (!res.ok) {
+        last = { status: res.status, hasKey: true, err: pickErr(await res.text().catch(() => ""), res.status, key) };
+        if (res.status === 429) return { status: 429, hasKey: true, err: "限流 / 额度用完：" + last.err };
+        if (res.status === 401 || res.status === 403) return last;     // Key 问题，换模型没用
+        continue;                                                      // 400/404 → 模型名失效，换下一个
+      }
       const j = await res.json().catch(() => ({}));
       const text = String((j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "").trim();
-      if (text) return { text, from: name + ":" + spec.model, status: res.status, hasKey: true, err: "" };
-      return { status: res.status, hasKey: true, err: "HTTP 200 但没有正文（空回复）" };
-    } catch (e) { return { status: timeoutOf(e) ? "timeout" : "error", hasKey: true, err: pickErr(e && e.message, "error", key) }; }
+      if (text) return { text, from: name + ":" + model, status: res.status, hasKey: true, err: "" };
+      last = { status: res.status, hasKey: true, err: "HTTP 200 但没有正文（已试 " + tried + " 个模型，最后的 " + model + " 空回复）" };
+    }
+    return last;
   };
   const probeGemini = async () => {
     const keys = getKeys(env.GEMINI_KEYS);
     if (!keys.length) return { status: "nokey", hasKey: false, err: "没有配置 GEMINI_KEYS" };
-    const key = keys[0], model = WORK_MODELS.gemini[1] || "gemini-2.5-flash";
-    try {
-      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
-        method: "POST", signal: T(PROBE_MS), headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "请只回复两个字：在线" }] }], generationConfig: { maxOutputTokens: 64 } })
-      });
-      if (!res.ok) return { status: res.status, hasKey: true, err: pickErr(await res.text().catch(() => ""), res.status, key) };
-      const j = await res.json().catch(() => ({}));
-      const parts = (j && j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
-      const text = parts.filter((p) => p && p.text && !p.thought).map((p) => p.text).join("").trim();
-      if (text) return { text, from: "Gemini:" + model, status: res.status, hasKey: true, err: "" };
-      return { status: res.status, hasKey: true, err: "HTTP 200 但没有正文（空回复）" };
-    } catch (e) { return { status: timeoutOf(e) ? "timeout" : "error", hasKey: true, err: pickErr(e && e.message, "error", key) }; }
+    const key = keys[0], deadline = Date.now() + PROBE_MS;
+    let last = { status: "error", hasKey: true, err: "没有返回内容" };
+    for (const model of WORK_MODELS.gemini.slice(0, 3)) {
+      const left = deadline - Date.now(); if (left < 3000) break;
+      try {
+        const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
+          method: "POST", signal: T(left), headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
+          body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "请只回复两个字：在线" }] }], generationConfig: { maxOutputTokens: 512 } })
+        });
+        if (!res.ok) {
+          last = { status: res.status, hasKey: true, err: pickErr(await res.text().catch(() => ""), res.status, key) };
+          if (res.status === 401 || res.status === 403 || res.status === 429) return last;
+          continue;                                                     // 404 → 模型下线，换下一个
+        }
+        const j = await res.json().catch(() => ({}));
+        const parts = (j && j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
+        const text = parts.filter((p) => p && p.text && !p.thought).map((p) => p.text).join("").trim();
+        if (text) return { text, from: "Gemini:" + model, status: res.status, hasKey: true, err: "" };
+        last = { status: res.status, hasKey: true, err: "HTTP 200 但没有正文（" + model + " 空回复）" };
+      } catch (e) {
+        const t = timeoutOf(e);
+        last = { status: t ? "timeout" : "error", hasKey: true, err: pickErr(e && e.message, "error", key) };
+        if (t) return last;
+      }
+    }
+    return last;
   };
   const probeCoze = async () => {
     const token = String(env.COZE_API_TOKEN || "").trim(), bot = String(env.COZE_BOT_ID || "").trim();
@@ -4976,7 +5002,7 @@ async function llmProbeReport(env, url) {
         body: JSON.stringify({ bot_id: bot, user_id: "openmanus-gateway", stream: true, auto_save_history: false, additional_messages: [{ role: "user", content: "请只回复两个字：在线", content_type: "text" }] })
       });
       if (!res.ok || !res.body) return { status: res.status, hasKey: true, err: pickErr(await res.text().catch(() => ""), res.status, token) };
-      const reader = res.body.getReader(), dec = new TextDecoder(); let buf = "", ev = "", text = "";
+      const reader = res.body.getReader(), dec = new TextDecoder(); let buf = "", ev = "", text = "", fail = "";
       for (;;) {
         const { value, done } = await reader.read(); if (done) break;
         buf += dec.decode(value, { stream: true }); let nl;
@@ -4988,11 +5014,13 @@ async function llmProbeReport(env, url) {
           let d; try { d = JSON.parse(raw); } catch { continue; }
           if (ev === "conversation.message.delta" && d && d.type === "answer" && d.content) text += d.content;
           else if (ev === "conversation.message.completed" && d && d.type === "answer" && d.content) text += d.content;
+          else if (ev === "conversation.chat.failed") fail = "Coze：" + String((d && d.last_error && d.last_error.msg) || (d && d.msg) || "对话失败");
+          else if (ev === "error") fail = "Coze：" + String((d && d.msg) || (d && d.code) || "出错");
         }
         if (text.length > 40) break;
       }
       if (String(text).trim()) return { text: String(text).trim(), from: "Coze", status: res.status, hasKey: true, err: "" };
-      return { status: res.status, hasKey: true, err: "HTTP 200 但没有正文（流里没有 answer 内容）" };
+      return { status: res.status, hasKey: true, err: pickErr(fail || "HTTP 200 但没有正文（流里没有 answer 内容，可能机器人没发布成 API 应用）", res.status, token) };
     } catch (e) { return { status: timeoutOf(e) ? "timeout" : "error", hasKey: true, err: pickErr(e && e.message, "error", token) }; }
   };
   const rows = await Promise.all(PROBE_SRCS.map(async (name) => {
