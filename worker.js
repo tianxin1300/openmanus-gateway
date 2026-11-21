@@ -385,7 +385,7 @@ function workRuntime() {
 const WORK_MODELS = {
   groq: ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b"], // v12: 只留 Groq 官网能确认的 3 个
   openrouter: ["nvidia/nemotron-3-ultra:free", "google/gemma-3-27b-it:free", "nvidia/nemotron-3.5-super-vl:free" /* 看图强 */, "cohere/north-mini-code:free" /* 写代码强 */, "google/gemma-4-26b-a4b:free" /* 快，随手问 */, "meta-llama/llama-3.3-70b-instruct:free"], // v29：前端下拉直接读这张表（/api/models），以后加模型只改这里
-  gemini: ["gemini-3.8-flash", "gemini-2.5-flash"]   // 2.0-flash 已下线（404 no longer available），从清单移除
+  gemini: ["gemini-3.8-flash"]   // 2.0-flash 已下线；2.5-flash 对新用户也已下线（404 no longer available to new users），只留 3.8-flash
 };
 // 前端带 stream:true → SSE 流式(每 5 秒心跳)；老前端不带 → 一整段 JSON(等待时发空格保活)
 // 需要：KV 绑定(变量名 KV)、REG_TOKEN；可选：GROQ_KEYS / OPENROUTER_KEYS / GEMINI_KEYS(逗号分隔)、AGG_URL、
@@ -834,11 +834,11 @@ async function getGeminiModel(key) {
           .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
           .map((m) => m.name.replace("models/", ""));
         const pick = names.find((n) => n.includes("3.8-flash")) || names.find((n) => n.includes("3-flash")) ||
-          names.find((n) => n.includes("2.5-flash") && !n.includes("image") && !n.includes("lite")) || names.find((n) => n.includes("flash")) || names[0];
+          names.find((n) => n.includes("flash") && !n.includes("image") && !n.includes("lite") && !n.includes("2.5")) || names.find((n) => n.includes("flash")) || names[0];
         if (pick) return { ver, model: pick, all: names.slice(0, 12) };
       }
     } catch {}
-    return { ver: "v1", model: "gemini-2.5-flash", all: [] };
+    return { ver: "v1", model: "gemini-3.8-flash", all: [] };
   });
 }
 
@@ -945,7 +945,7 @@ function toGemini(messages) {
 }
 async function tryGemini(messages, key, preferred) {
   const { ver, model } = await getGeminiModel(key);
-  const tries = [...(preferred && preferred !== model ? [{ ver, model: preferred }] : []), { ver, model }, { ver: "v1", model: "gemini-2.5-flash" }, { ver: "v1", model: "gemini-2.5-flash-lite" }];
+  const tries = [...(preferred && preferred !== model ? [{ ver, model: preferred }] : []), { ver, model }];
   const seen = new Set();
   const contents = toGemini(messages);
   for (const t of tries.filter((x) => { const k = x.ver + x.model; return seen.has(k) ? false : (seen.add(k), true); })) {
@@ -4943,11 +4943,12 @@ async function llmProbeReport(env, url) {
     return { text: String(c || "").trim(), finish: String(ch.finish_reason || "") };
   };
   // HTTP 200 但取不到正文时，把对方原始返回压成一行附上（抹掉 Key），便于定位是哪家的怪格式
-  const rawSnippet = (j, key) => {
-    let s = ""; try { s = JSON.stringify(j); } catch { s = String(j); }
+  // 注意：必须用响应原文，不能用 JSON.parse 后的对象——body 不是 JSON 时对象是 {}，会误报成“对方回了 {}”
+  const rawSnippet = (text, key) => {
+    let s = String(text == null ? "" : text);
     if (key) s = s.split(String(key)).join("***");
     s = s.replace(/Bearer\s+[A-Za-z0-9._\-]{8,}/gi, "Bearer ***").replace(/\bsk-[A-Za-z0-9._\-]{8,}/g, "sk-***").replace(/[A-Za-z0-9_\-]{40,}/g, "***");
-    return s.replace(/\s+/g, " ").slice(0, 180) || "（空 body）";
+    return s.replace(/\s+/g, " ").slice(0, 180) || "空 body（HTTP 200 但对方一个字都没回）";
   };
   const probeOAI = async (name) => {
     const spec = oaiSpec(name);
@@ -4971,11 +4972,12 @@ async function llmProbeReport(env, url) {
         if (res.status === 401 || res.status === 403) return last;     // Key 问题，换模型没用
         continue;                                                      // 400/404 → 模型名失效，换下一个
       }
-      const j = await res.json().catch(() => ({}));
+      const txt = await res.text().catch(() => "");
+      let j = {}; try { j = JSON.parse(txt); } catch {}
       const { text, finish } = pickText(j);
       if (text) return { text, from: name + ":" + model, status: res.status, hasKey: true, err: "" };
       notes.push(model + ":200空" + (finish ? "(" + finish + ")" : ""));
-      last = { status: res.status, hasKey: true, err: "HTTP 200 但正文为空（finish_reason=" + (finish || "无") + "，原始返回：" + rawSnippet(j, key) + "）" };
+      last = { status: res.status, hasKey: true, err: "HTTP 200 但正文为空（finish_reason=" + (finish || "无") + "，content-type=" + (res.headers.get("content-type") || "无") + (res.url && res.url !== spec.url ? "，最终地址=" + res.url : "") + "，原始返回：" + rawSnippet(txt, key) + "）" };
     }
     if (notes.length > 1) last.err = "已试 " + notes.length + " 个模型（" + notes.join(" / ") + "）：" + last.err;
     return last;
@@ -4987,24 +4989,27 @@ async function llmProbeReport(env, url) {
     let last = { status: "error", hasKey: true, err: "没有返回内容" };
     for (const model of WORK_MODELS.gemini) {
       const left = deadline - Date.now(); if (left < 3000) break;
+      const send = () => fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
+        method: "POST", signal: T(Math.max(3000, deadline - Date.now())), headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "请只回复两个字：在线" }] }], generationConfig: { maxOutputTokens: 512 } })
+      });
       try {
-        const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
-          method: "POST", signal: T(left), headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
-          body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "请只回复两个字：在线" }] }], generationConfig: { maxOutputTokens: 512 } })
-        });
+        let res = await send();
+        if (res.status === 503) { await new Promise((rz) => setTimeout(rz, 800)); if (Date.now() + 3000 < deadline) res = await send(); }   // 503=模型过载，瞬时，重试一次
         if (!res.ok) {
           last = { status: res.status, hasKey: true, err: pickErr(await res.text().catch(() => ""), res.status, key) };
           notes.push(model + ":" + res.status);
           if (res.status === 401 || res.status === 403 || res.status === 429) return { ...last, err: "（" + notes.join(" / ") + "）" + last.err };
           continue;                                                     // 404 → 模型下线，换下一个
         }
-        const j = await res.json().catch(() => ({}));
+        const txt = await res.text().catch(() => "");
+        let j = {}; try { j = JSON.parse(txt); } catch {}
         const cand = (j && j.candidates && j.candidates[0]) || {};
         const parts = (cand.content && cand.content.parts) || [];
         const text = parts.filter((p) => p && p.text && !p.thought).map((p) => p.text).join("").trim();
         if (text) return { text, from: "Gemini:" + model, status: res.status, hasKey: true, err: "" };
         notes.push(model + ":200空" + (cand.finishReason ? "(" + cand.finishReason + ")" : ""));
-        last = { status: res.status, hasKey: true, err: "HTTP 200 但正文为空（finishReason=" + (cand.finishReason || "无") + "，原始返回：" + rawSnippet(j, key) + "）" };
+        last = { status: res.status, hasKey: true, err: "HTTP 200 但正文为空（finishReason=" + (cand.finishReason || "无") + "，原始返回：" + rawSnippet(txt, key) + "）" };
       } catch (e) {
         const t = timeoutOf(e);
         notes.push(model + (t ? ":timeout" : ":error"));
@@ -7005,7 +7010,7 @@ async function handle(request, env, ctx) {
             body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "请只回复两个字：在线" }] }], generationConfig: { maxOutputTokens: 256 } })
           });
           let usedModel = model, r = await callG(model), fellBack = "";
-          if ([429, 503].includes(r.status) && model !== "gemini-2.5-flash") { fellBack = "首选模型 " + model + " 返回 " + r.status + "（过载/限流），已改测 gemini-2.5-flash"; usedModel = "gemini-2.5-flash"; r = await callG(usedModel); }   // 聊天时也是这样自动降级的
+          if (r.status === 503) { fellBack = "首选模型 " + model + " 返回 503（模型过载，属瞬时），1 秒后重试一次"; await new Promise((rz) => setTimeout(rz, 1000)); r = await callG(usedModel); }   // 503 重试；429 是配额，重试没用，直接如实报
           const j = await r.json().catch(() => ({}));
           const reply = String(j.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "").trim();
           return { hasKey: true, ver, model: usedModel, ...(fellBack ? { fallback: fellBack } : {}), status: r.status, ms: Date.now() - t0, reply: reply.slice(0, 80), verdict: r.ok ? (reply ? "正常" : "正文为空") : "接口报错", available_models: all, error: j.error?.message };
