@@ -4909,22 +4909,107 @@ async function fsLLMMsgs(env, msgs, info, total, accept) {      // 多轮 messag
     launch();
   });
 }
-// ===== v99z 模型探针：/api/debug/llmprobe?token=REG_TOKEN —— 对每个已配密钥的模型源各发一条“在线?”，逐个报谁通 / 耗时 / 为什么空；不返回任何密钥值 =====
+// ===== v99z 模型探针：/api/debug/llmprobe?token=REG_TOKEN —— 对 7 个模型源（Zhipu / Groq / OpenRouter / Gemini / NVIDIA / Coze / Volcano）各发一条“在线?”，逐个报谁通 / 耗时 / 为什么不通（status / hasKey / error）；不返回任何密钥值 =====
 async function llmProbeReport(env, url) {
   const tok = String(url.searchParams.get("token") || "").trim(), want = String(env.REG_TOKEN || "").trim();
   if (!want || tok !== want) return json({ ok: false, msg: "token 不对：要 ?token=REG_TOKEN（Worker 没配 REG_TOKEN 就用不了）" }, 403);
-  const names = fsLlmPlan(env).filter((n) => fsHasKey(env, n));
-  if (!names.length) return json({ ok: false, msg: "一个模型源都没配密钥（GROQ_KEYS / ZHIPU_KEYS / …）" });
-  const rows = [];
-  for (const name of names) {
-    const t0 = Date.now(); let r = null;
-    try { r = await tryAllFree([{ role: "user", content: "请只回复两个字：在线" }], env, async () => {}, false, name, { raw: true, noBreaker: true, skip: SRC_ORDER.filter((x) => x !== name) }); } catch (e) { r = { text: "", err: String(e && e.message || e).slice(0, 80) }; }
-    const row = { source: name, ok: !!(r && r.text), ms: Date.now() - t0, from: (r && r.from) || "", reply: String((r && r.text) || "").replace(/\s+/g, " ").slice(0, 40) };
-    if (!row.ok) row.why = (r && r.err) || "没有返回内容（空回复 / 超时 / 报错），详见 /debug 里对应源的 detail";
-    dbgStat(name, row.ok, row.ok ? "" : row.why); rows.push(row);
-  }
+  const PROBE_SRCS = ["Zhipu", "Groq", "OpenRouter", "Gemini", "NVIDIA", "Coze", "Volcano"];
+  const PROBE_MS = 30000, probeMsgs = [{ role: "user", content: "请只回复两个字：在线" }];
+  // 错误文本：取对方返回里的 message，压成一行，抹掉密钥，只留前 200 字
+  const pickErr = (raw, status, key) => {
+    let s = String(raw || "").trim();
+    try { const j = JSON.parse(s); const m = (j && j.error && (j.error.message || j.error.code)) || (j && (j.message || j.msg || j.error_msg)); if (m) s = typeof m === "string" ? m : JSON.stringify(m); } catch {}
+    s = String(s || "").replace(/\s+/g, " ").trim();
+    if (key) s = s.split(String(key)).join("***");
+    s = s.replace(/Bearer\s+[A-Za-z0-9._\-]{8,}/gi, "Bearer ***").replace(/\bsk-[A-Za-z0-9._\-]{8,}/g, "sk-***").replace(/[A-Za-z0-9_\-]{40,}/g, "***");
+    if (!s) s = "HTTP " + status;
+    return s.slice(0, 200);
+  };
+  const timeoutOf = (e) => !!e && (e.name === "TimeoutError" || e.name === "AbortError" || /timeout|aborted/i.test(String(e.message || "")));
+  // OpenAI 兼容的 5 个源：url / 首个模型 / 读 Key 的环境变量
+  const oaiSpec = (name) => {
+    if (name === "Zhipu") return { url: "https://open.bigmodel.cn/api/paas/v4/chat/completions", model: "glm-4.7-flash", keyEnv: "ZHIPU_KEYS" };
+    if (name === "Groq") return { url: "https://api.groq.com/openai/v1/chat/completions", model: WORK_MODELS.groq[0], keyEnv: "GROQ_KEYS" };
+    if (name === "OpenRouter") return { url: "https://openrouter.ai/api/v1/chat/completions", model: WORK_MODELS.openrouter[0], keyEnv: "OPENROUTER_KEYS" };
+    const p = EXTRA.find((x) => x.name === name);
+    if (!p) return null;
+    const models = name === "Volcano" ? volcanoModels(env) : p.models;
+    return { url: p.url, model: models[0], keyEnv: p.keys };
+  };
+  const probeOAI = async (name) => {
+    const spec = oaiSpec(name), keys = getKeys(env[spec.keyEnv]);
+    if (!keys.length) return { status: "nokey", hasKey: false, err: "没有配置 " + spec.keyEnv };
+    const key = keys[0];
+    try {
+      const res = await chatOpenAI(spec.url, key, { model: spec.model, messages: probeMsgs, max_tokens: 64 }, {}, PROBE_MS);
+      if (!res.ok) return { status: res.status, hasKey: true, err: pickErr(await res.text().catch(() => ""), res.status, key) };
+      const j = await res.json().catch(() => ({}));
+      const text = String((j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "").trim();
+      if (text) return { text, from: name + ":" + spec.model, status: res.status, hasKey: true, err: "" };
+      return { status: res.status, hasKey: true, err: "HTTP 200 但没有正文（空回复）" };
+    } catch (e) { return { status: timeoutOf(e) ? "timeout" : "error", hasKey: true, err: pickErr(e && e.message, "error", key) }; }
+  };
+  const probeGemini = async () => {
+    const keys = getKeys(env.GEMINI_KEYS);
+    if (!keys.length) return { status: "nokey", hasKey: false, err: "没有配置 GEMINI_KEYS" };
+    const key = keys[0], model = WORK_MODELS.gemini[1] || "gemini-2.5-flash";
+    try {
+      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
+        method: "POST", signal: T(PROBE_MS), headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "请只回复两个字：在线" }] }], generationConfig: { maxOutputTokens: 64 } })
+      });
+      if (!res.ok) return { status: res.status, hasKey: true, err: pickErr(await res.text().catch(() => ""), res.status, key) };
+      const j = await res.json().catch(() => ({}));
+      const parts = (j && j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
+      const text = parts.filter((p) => p && p.text && !p.thought).map((p) => p.text).join("").trim();
+      if (text) return { text, from: "Gemini:" + model, status: res.status, hasKey: true, err: "" };
+      return { status: res.status, hasKey: true, err: "HTTP 200 但没有正文（空回复）" };
+    } catch (e) { return { status: timeoutOf(e) ? "timeout" : "error", hasKey: true, err: pickErr(e && e.message, "error", key) }; }
+  };
+  const probeCoze = async () => {
+    const token = String(env.COZE_API_TOKEN || "").trim(), bot = String(env.COZE_BOT_ID || "").trim();
+    if (!token || !bot) return { status: "nokey", hasKey: false, err: "没有配置 COZE_API_TOKEN / COZE_BOT_ID" };
+    const base = String(env.COZE_API_BASE || "https://api.coze.cn").replace(/\/+$/, "");
+    try {
+      const res = await fetch(base + "/v3/chat", {
+        method: "POST", signal: T(PROBE_MS), headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ bot_id: bot, user_id: "openmanus-gateway", stream: true, auto_save_history: false, additional_messages: [{ role: "user", content: "请只回复两个字：在线", content_type: "text" }] })
+      });
+      if (!res.ok || !res.body) return { status: res.status, hasKey: true, err: pickErr(await res.text().catch(() => ""), res.status, token) };
+      const reader = res.body.getReader(), dec = new TextDecoder(); let buf = "", ev = "", text = "";
+      for (;;) {
+        const { value, done } = await reader.read(); if (done) break;
+        buf += dec.decode(value, { stream: true }); let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).replace(/\r$/, ""); buf = buf.slice(nl + 1);
+          if (line.startsWith("event:")) { ev = line.slice(6).trim(); continue; }
+          if (!line.startsWith("data:")) continue;
+          const raw = line.slice(5).trim(); if (!raw || raw === '"[DONE]"') continue;
+          let d; try { d = JSON.parse(raw); } catch { continue; }
+          if (ev === "conversation.message.delta" && d && d.type === "answer" && d.content) text += d.content;
+          else if (ev === "conversation.message.completed" && d && d.type === "answer" && d.content) text += d.content;
+        }
+        if (text.length > 40) break;
+      }
+      if (String(text).trim()) return { text: String(text).trim(), from: "Coze", status: res.status, hasKey: true, err: "" };
+      return { status: res.status, hasKey: true, err: "HTTP 200 但没有正文（流里没有 answer 内容）" };
+    } catch (e) { return { status: timeoutOf(e) ? "timeout" : "error", hasKey: true, err: pickErr(e && e.message, "error", token) }; }
+  };
+  const rows = await Promise.all(PROBE_SRCS.map(async (name) => {
+    const t0 = Date.now(); let r;
+    if (name === "Gemini") r = await probeGemini();
+    else if (name === "Coze") r = await probeCoze();
+    else r = await probeOAI(name);
+    const row = { source: name, ok: !!(r && r.text), ms: Date.now() - t0, from: (r && r.text && r.from) || "" , reply: String((r && r.text) || "").replace(/\s+/g, " ").slice(0, 40) };
+    if (!row.ok) {
+      row.status = r && r.status != null ? r.status : "timeout";
+      row.hasKey = !!(r && r.hasKey);
+      row.error = String((r && r.err) || "没有返回内容（空回复 / 超时 / 报错）").slice(0, 200);
+    }
+    dbgStat(name, row.ok, row.ok ? "" : row.error); return row;
+  }));
   const okN = rows.filter((x) => x.ok).length;
-  return json({ ok: true, at: new Date().toISOString(), summary: okN + "/" + rows.length + " 个源能回话", per_source_budget_ms: 30000, rows });
+  return json({ ok: true, at: new Date().toISOString(), summary: okN + "/" + rows.length + " 个源能回话", per_source_budget_ms: PROBE_MS, rows });
 }
 // 热榜：只取缓存里的前 n 条（各平台按名次轮流取，保证每个平台都有），给模型总结 / 写进文档的都是这一份
 async function hotTop(env, n) {
