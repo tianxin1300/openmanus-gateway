@@ -1034,8 +1034,8 @@ const PROVIDER_ALIAS = { groq: "Groq", gemini: "Gemini", openrouter: "OpenRouter
 const normProvider = (p) => PROVIDER_ALIAS[String(p || "").toLowerCase().replace(/\s+/g, "")] || "";
 // v93：Poe / Coze / 火山豆包 排在 Gemini 之后、Kaggle 之前（Kaggle 在 tryAllFree 全部失败后才用）。前面的都挂了才轮到它们，不抢额度
 const SRC_ORDER = ["Groq", "OpenRouter", "Cerebras", "DeepSeek", "Zhipu", "NVIDIA", "GitHubModels", "Gemini", "Poe", "Coze", "Volcano", "CFAI", "Claude"];
-// v33：GitHub Models 目前返回纯文本 OK（不是模型回答），自动排队时先跳过，避免空回复；前端手动选它时仍然会去试。修好 Token/地址后，把它从这里删掉即可恢复
-const AUTO_SKIP = new Set(["GitHubModels"]);
+// v100：GitHub Models 接上（models.github.ai/inference + GITHUB_MODELS_TOKEN + openai/gpt-4o-mini），已从自动跳过名单里摘掉
+const AUTO_SKIP = new Set([]);
 
 // v25/v29：400 且报错里提到 token/limit → 同一个模型把 max_tokens 逐级降（32768→16384→8192→2048）重试，而不是直接换模型。
 const TOKEN_ERR = /max_tokens|max_completion_tokens|tokens|limit/i;
