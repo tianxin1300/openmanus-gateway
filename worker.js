@@ -385,7 +385,7 @@ function workRuntime() {
 const WORK_MODELS = {
   groq: ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b"], // v12: 只留 Groq 官网能确认的 3 个
   openrouter: ["nvidia/nemotron-3-ultra:free", "google/gemma-3-27b-it:free", "nvidia/nemotron-3.5-super-vl:free" /* 看图强 */, "cohere/north-mini-code:free" /* 写代码强 */, "google/gemma-4-26b-a4b:free" /* 快，随手问 */, "meta-llama/llama-3.3-70b-instruct:free"], // v29：前端下拉直接读这张表（/api/models），以后加模型只改这里
-  gemini: ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash"]
+  gemini: ["gemini-3.8-flash", "gemini-2.5-flash"]   // 2.0-flash 已下线（404 no longer available），从清单移除
 };
 // 前端带 stream:true → SSE 流式(每 5 秒心跳)；老前端不带 → 一整段 JSON(等待时发空格保活)
 // 需要：KV 绑定(变量名 KV)、REG_TOKEN；可选：GROQ_KEYS / OPENROUTER_KEYS / GEMINI_KEYS(逗号分隔)、AGG_URL、
@@ -4935,39 +4935,57 @@ async function llmProbeReport(env, url) {
     if (!p) return null;
     return { url: p.url, models: name === "Volcano" ? volcanoModels(env) : p.models, keyEnv: p.keys };
   };
+  // 从 OpenAI 兼容返回里取正文：兼容 content 为字符串 / 分段数组（部分网关这么返回）
+  const pickText = (j) => {
+    const ch = (j && j.choices && j.choices[0]) || {}, m = ch.message || {};
+    let c = m.content != null ? m.content : ch.text;
+    if (Array.isArray(c)) c = c.map((p) => (typeof p === "string" ? p : (p && (p.text || p.content)) || "")).join("");
+    return { text: String(c || "").trim(), finish: String(ch.finish_reason || "") };
+  };
+  // HTTP 200 但取不到正文时，把对方原始返回压成一行附上（抹掉 Key），便于定位是哪家的怪格式
+  const rawSnippet = (j, key) => {
+    let s = ""; try { s = JSON.stringify(j); } catch { s = String(j); }
+    if (key) s = s.split(String(key)).join("***");
+    s = s.replace(/Bearer\s+[A-Za-z0-9._\-]{8,}/gi, "Bearer ***").replace(/\bsk-[A-Za-z0-9._\-]{8,}/g, "sk-***").replace(/[A-Za-z0-9_\-]{40,}/g, "***");
+    return s.replace(/\s+/g, " ").slice(0, 180) || "（空 body）";
+  };
   const probeOAI = async (name) => {
-    const spec = oaiSpec(name), keys = getKeys(env[spec.keyEnv]);
+    const spec = oaiSpec(name);
+    if (!spec) return { status: "error", hasKey: false, err: "代码里没有这个源的配置" };
+    const keys = getKeys(env[spec.keyEnv]);
     if (!keys.length) return { status: "nokey", hasKey: false, err: "没有配置 " + spec.keyEnv };
-    const key = keys[0], deadline = Date.now() + PROBE_MS;
-    let last = { status: "error", hasKey: true, err: "没有返回内容" }, tried = 0;
+    const key = keys[0], deadline = Date.now() + PROBE_MS, notes = [];
+    let last = { status: "error", hasKey: true, err: "没有返回内容" };
     for (const model of (spec.models || []).slice(0, 6)) {
       const left = deadline - Date.now(); if (left < 3000) break;
       const body = { model, messages: probeMsgs, max_tokens: 512, temperature: 0 };
       if (spec.thinkOff) body.thinking = { type: "disabled" };          // 智谱：关思考，否则小预算全被推理吃光
       if (/gpt-oss/i.test(model)) body.reasoning_effort = "low";        // Groq 推理型模型：少想一点
-      tried++;
       let res;
       try { res = await chatOpenAI(spec.url, key, body, {}, left); }
-      catch (e) { const t = timeoutOf(e); last = { status: t ? "timeout" : "error", hasKey: true, err: pickErr(e && e.message, "error", key) }; if (t) return last; continue; }
+      catch (e) { const t = timeoutOf(e); notes.push(model + (t ? ":timeout" : ":error")); last = { status: t ? "timeout" : "error", hasKey: true, err: pickErr(e && e.message, "error", key) }; if (t) break; continue; }
       if (!res.ok) {
         last = { status: res.status, hasKey: true, err: pickErr(await res.text().catch(() => ""), res.status, key) };
+        notes.push(model + ":" + res.status);
         if (res.status === 429) return { status: 429, hasKey: true, err: "限流 / 额度用完：" + last.err };
         if (res.status === 401 || res.status === 403) return last;     // Key 问题，换模型没用
         continue;                                                      // 400/404 → 模型名失效，换下一个
       }
       const j = await res.json().catch(() => ({}));
-      const text = String((j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "").trim();
+      const { text, finish } = pickText(j);
       if (text) return { text, from: name + ":" + model, status: res.status, hasKey: true, err: "" };
-      last = { status: res.status, hasKey: true, err: "HTTP 200 但没有正文（已试 " + tried + " 个模型，最后的 " + model + " 空回复）" };
+      notes.push(model + ":200空" + (finish ? "(" + finish + ")" : ""));
+      last = { status: res.status, hasKey: true, err: "HTTP 200 但正文为空（finish_reason=" + (finish || "无") + "，原始返回：" + rawSnippet(j, key) + "）" };
     }
+    if (notes.length > 1) last.err = "已试 " + notes.length + " 个模型（" + notes.join(" / ") + "）：" + last.err;
     return last;
   };
   const probeGemini = async () => {
     const keys = getKeys(env.GEMINI_KEYS);
     if (!keys.length) return { status: "nokey", hasKey: false, err: "没有配置 GEMINI_KEYS" };
-    const key = keys[0], deadline = Date.now() + PROBE_MS;
+    const key = keys[0], deadline = Date.now() + PROBE_MS, notes = [];
     let last = { status: "error", hasKey: true, err: "没有返回内容" };
-    for (const model of WORK_MODELS.gemini.slice(0, 3)) {
+    for (const model of WORK_MODELS.gemini) {
       const left = deadline - Date.now(); if (left < 3000) break;
       try {
         const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
@@ -4976,20 +4994,25 @@ async function llmProbeReport(env, url) {
         });
         if (!res.ok) {
           last = { status: res.status, hasKey: true, err: pickErr(await res.text().catch(() => ""), res.status, key) };
-          if (res.status === 401 || res.status === 403 || res.status === 429) return last;
+          notes.push(model + ":" + res.status);
+          if (res.status === 401 || res.status === 403 || res.status === 429) return { ...last, err: "（" + notes.join(" / ") + "）" + last.err };
           continue;                                                     // 404 → 模型下线，换下一个
         }
         const j = await res.json().catch(() => ({}));
-        const parts = (j && j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
+        const cand = (j && j.candidates && j.candidates[0]) || {};
+        const parts = (cand.content && cand.content.parts) || [];
         const text = parts.filter((p) => p && p.text && !p.thought).map((p) => p.text).join("").trim();
         if (text) return { text, from: "Gemini:" + model, status: res.status, hasKey: true, err: "" };
-        last = { status: res.status, hasKey: true, err: "HTTP 200 但没有正文（" + model + " 空回复）" };
+        notes.push(model + ":200空" + (cand.finishReason ? "(" + cand.finishReason + ")" : ""));
+        last = { status: res.status, hasKey: true, err: "HTTP 200 但正文为空（finishReason=" + (cand.finishReason || "无") + "，原始返回：" + rawSnippet(j, key) + "）" };
       } catch (e) {
         const t = timeoutOf(e);
+        notes.push(model + (t ? ":timeout" : ":error"));
         last = { status: t ? "timeout" : "error", hasKey: true, err: pickErr(e && e.message, "error", key) };
-        if (t) return last;
+        if (t) break;
       }
     }
+    if (notes.length > 1) last.err = "已试 " + notes.length + " 个模型（" + notes.join(" / ") + "）：" + last.err;
     return last;
   };
   const probeCoze = async () => {
