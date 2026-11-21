@@ -1024,7 +1024,9 @@ const EXTRA = [
       "meta/llama-3.2-90b-vision-instruct", // v20 新加：你刚拍的 Llama 3.2 90B Vision，看图推理强的
       "meta/llama-3.3-70b-instruct" // 备用：老的，保底
     ], max: 32768 }, // v18: 英伟达 6 个功能免费模型 + 1 备用，嵌入那 2 个 nemotron-embed 不加，那是做搜索的
-    { name: "GitHubModels", url: "https://models.github.ai/inference/chat/completions", keys: "GITHUB_MODELS_TOKEN", models: ["openai/gpt-4o-mini"], max: 16384 },
+    // GitHubModels：models.github.ai/inference 对所有请求（含 /catalog/models、无鉴权、假 token）一律回 200 + text/plain "OK"，
+    // 是个不回包的壳，不是推理接口；改用 GitHub Models 的托管端点（同一个 GITHUB_TOKEN 可用）
+    { name: "GitHubModels", url: "https://models.inference.ai.azure.com/chat/completions", keys: "GITHUB_MODELS_TOKEN", models: ["openai/gpt-4o-mini"], max: 16384 },
     { name: "Poe", url: "https://api.poe.com/v1/chat/completions", keys: "POE_API_KEY", models: POE_DEFAULT_MODELS, max: 8192, ms: 10000 },   // v93 备用：只放环境变量 POE_API_KEY
     { name: "Volcano", url: "https://ark.cn-beijing.volces.com/api/v3/chat/completions", keys: "VOLCANO_API_KEY", models: VOLCANO_DEFAULT_MODELS, max: 8192, ms: 10000 },   // v93 备用：火山豆包，只放环境变量 VOLCANO_API_KEY
   ];
