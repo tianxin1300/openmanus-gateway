@@ -1024,19 +1024,18 @@ const EXTRA = [
       "meta/llama-3.2-90b-vision-instruct", // v20 新加：你刚拍的 Llama 3.2 90B Vision，看图推理强的
       "meta/llama-3.3-70b-instruct" // 备用：老的，保底
     ], max: 32768 }, // v18: 英伟达 6 个功能免费模型 + 1 备用，嵌入那 2 个 nemotron-embed 不加，那是做搜索的
-    // GitHubModels：models.github.ai/inference 对所有请求（含 /catalog/models、无鉴权、假 token）一律回 200 + text/plain "OK"，
-    // 是个不回包的壳，不是推理接口；改用 GitHub Models 的托管端点（同一个 GITHUB_TOKEN 可用）
-    { name: "GitHubModels", url: "https://models.inference.ai.azure.com/chat/completions", keys: "GITHUB_MODELS_TOKEN", models: ["openai/gpt-4o-mini"], max: 16384 },
+    // GitHubModels 已移除：models.github.ai 对所有请求（含 /catalog/models、无鉴权、假 token）一律回 200 + text/plain "OK"，
+    // models.inference.ai.azure.com 无 DNS 记录（Cloudflare 530 / error 1016）——两个入口都不可用，等官方修好再加回
     { name: "Poe", url: "https://api.poe.com/v1/chat/completions", keys: "POE_API_KEY", models: POE_DEFAULT_MODELS, max: 8192, ms: 10000 },   // v93 备用：只放环境变量 POE_API_KEY
     { name: "Volcano", url: "https://ark.cn-beijing.volces.com/api/v3/chat/completions", keys: "VOLCANO_API_KEY", models: VOLCANO_DEFAULT_MODELS, max: 8192, ms: 10000 },   // v93 备用：火山豆包，只放环境变量 VOLCANO_API_KEY
   ];
 
 // 前端“模型”面板发来的 provider 名 → 内部来源名
-const PROVIDER_ALIAS = { groq: "Groq", gemini: "Gemini", openrouter: "OpenRouter", nvidia: "NVIDIA", "英伟达": "NVIDIA", zhipu: "Zhipu", "智谱": "Zhipu", githubmodels: "GitHubModels", github: "GitHubModels", cerebras: "Cerebras", deepseek: "DeepSeek", claude: "Claude", poe: "Poe", coze: "Coze", "扣子": "Coze", volcano: "Volcano", "火山": "Volcano", "火山豆包": "Volcano", "豆包": "Volcano", doubao: "Volcano" };
+const PROVIDER_ALIAS = { groq: "Groq", gemini: "Gemini", openrouter: "OpenRouter", nvidia: "NVIDIA", "英伟达": "NVIDIA", zhipu: "Zhipu", "智谱": "Zhipu", cerebras: "Cerebras", deepseek: "DeepSeek", claude: "Claude", poe: "Poe", coze: "Coze", "扣子": "Coze", volcano: "Volcano", "火山": "Volcano", "火山豆包": "Volcano", "豆包": "Volcano", doubao: "Volcano" };
 const normProvider = (p) => PROVIDER_ALIAS[String(p || "").toLowerCase().replace(/\s+/g, "")] || "";
 // v93：Poe / Coze / 火山豆包 排在 Gemini 之后、Kaggle 之前（Kaggle 在 tryAllFree 全部失败后才用）。前面的都挂了才轮到它们，不抢额度
-const SRC_ORDER = ["Groq", "OpenRouter", "Cerebras", "DeepSeek", "Zhipu", "NVIDIA", "GitHubModels", "Gemini", "Poe", "Coze", "Volcano", "CFAI", "Claude"];
-// v100：GitHub Models 接上（models.github.ai/inference + GITHUB_MODELS_TOKEN + openai/gpt-4o-mini），已从自动跳过名单里摘掉
+const SRC_ORDER = ["Groq", "OpenRouter", "Cerebras", "DeepSeek", "Zhipu", "NVIDIA", "Gemini", "Poe", "Coze", "Volcano", "CFAI", "Claude"];
+// v101：GitHub Models 摘掉——两个入口都不可用（详见 EXTRA 里的说明），探针退回 7 源
 const AUTO_SKIP = new Set([]);
 
 // v25/v29：400 且报错里提到 token/limit → 同一个模型把 max_tokens 逐级降（32768→16384→8192→2048）重试，而不是直接换模型。
@@ -1296,7 +1295,7 @@ async function mtRun(one, env, text, to, gap) {
   return outs.join("\n");
 }
 // v95：翻译主力 = 聚合体模型（Groq gpt-oss-120b → OpenRouter → Gemini，跟聊天同一套）；百度 → 有道 → Riva 只在聚合体都没返回时才用
-const AGG_TR_SKIP = ["Cerebras", "DeepSeek", "Zhipu", "NVIDIA", "GitHubModels", "Poe", "Coze", "Volcano", "CFAI", "Claude"];   // 只留 Groq / OpenRouter / Gemini
+const AGG_TR_SKIP = ["Cerebras", "DeepSeek", "Zhipu", "NVIDIA", "Poe", "Coze", "Volcano", "CFAI", "Claude"];   // 只留 Groq / OpenRouter / Gemini
 function trDir(text) { return cjkRatio(String(text || "")) > 0.5 ? "en" : "zh"; }   // 中文 > 50% 当中文翻英文；否则当英文翻中文
 async function aggTranslate(env, text, to) {
   const srcLang = to === "en" ? "中文" : "英文", dstLang = to === "en" ? "英文" : "简体中文";
@@ -2746,7 +2745,6 @@ const DBG_AGENTS = [
   { id: "Gemini", cn: "Gemini", need: ["GEMINI_KEYS"] },
   { id: "Zhipu", cn: "智谱", need: ["ZHIPU_KEYS"] },
   { id: "NVIDIA", cn: "英伟达 NVIDIA", need: ["NVIDIA_KEYS"] },
-  { id: "GitHubModels", cn: "GitHub Models", need: ["GITHUB_MODELS_TOKEN"] },
   { id: "Poe", cn: "Poe", need: ["POE_API_KEY"] },
   { id: "Coze", cn: "Coze 扣子", need: ["COZE_API_TOKEN", "COZE_BOT_ID"] },
   { id: "Volcano", cn: "火山豆包", need: ["VOLCANO_API_KEY"] },
@@ -4911,11 +4909,11 @@ async function fsLLMMsgs(env, msgs, info, total, accept) {      // 多轮 messag
     launch();
   });
 }
-// ===== v99z 模型探针：/api/debug/llmprobe?token=REG_TOKEN —— 对 8 个模型源（Zhipu / Groq / OpenRouter / Gemini / NVIDIA / GitHubModels / Coze / Volcano）各发一条“在线?”，逐个报谁通 / 耗时 / 为什么不通（status / hasKey / error）；不返回任何密钥值 =====
+// ===== v99z 模型探针：/api/debug/llmprobe?token=REG_TOKEN —— 对 7 个模型源（Zhipu / Groq / OpenRouter / Gemini / NVIDIA / Coze / Volcano）各发一条“在线?”，逐个报谁通 / 耗时 / 为什么不通（status / hasKey / error）；不返回任何密钥值 =====
 async function llmProbeReport(env, url) {
   const tok = String(url.searchParams.get("token") || "").trim(), want = String(env.REG_TOKEN || "").trim();
   if (!want || tok !== want) return json({ ok: false, msg: "token 不对：要 ?token=REG_TOKEN（Worker 没配 REG_TOKEN 就用不了）" }, 403);
-  const PROBE_SRCS = ["Zhipu", "Groq", "OpenRouter", "Gemini", "NVIDIA", "GitHubModels", "Coze", "Volcano"];
+  const PROBE_SRCS = ["Zhipu", "Groq", "OpenRouter", "Gemini", "NVIDIA", "Coze", "Volcano"];
   const PROBE_MS = 30000, probeMsgs = [{ role: "user", content: "请只回复两个字：在线" }];
   // 错误文本：取对方返回里的 message，压成一行，抹掉密钥，只留前 200 字
   const pickErr = (raw, status, key) => {
@@ -7018,7 +7016,7 @@ async function handle(request, env, ctx) {
           return { hasKey: true, ver, model: usedModel, ...(fellBack ? { fallback: fellBack } : {}), status: r.status, ms: Date.now() - t0, reply: reply.slice(0, 80), verdict: r.ok ? (reply ? "正常" : "正文为空") : "接口报错", available_models: all, error: j.error?.message };
         } catch (e) { return { hasKey: true, error: "卡在【" + stage + "】：" + (e.name === "TimeoutError" ? "超时（" + (Date.now() - t0) + "ms）" : e.message), hint: "如果每次都超时，多半是 Gemini 在 Cloudflare 这个出口被限速/屏蔽，或 Key 无效；换 Key 或把 Gemini 排到最后" }; }
       });
-      // v22：/debug 补上今天新加的 3 个：ZHIPU、NVIDIA、GITHUB_MODELS，不然 /debug 里看不到
+      // v22：/debug 补上今天新加的 2 个：ZHIPU、NVIDIA，不然 /debug 里看不到
       const zhipu = probe("zhipu", async () => {
         const keys = getKeys(env.ZHIPU_KEYS); if (!keys.length) return { hasKey: false };
         return await chatProbe("https://open.bigmodel.cn/api/paas/v4/chat/completions", keys[0], "glm-4.7-flash");
@@ -7026,10 +7024,6 @@ async function handle(request, env, ctx) {
       const nvidia = probe("nvidia", async () => {
         const keys = getKeys(env.NVIDIA_KEYS); if (!keys.length) return { hasKey: false };
         return await chatProbe("https://integrate.api.nvidia.com/v1/chat/completions", keys[0], "nvidia/nemotron-3-ultra-550b-a55b");
-      });
-      const githubModels = probe("github_models", async () => {
-        const keys = getKeys(env.GITHUB_MODELS_TOKEN); if (!keys.length) return { hasKey: false };
-        return await chatProbe("https://models.github.ai/inference/chat/completions", keys[0], "openai/gpt-4o-mini");
       });
       // v99s：Poe / Coze / 火山豆包 / Dify 的探针（和其它 agent 同一个结构；Dify 只读应用信息，不消耗对话额度）
       const poe = probe("poe", async () => { const keys = getKeys(env.POE_API_KEY); if (!keys.length) return { hasKey: false }; return await chatProbe("https://api.poe.com/v1/chat/completions", keys[0], poeModels(env)[0]); });
@@ -7052,9 +7046,9 @@ async function handle(request, env, ctx) {
         out.raw_content = res.err ? { ok: false, step: res.step, error: res.err, feishu_code: res.feishuCode } : { ok: true, title: res.title, chars: res.content.length };
         return out;
       });
-      const [k, g, o, m, z, n, gm, fs, pe, vo, cz, df] = await Promise.all([kaggle, groq, openrouter, gemini, zhipu, nvidia, githubModels, feishu, poe, volcano, coze, dify]);
-      const ag = await dbgAgents(env, { Groq: g, OpenRouter: o, Gemini: m, Zhipu: z, NVIDIA: n, GitHubModels: gm, Poe: pe, Coze: cz, Volcano: vo, Dify: df });
-      const dv = { agents: ag.rows, agents_lines: ag.lines, kaggle: k, groq: g, openrouter: o, gemini: m, zhipu: z, nvidia: n, github_models: gm, poe: pe, coze: cz, volcano: vo, dify: df, feishu: fs, cooling_down: [...DOWN].filter(([, t]) => t > Date.now()).map(([x, t]) => x.split("|").slice(0, 2).join(" ") + "（还剩 " + Math.ceil((t - Date.now()) / 1000) + " 秒）"), cached_for_seconds: 60 };
+      const [k, g, o, m, z, n, fs, pe, vo, cz, df] = await Promise.all([kaggle, groq, openrouter, gemini, zhipu, nvidia, feishu, poe, volcano, coze, dify]);
+      const ag = await dbgAgents(env, { Groq: g, OpenRouter: o, Gemini: m, Zhipu: z, NVIDIA: n, Poe: pe, Coze: cz, Volcano: vo, Dify: df });
+      const dv = { agents: ag.rows, agents_lines: ag.lines, kaggle: k, groq: g, openrouter: o, gemini: m, zhipu: z, nvidia: n, poe: pe, coze: cz, volcano: vo, dify: df, feishu: fs, cooling_down: [...DOWN].filter(([, t]) => t > Date.now()).map(([x, t]) => x.split("|").slice(0, 2).join(" ") + "（还剩 " + Math.ceil((t - Date.now()) / 1000) + " 秒）"), cached_for_seconds: 60 };
       if (!url.searchParams.get("feishu_doc")) mcache.set("debug", { t: Date.now(), v: dv });
       return dbgRes(dv);
     }
@@ -7728,7 +7722,6 @@ async function handle(request, env, ctx) {
         { id: "OpenRouter", name: "OpenRouter", models: WORK_MODELS.openrouter },
         { id: "英伟达", name: "英伟达", models: ex("NVIDIA") },
         { id: "智谱", name: "智谱", models: ex("Zhipu") },
-        { id: "GitHub Models", name: "GitHub Models", models: ex("GitHubModels") },
         { id: "Poe", name: "Poe", models: poeModels(env) },
         { id: "Coze", name: "Coze", models: [] },
         { id: "火山豆包", name: "火山豆包", models: volcanoModels(env) }
