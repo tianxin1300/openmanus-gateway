@@ -1,0 +1,6 @@
+name = "juheti-open"
+compatibility_date = "2025-01-01"
+
+[pages_build_config]
+build_command = ""
+destination_dir = "/"
