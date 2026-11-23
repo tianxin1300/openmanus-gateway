@@ -624,6 +624,42 @@ mark.hit-mark{background:#ffe58a;color:inherit;border-radius:3px;padding:0 1px}
 .om-ic{display:inline-flex;width:15px;height:15px;vertical-align:-3px;margin-right:4px}
 .om-ic svg{width:100%;height:100%;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 button.om-ic-only .om-ic{margin:0;width:16px;height:16px}
+/* ---- 开发台（Monaco 编辑器 + 实时预览 + WebContainer 终端）---- */
+#wb{position:fixed;inset:0;z-index:110;display:none;flex-direction:column;background:#10271e;color:#e3f1df}
+.wb-open #wb{display:flex}
+#wb-bar{flex:0 0 46px;display:flex;align-items:center;gap:8px;padding:0 12px;background:#10291f;border-bottom:1px solid #1d4030;overflow:hidden}
+#wb-bar strong{font-size:14px;white-space:nowrap}
+#wb-file{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#9fc3a8;white-space:nowrap}
+#wb-state{font-size:12px;color:#9fe0b0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+#wb-state.warn{color:#f4c46b}
+#wb-bar .sp{flex:1}
+#wb-bar button{padding:6px 12px;font-size:12px;border-radius:8px;white-space:nowrap}
+#wb-bar button.sec{background:#1d4030;color:#d8ecd9}
+#wb-bar button.sec:hover{background:#27553f}
+#wb-main{flex:1;min-height:0;display:flex}
+#wb-left{flex:1 1 50%;min-width:0;border-right:1px solid #1d4030;background:#1e1e1e}
+#wb-editor{width:100%;height:100%}
+#wb-editor textarea{width:100%;height:100%;box-sizing:border-box;border:0;outline:0;resize:none;padding:10px 12px;background:#1e1e1e;color:#e6e6e6;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre;tab-size:2}
+#wb-right{flex:1 1 50%;min-width:0;display:flex;flex-direction:column;background:#fff;color:#304936}
+.wb-rhead{flex:0 0 38px;display:flex;align-items:center;gap:6px;padding:0 10px;background:#f3f8f1;border-bottom:1px solid #dfe9df}
+.wb-rhead .sp{flex:1}
+.wb-tab{padding:5px 12px;border-radius:8px;background:transparent;color:#5b7560;font-size:12px;box-shadow:none}
+.wb-tab:hover{background:#e2eee0;color:#2d6a3f;box-shadow:none}
+.wb-tab.on{background:#fff;color:#1d5a34;box-shadow:0 1px 4px #244c2e1f}
+.wb-rhead .wb-mini{padding:5px 10px;font-size:12px;border-radius:8px}
+.wb-pane{flex:1;min-height:0;display:none;border:0;background:#fff;width:100%}
+.wb-pane.on{display:block}
+#wb-res{overflow:auto;padding:14px 16px}
+#wb-res h4{margin:0 0 8px;font-size:14px;color:#1d5a34}
+#wb-res h4.bad{color:#b3261e}
+#wb-res pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#304936}
+#wb-term{flex:0 0 32%;min-height:130px;display:flex;flex-direction:column;border-top:1px solid #1d4030;background:#0b1a13}
+.wb-thead{flex:0 0 28px;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:12px;color:#9fc3a8;background:#0f2419}
+.wb-thead .sp{flex:1}
+.wb-thead button{padding:2px 9px;font-size:11px;border-radius:6px;background:#1d4030;color:#d8ecd9}
+#wb-xterm{flex:1;min-height:0;padding:4px 8px;overflow:hidden}
+#wb-xterm pre{margin:0;height:100%;overflow:auto;white-space:pre-wrap;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#d8ecd9}
+@media(max-width:820px){#wb-main{flex-direction:column}#wb-left{flex:1 1 45%;border-right:0;border-bottom:1px solid #1d4030}#wb-right{flex:1 1 45%}#wb-term{flex-basis:26%}#wb-file{display:none}}
 </style></head>
 <body>
 <aside id="side">
@@ -647,6 +683,7 @@ button.om-ic-only .om-ic{margin:0;width:16px;height:16px}
     <div class="head-actions" role="toolbar" aria-label="对话操作">
       <button id="header-new" class="sec header-action" type="button" title="新建对话"><span class="action-icon" aria-hidden="true">＋</span><span class="action-label">新对话</span></button>
       <button id="art-toggle" class="sec header-action" type="button" title="打开 / 关闭右侧文件预览" aria-label="文件预览"><span class="action-icon" aria-hidden="true">▤</span><span class="action-label">预览</span><span id="art-badge" class="art-badge" hidden></span></button>
+      <button id="wb-open" class="sec header-action" type="button" title="开发台：在线编辑 index.html / 实时预览 / 终端" aria-label="开发台"><span class="action-icon" aria-hidden="true">⌘</span><span class="action-label">开发台</span></button>
       <button id="share" class="sec header-action" title="分享当前对话"><span class="action-icon" aria-hidden="true">↗</span><span class="action-label">分享</span></button>
       <button id="msg-select" class="sec header-action" type="button" title="选择消息：批量复制 / 导出 / 打包 / 存资料 / 删除" aria-label="选择消息"><span class="action-icon" aria-hidden="true">☑</span><span class="action-label">选择</span></button>
       <button id="chat-export" class="sec header-action" type="button" title="导出整段对话（Word / PDF / HTML）"><span class="action-icon" aria-hidden="true">↓</span><span class="action-label">导出</span></button>
@@ -5413,6 +5450,430 @@ const bestPlace = (list, q) => {
     if (!authToken) return toast("请先登录");
     return ({weather: weatherPanel, news: newsPanel, quote: quotePanel})[kind]?.();
   };
+})();
+</script>
+<!-- 开发台：左 Monaco 编辑器 / 右 实时预览（含运行结果）/ 下 终端（WebContainer + xterm），库全部按需从 CDN 加载 -->
+<div id="wb" role="dialog" aria-hidden="true" aria-label="开发台">
+  <div id="wb-bar">
+    <strong>开发台</strong><span id="wb-file">frontend/index.html</span><span id="wb-state"></span>
+    <span class="sp"></span>
+    <button id="wb-reload" class="sec" type="button" title="重新从 GitHub 读取 index.html（会丢掉未保存的修改）">重新读取</button>
+    <button id="wb-save" type="button" title="把编辑器里的内容通过 MCP update_file 推到 GitHub main（Ctrl/Cmd+S）">保存到 GitHub</button>
+    <button id="wb-run" type="button" title="在浏览器里启动 WebContainer：mount /frontend → npm install → 结果显示在右侧">运行</button>
+    <button id="wb-close" class="sec" type="button" aria-label="关闭开发台">×</button>
+  </div>
+  <div id="wb-main">
+    <div id="wb-left"><div id="wb-editor"></div></div>
+    <div id="wb-right">
+      <div class="wb-rhead">
+        <button class="wb-tab on" type="button" data-wbtab="prev">实时预览</button>
+        <button class="wb-tab" type="button" data-wbtab="run">运行结果</button>
+        <span class="sp"></span>
+        <button id="wb-prev-refresh" class="sec wb-mini" type="button" title="重新渲染预览">刷新</button>
+      </div>
+      <iframe id="wb-preview" class="wb-pane on" title="实时预览" sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads"></iframe>
+      <div id="wb-res" class="wb-pane"></div>
+      <iframe id="wb-runframe" class="wb-pane" title="WebContainer 运行结果" allow="cross-origin-isolated"></iframe>
+    </div>
+  </div>
+  <div id="wb-term">
+    <div class="wb-thead"><span>终端</span><span class="sp"></span><button id="wb-term-clear" type="button">清屏</button></div>
+    <div id="wb-xterm"></div>
+  </div>
+</div>
+<script id="wb-devbench">
+/* 开发台：Monaco（CDN）+ 实时预览 + WebContainer/xterm 终端（CDN）；文件读写直接走 MCP，不经过 Dify。
+   全部库在第一次点「开发台」/「运行」时才加载，不影响主页面启动速度。 */
+(function () {
+"use strict";
+const MCP_URL = "https://my-github-mcp.tianxinyuan881.workers.dev/mcp";
+const REPO = {owner: "tianxin1300", repo: "openmanus-gateway", branch: "main"};
+const FILE = "frontend/index.html", DIR = "frontend";
+const MONACO_BASES = [
+  "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min",
+  "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min",
+  "https://unpkg.com/monaco-editor@0.52.2/min"
+];
+const XTERM_SETS = [
+  {js: "https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js", css: "https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css", fit: "https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"},
+  {js: "https://cdnjs.cloudflare.com/ajax/libs/xterm/5.3.0/xterm.min.js", css: "https://cdnjs.cloudflare.com/ajax/libs/xterm/5.3.0/xterm.min.css", fit: "https://cdnjs.cloudflare.com/ajax/libs/xterm-addon-fit/0.8.0/xterm-addon-fit.min.js"},
+  {js: "https://unpkg.com/xterm@5.3.0/lib/xterm.js", css: "https://unpkg.com/xterm@5.3.0/css/xterm.css", fit: "https://unpkg.com/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"}
+];
+const WC_MODULES = ["https://esm.sh/@webcontainer/api@1", "https://cdn.jsdelivr.net/npm/@webcontainer/api@1/+esm"];
+const TEXT_EXT = /\.(html?|css|js|mjs|cjs|json|toml|md|txt|svg|ts|tsx|jsx|yml|yaml|xml|env|gitignore|npmrc)$/i;
+const g = id => document.getElementById(id);
+
+/*wb-pure-start*/
+const ALIAS = {
+  owner: ["owner"], repo: ["repo", "repository", "repo_name"],
+  path: ["path", "file_path", "filepath", "file", "filename"], branch: ["branch", "ref"],
+  content: ["content", "text", "contents", "body", "data"], message: ["message", "commit_message", "commitmessage", "msg"],
+  sha: ["sha", "file_sha", "blob_sha", "base_sha"]
+};
+function b64enc(s) { const u = new TextEncoder().encode(s); let bin = ""; for (let i = 0; i < u.length; i += 0x8000) bin += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(bin); }
+function b64dec(s) { const bin = atob(String(s).replace(/\s/g, "")); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new TextDecoder().decode(u); }
+/* 按 tools/list 里的 inputSchema 把 owner/repo/path/… 对到工具真正的参数名上；没有 schema 就用常见名字 */
+function mkArgs(tool, vals) {
+  const props = tool && tool.inputSchema && tool.inputSchema.properties, out = {};
+  if (!props || !Object.keys(props).length) { Object.keys(vals).forEach(k => { if (vals[k] != null) out[k] = vals[k]; }); return out; }
+  const names = Object.keys(props), low = names.map(n => n.toLowerCase());
+  for (const k of Object.keys(vals)) {
+    const v = vals[k]; if (v == null) continue;
+    let idx = -1; for (const a of ALIAS[k]) { idx = low.indexOf(a); if (idx >= 0) break; }
+    if (idx < 0) continue;
+    const name = names[idx], desc = String(props[name].description || "");
+    if (k === "content" && /base64/i.test(desc) && !/(not|no|without|非|无需|不用).{0,16}base64/i.test(desc)) out[name] = b64enc(String(v));
+    else out[name] = v;
+  }
+  if (!low.includes("owner")) {   // 只有 repo 一个字段、描述里写的是 owner/repo
+    const rn = names[low.findIndex(n => ALIAS.repo.includes(n))];
+    if (rn && /owner\/repo|owner\/name|full.?name/i.test(String(props[rn].description || ""))) out[rn] = vals.owner + "/" + vals.repo;
+  }
+  return out;
+}
+/* 把 get_file 的返回认成 {text, sha} 或 {list}：兼容纯文本 / JSON({content,sha,encoding}) / 目录数组 */
+function parseFile(raw) {
+  let t = String(raw == null ? "" : raw), sha = null, j = null;
+  try { j = JSON.parse(t); } catch (_) {}
+  if (Array.isArray(j)) return {list: j};
+  if (j && typeof j === "object") {
+    const lst = j.entries || j.files || j.items; if (Array.isArray(lst)) return {list: lst};
+    sha = j.sha || (j.content && typeof j.content === "object" && j.content.sha) || null;
+    let c = j.content !== undefined ? j.content : (j.text !== undefined ? j.text : j.contents);
+    if (c && typeof c === "object") c = c.content !== undefined ? c.content : c.text;
+    if (typeof c === "string") return {text: j.encoding === "base64" ? b64dec(c) : c, sha};
+  }
+  return {text: t, sha};
+}
+/* 返回里如果在 <!DOCTYPE 前面带了说明文字（比如 "sha: …"），把它剥掉 */
+function cleanHtml(text, sha) {
+  const m = /<!doctype html/i.exec(text);
+  if (m && m.index > 0 && m.index < 500) { const s = /\b[0-9a-f]{40}\b/.exec(text.slice(0, m.index)); return {text: text.slice(m.index), sha: sha || (s ? s[0] : null)}; }
+  return {text, sha};
+}
+/* Streamable HTTP 的返回可能是 JSON，也可能是 SSE；挑出对应 id 的那条 */
+function parseRpc(ct, txt, id) {
+  if (/text\/event-stream/i.test(ct || "")) {
+    const msgs = [];
+    String(txt).split(/\r?\n\r?\n/).forEach(block => {
+      const d = block.split(/\r?\n/).filter(l => l.startsWith("data:")).map(l => l.slice(5).replace(/^ /, "")).join("\n");
+      if (d) { try { msgs.push(JSON.parse(d)); } catch (_) {} }
+    });
+    return msgs.find(m => m && m.id === id) || msgs.find(m => m && (m.result || m.error)) || null;
+  }
+  try { return JSON.parse(txt); } catch (_) { return null; }
+}
+function stripAnsi(s) { return String(s).replace(/\u001b\[[0-9;?]*[ -\/]*[@-~]/g, "").replace(/\r/g, ""); }
+function toTree(files) {   // {"a/b.txt":"…"} → WebContainer FileSystemTree
+  const root = {};
+  Object.keys(files).forEach(p => {
+    const parts = p.split("/").filter(Boolean); let cur = root;
+    parts.forEach((seg, i) => { if (i === parts.length - 1) cur[seg] = {file: {contents: files[p]}}; else cur = (cur[seg] = cur[seg] || {directory: {}}).directory; });
+  });
+  return root;
+}
+/*wb-pure-end*/
+/* ---------------- 状态 / 小工具 ---------------- */
+let ed = null, term = null, fitAddon = null, inited = false, running = false, dirty = false, curSha = null;
+let wc = null, wcMod = null, shell = null, shellIn = null, procs = [], serverWait = null, prevTimer = null, srcLabel = "";
+function say(t, warn) { const el = g("wb-state"); if (!el) return; el.textContent = t || ""; el.className = warn ? "warn" : ""; el.title = t || ""; }
+function note(t) { try { if (typeof toast === "function") toast(t); } catch (_) {} }
+function withTimeout(p, ms, what) { let to; return Promise.race([p, new Promise((_, no) => { to = setTimeout(() => no(new Error(what + " 超时")), ms); })]).finally(() => clearTimeout(to)); }
+function loadScript(src, ms) {
+  return withTimeout(new Promise((ok, no) => { const s = document.createElement("script"); s.src = src; s.crossOrigin = "anonymous"; s.onload = ok; s.onerror = () => { s.remove(); no(new Error("加载失败 " + src)); }; document.head.appendChild(s); }), ms || 15000, "加载 " + src);
+}
+/* Monaco 的 AMD 加载器会占用全局 define/require，让后面加载的 UMD 库（含主页面导出用的库）认成 AMD 模块而不挂全局。
+   所以：xterm 用「屏蔽 define 后执行」的方式加载；开发台关闭时把 define/require 还原，再打开时再换回来。 */
+const amd0 = {d: window.define, r: window.require}; let amdMonaco = null;
+function amdSet(d, r) {
+  [["define", d], ["require", r]].forEach(([k, v]) => { if (v === undefined) { try { delete window[k]; } catch (_) { window[k] = undefined; } } else window[k] = v; });
+}
+function amdOn() { if (amdMonaco) amdSet(amdMonaco.d, amdMonaco.r); }
+function amdOff() { if (amdMonaco) amdSet(amd0.d, amd0.r); }
+async function loadScriptIsolated(src) {
+  const r = await withTimeout(fetch(src), 15000, "下载 " + src); if (!r.ok) throw new Error("下载失败 " + src + "（" + r.status + "）");
+  const code = await r.text();
+  (0, Function)("define", "exports", "module", code + "\n//# sourceURL=" + src).call(window);
+}
+function loadCss(href) { return new Promise(ok => { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = href; l.crossOrigin = "anonymous"; l.onload = l.onerror = ok; document.head.appendChild(l); setTimeout(ok, 8000); }); }
+
+/* ---------------- MCP 客户端（直接 fetch，不走 Dify） ---------------- */
+const mcp = {id: 0, sid: null, ready: null, tools: null};
+async function rawRpc(method, params, notify, retried) {
+  const body = notify ? {jsonrpc: "2.0", method, params} : {jsonrpc: "2.0", id: ++mcp.id, method, params};
+  const h = {"content-type": "application/json", "accept": "application/json, text/event-stream"};
+  if (mcp.sid) h["mcp-session-id"] = mcp.sid;
+  let tok = ""; try { tok = localStorage.getItem("wb_mcp_token") || ""; } catch (_) {}
+  if (tok) h.authorization = "Bearer " + tok;
+  let r;
+  try { r = await fetch(MCP_URL, {method: "POST", headers: h, body: JSON.stringify(body)}); }
+  catch (e) { throw new Error("连不上 MCP（网络不通，或 MCP 没有放行本页来源的 CORS）"); }
+  const sid = r.headers.get("mcp-session-id"); if (sid) mcp.sid = sid;
+  if ((r.status === 401 || r.status === 403) && !retried) {
+    const t = (typeof prompt === "function") ? prompt("MCP 需要访问令牌（只保存在这台设备的浏览器里）：") : "";
+    if (t) { try { localStorage.setItem("wb_mcp_token", t.trim()); } catch (_) {} return rawRpc(method, params, notify, true); }
+  }
+  if (notify) return null;
+  const txt = await r.text();
+  if (!r.ok) throw new Error("MCP 返回 " + r.status + "：" + txt.slice(0, 160));
+  const msg = parseRpc(r.headers.get("content-type"), txt, body.id);
+  if (!msg) throw new Error("MCP 没有返回可识别的结果");
+  if (msg.error) throw new Error(msg.error.message || JSON.stringify(msg.error).slice(0, 200));
+  return msg.result;
+}
+function mcpInit() {
+  if (mcp.ready) return mcp.ready;
+  mcp.ready = (async () => {
+    await rawRpc("initialize", {protocolVersion: "2025-03-26", capabilities: {}, clientInfo: {name: "openmanus-frontend", version: "1"}});
+    try { await rawRpc("notifications/initialized", {}, true); } catch (_) {}
+  })();
+  mcp.ready.catch(() => { mcp.ready = null; });
+  return mcp.ready;
+}
+async function mcpTools() { if (mcp.tools) return mcp.tools; await mcpInit(); const r = await rawRpc("tools/list", {}); mcp.tools = (r && r.tools) || []; return mcp.tools; }
+function pickTool(tools, exact, re) { return tools.find(t => t.name === exact) || tools.find(t => re.test(t.name)); }
+async function callTool(tool, args) {
+  const r = await rawRpc("tools/call", {name: tool.name, arguments: args});
+  let txt = ((r && r.content) || []).filter(c => c && c.type === "text").map(c => c.text).join("\n");
+  if (!txt && r && r.structuredContent) txt = JSON.stringify(r.structuredContent);
+  if (r && r.isError) throw new Error(txt || (tool.name + " 报错"));
+  return txt;
+}
+async function mcpGet(path) {
+  const tools = await mcpTools(), t = pickTool(tools, "get_file", /(get|read)_?file/i);
+  if (!t) throw new Error("MCP 里没有 get_file（现有工具：" + tools.map(x => x.name).join("、") + "）");
+  return parseFile(await callTool(t, mkArgs(t, {owner: REPO.owner, repo: REPO.repo, path, branch: REPO.branch})));
+}
+async function mcpPut(path, content, message, sha) {
+  const tools = await mcpTools(), t = pickTool(tools, "update_file", /(update|write|put)_?file|create_or_update/i);
+  if (!t) throw new Error("MCP 里没有 update_file（现有工具：" + tools.map(x => x.name).join("、") + "）");
+  return callTool(t, mkArgs(t, {owner: REPO.owner, repo: REPO.repo, path, branch: REPO.branch, content, message, sha}));
+}
+
+/* ---------------- 编辑器（Monaco，失败时退回文本框） ---------------- */
+async function loadMonaco() {
+  let last;
+  for (const base of MONACO_BASES) {
+    try {
+      if (!amdMonaco) { await loadScript(base + "/vs/loader.js"); amdMonaco = {d: window.define, r: window.require}; }
+      window.require.config({paths: {vs: base + "/vs"}});
+      window.MonacoEnvironment = {getWorkerUrl: () => URL.createObjectURL(new Blob(['self.MonacoEnvironment={baseUrl:"' + base + '/"};importScripts("' + base + '/vs/base/worker/workerMain.js");'], {type: "text/javascript"}))};
+      await withTimeout(new Promise((ok, no) => window.require(["vs/editor/editor.main"], ok, no)), 25000, "Monaco 主包");
+      return window.monaco;
+    } catch (e) { last = e; }
+  }
+  throw last || new Error("Monaco 加载失败");
+}
+async function initEditor() {
+  if (ed) return ed;
+  const box = g("wb-editor"); let cbs = [];
+  try {
+    const monaco = await loadMonaco();
+    const m = monaco.editor.create(box, {value: "", language: "html", theme: "vs-dark", automaticLayout: true, minimap: {enabled: false}, fontSize: 12, tabSize: 2, scrollBeyondLastLine: false, wordWrap: "off"});
+    m.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save());
+    m.onDidChangeModelContent(() => cbs.forEach(f => f()));
+    ed = {get: () => m.getValue(), set: v => m.setValue(v), on: f => cbs.push(f), kind: "monaco"};
+  } catch (e) {
+    const ta = document.createElement("textarea"); ta.spellcheck = false; box.innerHTML = ""; box.appendChild(ta);
+    ta.addEventListener("input", () => cbs.forEach(f => f()));
+    ta.addEventListener("keydown", ev => { if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); save(); } });
+    ed = {get: () => ta.value, set: v => { ta.value = v; }, on: f => cbs.push(f), kind: "textarea"};
+    say("Monaco 没加载出来（" + e.message + "），先用普通文本框编辑", true);
+  }
+  ed.on(() => { dirty = true; if (!/^Monaco|文本框/.test(g("wb-state").textContent)) say("有未保存的修改"); clearTimeout(prevTimer); prevTimer = setTimeout(renderPreview, 900); });
+  return ed;
+}
+
+/* ---------------- 实时预览 ---------------- */
+function srcdocOf(code) {   // 复用主页面预览用的 ART_PROBE（报错回传 + 沙箱里 localStorage 兜底），只注入到真正的 <head> 后面；
+  // 不用 artSrcdoc：它会往第一个 </body> 字样处塞脚本，而 index.html 自己的 JS 字符串里就有 </body>，会把页面弄坏
+  const probe = (typeof ART_PROBE === "string") ? ART_PROBE : ""; if (!probe) return code;
+  const m = /<head[^>]*>/i.exec(code); if (!m) return probe + code;
+  const at = m.index + m[0].length; return code.slice(0, at) + probe + code.slice(at);
+}
+function renderPreview() { if (!ed) return; g("wb-preview").srcdoc = srcdocOf(ed.get()); }
+function showTab(which) {
+  document.querySelectorAll("#wb .wb-tab").forEach(b => b.classList.toggle("on", b.dataset.wbtab === which));
+  const fr = g("wb-runframe"), res = g("wb-res");
+  g("wb-preview").classList.toggle("on", which === "prev");
+  const frameMode = which === "run" && fr.dataset.live === "1";
+  fr.classList.toggle("on", frameMode); res.classList.toggle("on", which === "run" && !frameMode);
+}
+function card(title, body, bad) {
+  const res = g("wb-res"); g("wb-runframe").dataset.live = "0"; res.innerHTML = "";
+  const h = document.createElement("h4"); h.textContent = title; if (bad) h.className = "bad";
+  const p = document.createElement("pre"); p.textContent = body || ""; res.append(h, p); showTab("run");
+}
+window.addEventListener("message", e => {
+  const f = g("wb-preview"); if (!f || e.source !== f.contentWindow || !e.data || typeof e.data.artErr !== "string") return;
+  say("预览里报错：" + e.data.artErr.slice(0, 160), true);
+});
+
+/* ---------------- 终端（xterm） ---------------- */
+function termW(s) { if (term) term.write(s); else { const pre = g("wb-xterm").querySelector("pre"); if (pre) { pre.textContent += stripAnsi(s); pre.scrollTop = pre.scrollHeight; } } }
+function termLn(s) { termW(s + "\r\n"); }
+async function initTerm() {
+  if (term) return;
+  for (const set of XTERM_SETS) {
+    try {
+      await Promise.all([loadCss(set.css), loadScriptIsolated(set.js)]); await loadScriptIsolated(set.fit);
+      term = new window.Terminal({fontSize: 12, convertEol: true, cursorBlink: true, theme: {background: "#0b1a13", foreground: "#d8ecd9"}});
+      fitAddon = new window.FitAddon.FitAddon(); term.loadAddon(fitAddon);
+      g("wb-xterm").innerHTML = ""; term.open(g("wb-xterm")); fit();
+      term.onData(d => { if (shellIn) shellIn.write(d); });
+      new ResizeObserver(fit).observe(g("wb-xterm"));
+      termLn("\x1b[32m终端就绪\x1b[0m：点右上角「运行」会在浏览器里启动 WebContainer，mount /frontend 并执行 npm install。");
+      return;
+    } catch (_) { term = null; fitAddon = null; }
+  }
+  g("wb-xterm").innerHTML = "<pre></pre>"; termLn("xterm 没加载出来（CDN 不通），终端只显示输出，不能输入。");
+}
+function fit() { try { if (fitAddon) { fitAddon.fit(); if (shell && shell.resize) shell.resize({cols: term.cols, rows: term.rows}); } } catch (_) {} }
+
+/* ---------------- 读 / 写 index.html ---------------- */
+async function loadFile() {
+  say("正在通过 MCP 读取 " + FILE + " …");
+  let text = "", how = "";
+  try {
+    const r = await mcpGet(FILE); if (r.list) throw new Error("get_file 返回的是目录");
+    const c = cleanHtml(r.text, r.sha); text = c.text; curSha = c.sha;
+    if (text.length < 1000 || !/<html/i.test(text)) throw new Error("get_file 返回内容不像 index.html（" + text.length + " 字符）");
+    how = "已从 GitHub " + REPO.branch + " 读取";
+  } catch (e) {
+    try {
+      const rr = await fetch(location.href.split("#")[0], {cache: "no-store"}); if (!rr.ok) throw new Error(rr.status);
+      text = await rr.text(); curSha = null;
+      say("MCP 读取失败（" + e.message + "），已改用当前页面源码；保存时拿不到 sha，可能被拒绝", true);
+      how = "";
+    } catch (_) { say("读取失败：" + e.message, true); return false; }
+  }
+  ed.set(text); clearTimeout(prevTimer); dirty = false; if (how) say(how + "（" + Math.round(text.length / 1024) + " KB）"); renderPreview(); return true;
+}
+let saving = false;
+async function save() {
+  if (!ed || saving) return;
+  const val = ed.get();
+  if (val.length < 2000 || !/<html/i.test(val)) { say("内容看起来不完整（太短或没有 <html>），已拒绝保存", true); return; }
+  if (!confirm("把编辑器里的内容推送到 " + REPO.owner + "/" + REPO.repo + " 的 " + REPO.branch + "：" + FILE + "？\n大小约 " + Math.round(val.length / 1024) + " KB" + (curSha ? "" : "\n（没有拿到文件 sha，MCP 若要求 sha 会失败）"))) return;
+  saving = true; g("wb-save").disabled = true; say("正在推送到 GitHub …");
+  try {
+    const out = await mcpPut(FILE, val, "workbench: update " + FILE + " (" + new Date().toISOString().slice(0, 16).replace("T", " ") + ")", curSha);
+    let ns = null; try { const j = JSON.parse(out); ns = (j.content && j.content.sha) || j.sha || null; } catch (_) {}
+    if (!ns) { try { const r = await mcpGet(FILE); ns = cleanHtml(r.text || "", r.sha).sha; } catch (_) {} }
+    curSha = ns || curSha; dirty = false; say("已保存到 GitHub " + REPO.branch + "（" + new Date().toLocaleTimeString() + "）"); note("已保存到 GitHub");
+  } catch (e) { say("保存失败：" + e.message, true); }
+  finally { saving = false; g("wb-save").disabled = false; }
+}
+
+/* ---------------- 运行：WebContainer boot → mount /frontend → npm install ---------------- */
+async function listFrontend(notes) {
+  const out = []; const seen = new Set();
+  async function walk(path, depth) {
+    let r; try { r = await mcpGet(path); } catch (e) { return false; }
+    if (!r.list) return false;
+    for (const e of r.list) {
+      const name = e.name || String(e.path || "").split("/").pop(); if (!name) continue;
+      const p = e.path || (path + "/" + name), type = String(e.type || "").toLowerCase();
+      if (/dir|tree/.test(type)) { if (depth < 2) await walk(p, depth + 1); continue; }
+      if (seen.has(p)) continue; seen.add(p); out.push({path: p, size: e.size});
+    }
+    return true;
+  }
+  const ok = await walk(DIR, 0);
+  if (!ok) { notes.push("MCP 没法列出 /" + DIR + " 目录，只 mount index.html 和 wrangler.toml"); return [{path: DIR + "/index.html"}, {path: DIR + "/wrangler.toml"}]; }
+  return out;
+}
+async function collectFiles(notes) {
+  const files = {}; let n = 0;
+  for (const f of await listFrontend(notes)) {
+    const rel = f.path.replace(new RegExp("^" + DIR + "/"), "");
+    if (f.path === FILE) { files[rel] = ed.get(); continue; }   // index.html 用编辑器里当前的内容（含未保存修改）
+    if (!TEXT_EXT.test(rel)) { notes.push("跳过 " + rel + "（不是文本文件）"); continue; }
+    if (f.size && f.size > 600000) { notes.push("跳过 " + rel + "（超过 600KB）"); continue; }
+    if (++n > 40) { notes.push("文件太多，只 mount 前 40 个"); break; }
+    try { const r = await mcpGet(f.path); if (typeof r.text === "string") files[rel] = r.text; else notes.push("跳过 " + rel + "（读不到内容）"); }
+    catch (e) { notes.push("跳过 " + rel + "（" + e.message + "）"); }
+  }
+  if (!files["index.html"]) files["index.html"] = ed.get();
+  return files;
+}
+async function ensureWC(log) {
+  if (wc) return wc;
+  if (!window.crossOriginIsolated) {
+    const msg = "当前页面没有跨源隔离（crossOriginIsolated = false），浏览器不允许 WebContainer 使用 SharedArrayBuffer，boot() 会直接失败。\n\n" +
+      "需要让本站（Cloudflare Pages 的 frontend 部署）返回这两个响应头：\n  Cross-Origin-Opener-Policy: same-origin\n  Cross-Origin-Embedder-Policy: credentialless（或 require-corp）\n\n" +
+      "加好重新部署后，再点「运行」。";
+    termLn("\x1b[31m✗ 无法 boot()：页面未跨源隔离\x1b[0m"); termLn(msg.replace(/\n/g, "\r\n")); card("无法启动 WebContainer", msg, true); return null;
+  }
+  termLn("正在加载 @webcontainer/api …");
+  let last;
+  for (const u of WC_MODULES) { try { wcMod = await withTimeout(import(u), 25000, "加载 WebContainer API"); break; } catch (e) { last = e; } }
+  if (!wcMod || !wcMod.WebContainer) { const m = "WebContainer API 加载失败：" + (last && last.message || "CDN 不通"); termLn("\x1b[31m✗ " + m + "\x1b[0m"); card("无法启动 WebContainer", m, true); return null; }
+  let coep = ""; try { const h = await fetch(location.href.split("#")[0], {method: "HEAD", cache: "no-store"}); coep = (h.headers.get("cross-origin-embedder-policy") || "").split(";")[0].trim(); } catch (_) {}
+  termLn("正在 boot() …");
+  try { wc = await withTimeout(wcMod.WebContainer.boot(coep === "credentialless" ? {coep: "credentialless"} : {}), 60000, "boot()"); }
+  catch (e) { const m = "boot() 失败：" + e.message; termLn("\x1b[31m✗ " + m + "\x1b[0m"); card("WebContainer boot() 失败", m, true); wc = null; return null; }
+  wc.on("server-ready", (port, url) => {
+    const fr = g("wb-runframe"); fr.dataset.live = "1"; fr.src = url; showTab("run"); termLn("\x1b[32m✓ 服务已就绪：端口 " + port + "\x1b[0m");
+    if (serverWait) { serverWait(url); serverWait = null; }
+  });
+  wc.on("error", e => termLn("\x1b[31mWebContainer 错误：" + (e && e.message || e) + "\x1b[0m"));
+  return wc;
+}
+function pipeOut(proc, sink) { proc.output.pipeTo(new WritableStream({write(d) { termW(d); if (sink) sink.text += d; }})).catch(() => {}); }
+async function run() {
+  if (running || !ed) return; running = true; g("wb-run").disabled = true; showTab("run");
+  card("正在运行…", "准备 WebContainer"); say("正在运行 …");
+  try {
+    termLn("\r\n\x1b[36m$ 运行：boot → mount /" + DIR + " → npm install\x1b[0m");
+    if (!(await ensureWC())) { say("运行失败，详情见终端 / 右侧", true); return; }
+    procs.forEach(p => { try { p.kill(); } catch (_) {} }); procs = []; if (shell) { try { shell.kill(); } catch (_) {} shell = null; shellIn = null; }
+    const notes = [], files = await collectFiles(notes);
+    let genPkg = false;
+    if (!files["package.json"]) { genPkg = true; files["package.json"] = JSON.stringify({name: "frontend-preview", private: true, scripts: {start: "serve -l 3000 ."}, dependencies: {serve: "^14.2.0"}}, null, 2); }
+    await wc.mount(toTree(files));
+    termLn("已 mount " + Object.keys(files).length + " 个文件：" + Object.keys(files).join("、"));
+    notes.forEach(n => termLn("\x1b[33m· " + n + "\x1b[0m"));
+    if (genPkg) termLn("\x1b[33m· /" + DIR + " 里没有 package.json，临时生成一个（只在浏览器容器里，不写回仓库）：用 serve 起静态服务\x1b[0m");
+    const inst = {text: ""}, p1 = await wc.spawn("npm", ["install", "--no-audit", "--no-fund"]); procs.push(p1); pipeOut(p1, inst);
+    const code = await p1.exit; const tail = stripAnsi(inst.text).split("\n").map(s => s.trimEnd()).filter(Boolean).slice(-40).join("\n");
+    if (code !== 0) { termLn("\x1b[31m✗ npm install 失败，退出码 " + code + "\x1b[0m"); card("npm install 失败（退出码 " + code + "）", tail, true); say("npm install 失败", true); return; }
+    termLn("\x1b[32m✓ npm install 完成\x1b[0m");
+    let start = false; try { start = !!(JSON.parse(files["package.json"]).scripts || {}).start; } catch (_) {}
+    if (!start) { card("npm install 完成", (tail || "（无输出）") + "\n\n/package.json 里没有 start 脚本，所以没有启动服务。"); say("npm install 完成"); }
+    else {
+      card("npm install 完成，正在启动服务…", tail);
+      const ready = new Promise(ok => { serverWait = ok; }), p2 = await wc.spawn("npm", ["run", "start"]); procs.push(p2); pipeOut(p2);
+      const url = await Promise.race([ready, new Promise(ok => setTimeout(() => ok(null), 60000))]);
+      if (!url) { serverWait = null; card("npm install 完成，但服务 60 秒内没有监听端口", tail, true); say("服务没起来", true); }
+      else say("运行完成，结果在右侧「运行结果」");
+    }
+    try {   // 交还一个可输入的 shell
+      shell = await wc.spawn("jsh", {terminal: {cols: term ? term.cols : 80, rows: term ? term.rows : 24}});
+      shell.output.pipeTo(new WritableStream({write(d) { termW(d); }})).catch(() => {}); shellIn = shell.input.getWriter();
+    } catch (e) { termLn("（交互 shell 没起来：" + e.message + "）"); }
+  } catch (e) { termLn("\x1b[31m✗ " + e.message + "\x1b[0m"); card("运行出错", e.message, true); say("运行出错：" + e.message, true); }
+  finally { running = false; g("wb-run").disabled = false; }
+}
+
+/* ---------------- 打开 / 关闭 ---------------- */
+async function openWb() {
+  document.body.classList.add("wb-open"); g("wb").setAttribute("aria-hidden", "false"); amdOn();
+  if (inited) { fit(); return; }
+  inited = true; say("正在加载编辑器和终端 …");
+  await Promise.all([initEditor(), initTerm()]); fit();
+  await loadFile();
+}
+function closeWb() { document.body.classList.remove("wb-open"); g("wb").setAttribute("aria-hidden", "true"); amdOff(); }
+g("wb-open").addEventListener("click", openWb);
+g("wb-close").addEventListener("click", closeWb);
+g("wb-save").addEventListener("click", save);
+g("wb-run").addEventListener("click", run);
+g("wb-reload").addEventListener("click", () => { if (!ed) return; if (dirty && !confirm("重新读取会丢掉未保存的修改，继续？")) return; loadFile(); });
+g("wb-prev-refresh").addEventListener("click", renderPreview);
+g("wb-term-clear").addEventListener("click", () => { if (term) term.clear(); else { const pre = g("wb-xterm").querySelector("pre"); if (pre) pre.textContent = ""; } });
+document.querySelectorAll("#wb .wb-tab").forEach(b => b.addEventListener("click", () => showTab(b.dataset.wbtab)));
+document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s" && document.body.classList.contains("wb-open")) { e.preventDefault(); save(); } });
 })();
 </script>
 </body></html>
