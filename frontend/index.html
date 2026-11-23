@@ -624,8 +624,9 @@ mark.hit-mark{background:#ffe58a;color:inherit;border-radius:3px;padding:0 1px}
 .om-ic{display:inline-flex;width:15px;height:15px;vertical-align:-3px;margin-right:4px}
 .om-ic svg{width:100%;height:100%;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 button.om-ic-only .om-ic{margin:0;width:16px;height:16px}
+.wb-auth-x{position:absolute;top:10px;right:10px;width:30px;height:30px;padding:0;border-radius:9px;background:#eef4ec;color:#718674;font-size:20px;line-height:1;box-shadow:none}.wb-auth-x:hover{background:#e2eee0;color:#3b6541;box-shadow:none}#auth-card{position:relative}
 /* ---- 开发台（Monaco 编辑器 + 实时预览 + WebContainer 终端）---- */
-#wb{position:fixed;inset:0;z-index:110;display:none;flex-direction:column;background:#10271e;color:#e3f1df}
+#wb{position:fixed;inset:0;z-index:300;display:none;flex-direction:column;background:#10271e;color:#e3f1df}
 .wb-open #wb{display:flex}
 #wb-bar{flex:0 0 46px;display:flex;align-items:center;gap:8px;padding:0 12px;background:#10291f;border-bottom:1px solid #1d4030;overflow:hidden}
 #wb-bar strong{font-size:14px;white-space:nowrap}
@@ -5874,6 +5875,14 @@ g("wb-prev-refresh").addEventListener("click", renderPreview);
 g("wb-term-clear").addEventListener("click", () => { if (term) term.clear(); else { const pre = g("wb-xterm").querySelector("pre"); if (pre) pre.textContent = ""; } });
 document.querySelectorAll("#wb .wb-tab").forEach(b => b.addEventListener("click", () => showTab(b.dataset.wbtab)));
 document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s" && document.body.classList.contains("wb-open")) { e.preventDefault(); save(); } });
+/* 登录框加关闭：右上角 × 或点框外都能关（开发台层级也已高于登录遮罩） */
+(function () {
+  const m = g("auth-mask"), c = g("auth-card"); if (!m || !c) return;
+  const x = document.createElement("button"); x.type = "button"; x.className = "wb-auth-x"; x.setAttribute("aria-label", "关闭登录框"); x.title = "关闭"; x.textContent = "×";
+  const close = () => m.classList.add("hidden");
+  x.addEventListener("click", close); c.appendChild(x);
+  m.addEventListener("mousedown", e => { if (e.target === m) close(); });
+})();
 })();
 </script>
 </body></html>
