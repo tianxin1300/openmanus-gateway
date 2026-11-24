@@ -1,4 +1,5 @@
 // openmanus-gateway v99y：一个脑子。飞书消息不再自己猜意图，直接调前端同一个 runWorkChat（同一份 WORK_SYSTEM_PROMPT / 同一个模型轮换 / 同一张 FS_TOOLS）。选哪个工具完全由模型自己定：代码里没有关键词分流、没有白名单、没有预调工具，只给任务结构（工具表 + 会话态 + 多轮循环 + 最终自由文本）。删掉飞书先猜意图那层 / 关键词 if-else / 写文档先搜一遍 / 待办提醒与待办表混用。
+// v100：新增「代码助手」（CODE_SYSTEM_PROMPT / codeLLM / codeAssist，OpenRouter 免费代码模型 → Groq llama-3.3-70b 兜底；可经 GitHub REST 读写文件）。其余代码一行没改。
 // v99w：1101 已定位修好，恢复模块顶层直接执行；表全从 FEISHU_BITABLE_TABLES 变量读；读信类代码整体移除。
 // v99u：写操作一轮超过 FS_MAX_WRITES(10) 次不直接停，改成问用户“还要继续写吗”，确认后接着写。
 // v99u 补丁：删 fsContentCheck 和 precheck 闸；删「模型没给正文就让系统起草」；工具只收 [标题、正文]，正文有没有由模型自己判断（缺参数只如实退回，不数字数、不搜关键词）。
@@ -387,6 +388,111 @@ const WORK_MODELS = {
   openrouter: ["nvidia/nemotron-3-ultra:free", "google/gemma-3-27b-it:free", "nvidia/nemotron-3.5-super-vl:free" /* 看图强 */, "cohere/north-mini-code:free" /* 写代码强 */, "google/gemma-4-26b-a4b:free" /* 快，随手问 */, "meta-llama/llama-3.3-70b-instruct:free"], // v29：前端下拉直接读这张表（/api/models），以后加模型只改这里
   gemini: ["gemini-3.8-flash"]   // 2.0-flash 已下线；2.5-flash 对新用户也已下线（404 no longer available to new users），只留 3.8-flash
 };
+// ===== v100：代码助手（只加不改）=====
+// 不动 WORK_SYSTEM_PROMPT（飞书 / 待办 / 地图 / 文件解读都靠它）和原来的聊天模型轮换。
+// 入口 1：前端「模型」选 OpenRouter → 子模型选「代码助手」；入口 2：POST /api/code。两个入口都要登录。
+// 只用已有的 OPENROUTER_KEYS / GROQ_KEYS / GH_PAT，不需要任何新 API。
+// 推送相关变量（Worker 环境变量，都可选）：CODE_OWNER=能推送的登录账号（默认 AGENT_USER）；CODE_REPOS=允许读写的仓库，逗号分隔（默认 tianxin1300/openmanus-gateway）；
+//   CODE_PUSH_BRANCH=推到哪个分支（默认 main）；CODE_PROTECT=0 才允许推 worker.js / wrangler.toml；CODE_MODELS=想优先用的 OpenRouter 模型名，逗号分隔。
+const CODE_MODEL_ID = "代码助手";
+const CODE_SYSTEM_PROMPT = "你是一个专业的代码助手，只负责写代码。用户说什么功能，你就直接给完整、可运行的代码，不要只讲思路；改完直接给完整代码（整份文件，不要省略，不要写“其余不变”）。不要删掉原有功能。代码放在带语言标记的 ``` 代码块里，代码块外最多写一两句说明。";
+const CODE_OR_MODELS = ["cohere/north-mini-code:free", "recursive/flint-v1.0:free"];   // OpenRouter 免费代码模型；OpenRouter 常下架免费模型，所以失败会自动换下一个，最后落到 Groq
+const CODE_GROQ_MODELS = ["llama-3.3-70b-versatile"];
+const CODE_PUSH_LIMIT = 40000;   // 被改的原文件超过这个字数，不让模型整份重写，也不推送
+async function codeLLM(env, msgs) {
+  const tried = [], t0 = Date.now(), budget = 110000, targets = [];
+  for (const m of [...new Set([...getKeys(env.CODE_MODELS), ...CODE_OR_MODELS])]) targets.push({ name: "OpenRouter", url: "https://openrouter.ai/api/v1/chat/completions", keys: getKeys(env.OPENROUTER_KEYS), model: m });
+  for (const m of CODE_GROQ_MODELS) targets.push({ name: "Groq", url: "https://api.groq.com/openai/v1/chat/completions", keys: getKeys(env.GROQ_KEYS), model: m });
+  for (const t of targets) {
+    for (const key of t.keys) {
+      const left = budget - (Date.now() - t0); if (left < 8000) return { text: "", tried };
+      try {
+        const r = await fetch(t.url, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + key }, body: JSON.stringify({ model: t.model, messages: msgs, temperature: 0.2, max_tokens: 16000 }), signal: T(Math.min(70000, left)) });
+        if (!r.ok) { tried.push(t.name + "·" + t.model + " HTTP " + r.status); if (r.status === 404) break; continue; }
+        const j = await r.json().catch(() => null), c = j && j.choices && j.choices[0];
+        const text = c && c.message && typeof c.message.content === "string" ? c.message.content.trim() : "";
+        if (!text) { tried.push(t.name + "·" + t.model + " 空回复"); continue; }
+        return { text, from: t.name + " · " + t.model, truncated: c.finish_reason === "length", tried };
+      } catch (e) { tried.push(t.name + "·" + t.model + " " + (e && e.name === "TimeoutError" ? "超时" : String(e && e.message || e).slice(0, 60))); }
+    }
+  }
+  return { text: "", tried };
+}
+// GitHub 读写：用 REST（Worker 里不能用 MCP），等价于 MCP 的 get_file / update_file，用你已有的 GH_PAT（要有 Contents 写权限才能推送）
+const codeGhHeaders = (env) => ({ Authorization: "Bearer " + env.GH_PAT, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "openmanus-gateway" });
+const codeGhUrl = (repo, path) => "https://api.github.com/repos/" + repo + "/contents/" + path.split("/").map(encodeURIComponent).join("/");
+const codeRepoOk = (env, repo) => /^[A-Za-z0-9_.\-]+\/[A-Za-z0-9_.\-]+$/.test(String(repo)) && getKeys(env.CODE_REPOS || "tianxin1300/openmanus-gateway").map((x) => x.toLowerCase()).includes(String(repo).toLowerCase());
+const codePathOk = (p) => /^[A-Za-z0-9._\-\/]{1,200}$/.test(String(p)) && !String(p).split("/").some((s) => s === "" || s === "." || s === "..");
+async function codeGetFile(env, repo, path, ref) {   // = MCP get_file
+  if (!env.GH_PAT) return { ok: false, msg: "GH_PAT 没有配置" };
+  if (!codeRepoOk(env, repo)) return { ok: false, msg: "仓库 " + repo + " 不在允许名单里（Worker 变量 CODE_REPOS，逗号分隔）" };
+  if (!codePathOk(path)) return { ok: false, msg: "文件路径不合法" };
+  const r = await fetch(codeGhUrl(repo, path) + (ref ? "?ref=" + encodeURIComponent(ref) : ""), { headers: codeGhHeaders(env), signal: T(15000) });
+  if (r.status === 404) return { ok: true, exists: false };
+  if (!r.ok) return { ok: false, msg: "GitHub 返回 " + r.status };
+  const j = await r.json().catch(() => null);
+  if (!j || Array.isArray(j) || j.type !== "file" || typeof j.content !== "string" || !j.content) return { ok: false, msg: "这个路径不是单个文件，或文件超过 1MB" };
+  const bin = atob(j.content.replace(/\n/g, ""));
+  return { ok: true, exists: true, sha: j.sha, size: j.size, text: new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))) };
+}
+async function codeUpdateFile(env, repo, path, text, message, branch, sha) {   // = MCP update_file（文件不存在就新建）
+  const bytes = new TextEncoder().encode(text); let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  const body = { message, content: btoa(s), branch }; if (sha) body.sha = sha;
+  const r = await fetch(codeGhUrl(repo, path), { method: "PUT", headers: { ...codeGhHeaders(env), "Content-Type": "application/json" }, body: JSON.stringify(body), signal: T(20000) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) return { ok: false, msg: "GitHub 返回 " + r.status + "：" + String(j.message || "").slice(0, 120) };
+  return { ok: true, url: (j.commit && j.commit.html_url) || "" };
+}
+function codePushGuard(env, user, repo, path) {   // 返回空串 = 允许；否则是不能推的原因
+  const owner = String(env.CODE_OWNER || env.AGENT_USER || "").trim();
+  if (!env.GH_PAT) return "GH_PAT 没有配置";
+  if (!owner) return "没配置 CODE_OWNER（或 AGENT_USER），为安全起见不开放推送";
+  if (String(user) !== owner) return "只有主人账号能推送";
+  if (!codeRepoOk(env, repo)) return "仓库 " + repo + " 不在允许名单里（Worker 变量 CODE_REPOS，逗号分隔）";
+  if (!codePathOk(path)) return "文件路径不合法";
+  if (env.CODE_PROTECT !== "0" && /^worker\.js$|(^|\/)wrangler\.toml$|^\.github\//i.test(path)) return "这个文件受保护：推到 main 会让 Cloudflare 重新部署网关本身，改坏就整个挂了（确实要放开：Worker 变量 CODE_PROTECT=0）";
+  return "";
+}
+// 口令：消息里写 “@文件 owner/仓库:路径” 先读出当前文件给模型看；再写 “@推送” 才会把代码块推上去（不写不会推）
+function codeParse(raw) {
+  let repo = "", path = "", push = false;
+  let t = String(raw || "").replace(/@(?:文件|file)\s+([A-Za-z0-9_.\-]+\/[A-Za-z0-9_.\-]+):(\S+)/i, (_, r, p) => { repo = r; path = p; return ""; });
+  t = t.replace(/@(?:推送|push)(?![A-Za-z])/i, () => { push = true; return ""; });
+  return { text: t.trim(), repo, path, push };
+}
+function codeBlocks(text) { const out = [], re = /```[^\n`]*\n([\s\S]*?)```/g; let m; while ((m = re.exec(String(text)))) out.push({ code: m[1] }); return out; }
+async function codeAssist(env, user, raw, history) {
+  const d = codeParse(raw), notes = [], branch = String(env.CODE_PUSH_BRANCH || "main");
+  if (!d.text) return { ok: false, reply: "请告诉我要写什么代码。" };
+  let cur = null, sys = CODE_SYSTEM_PROMPT;
+  if (d.repo && d.path) {
+    const g = await codeGetFile(env, d.repo, d.path, branch);
+    if (!g.ok) return { ok: false, reply: "❌ 读文件失败：" + g.msg };
+    if (g.exists) { cur = g; sys += "\n\n【当前文件 " + d.path + "】修改时保留原有全部功能，输出整份新文件：\n```\n" + g.text.slice(0, 60000) + "\n```"; }
+    else notes.push("（" + d.path + " 在 " + d.repo + "@" + branch + " 里还不存在，按新文件处理）");
+  }
+  const hist = (Array.isArray(history) ? history : []).filter((m) => m && (m.role === "user" || m.role === "assistant")).map((m) => ({ role: m.role, content: textOf(m.content).slice(0, 12000) })).filter((m) => m.content);
+  while (hist.length && hist[hist.length - 1].role === "user") hist.pop();   // 最后一条用户话用去掉口令后的 d.text 替代
+  const r = await codeLLM(env, [{ role: "system", content: sys }, ...hist.slice(-10), { role: "user", content: d.text }]);
+  if (!r.text) return { ok: false, reply: "❌ 代码模型都没接上：" + (r.tried.join("；") || "没有可用的 OPENROUTER_KEYS / GROQ_KEYS") };
+  let pushed = false;
+  if (d.push) {
+    const best = codeBlocks(r.text).sort((a, b) => b.code.length - a.code.length)[0];
+    const bad = d.repo && d.path ? codePushGuard(env, user, d.repo, d.path) : "要推送请写明目标，格式：@文件 owner/仓库:路径";
+    if (bad) notes.push("⚠️ 没推送：" + bad);
+    else if (r.truncated) notes.push("⚠️ 没推送：模型输出被截断，代码不完整");
+    else if (!best || best.code.trim().length < 20) notes.push("⚠️ 没推送：回复里没有找到代码块");
+    else if (cur && cur.text.length > CODE_PUSH_LIMIT) notes.push("⚠️ 没推送：原文件太大（" + cur.text.length + " 字），模型不能安全地整份重写");
+    else if (cur && best.code.length < cur.text.length * 0.5) notes.push("⚠️ 没推送：新代码不到原文件的一半，疑似删掉了原有功能");
+    else {
+      const up = await codeUpdateFile(env, d.repo, d.path, best.code.replace(/\s+$/, "") + "\n", "AI: " + d.text.replace(/\s+/g, " ").slice(0, 60), branch, cur ? cur.sha : "");
+      pushed = !!up.ok;
+      notes.push(up.ok ? "✅ 已推送到 " + d.repo + "@" + branch + "：" + d.path + (up.url ? "\n" + up.url : "") : "❌ 推送失败：" + up.msg);
+    }
+  }
+  return { ok: true, pushed, model: r.from, reply: r.text + (notes.length ? "\n\n" + notes.join("\n") : "") + "\n\n（" + r.from + "）" };
+}
 // 前端带 stream:true → SSE 流式(每 5 秒心跳)；老前端不带 → 一整段 JSON(等待时发空格保活)
 // 需要：KV 绑定(变量名 KV)、REG_TOKEN；可选：GROQ_KEYS / OPENROUTER_KEYS / GEMINI_KEYS(逗号分隔)、AGG_URL、
 //       REQUIRE_LOGIN=1(开启后对话也必须带登录 token)
@@ -7719,7 +7825,7 @@ async function handle(request, env, ctx) {
       return json({ ok: true, providers: [
         { id: "Groq", name: "Groq", models: WORK_MODELS.groq },
         { id: "Gemini", name: "Gemini", models: WORK_MODELS.gemini },
-        { id: "OpenRouter", name: "OpenRouter", models: WORK_MODELS.openrouter },
+        { id: "OpenRouter", name: "OpenRouter", models: [...WORK_MODELS.openrouter, CODE_MODEL_ID] },
         { id: "英伟达", name: "英伟达", models: ex("NVIDIA") },
         { id: "智谱", name: "智谱", models: ex("Zhipu") },
         { id: "Poe", name: "Poe", models: poeModels(env) },
@@ -7963,6 +8069,21 @@ async function handle(request, env, ctx) {
       return json({ ok: true, build: FS_BUILD, reply: r.reply || "", awaiting: !!r.awaiting, confirm: r.confirmQ || "", tools: (r.steps || []).map((x) => x.tool), steps: (r.steps || []).map((x) => ({ tool: x.tool, ok: !!x.ok, held: !!x.held, text: String(x.text || "").slice(0, 1200) })) });
     }
 
+    // ---- v100：代码助手 HTTP 接口（要登录）：POST /api/code {text, token?, history?}；GET /api/code/file?repo=&path=&ref= ----
+    if (path === "/api/code" && request.method === "POST") {
+      const b = await request.json().catch(() => ({}));
+      const user = await userFromReq(request, env, url, String(b.token || ""));
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeAssist(env, user, String(b.text == null ? (b.prompt || "") : b.text), b.history);
+      return json(r, r.ok ? 200 : 502);
+    }
+    if (path === "/api/code/file" && request.method === "GET") {
+      const user = await userFromReq(request, env, url, "");
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const g = await codeGetFile(env, String(url.searchParams.get("repo") || ""), String(url.searchParams.get("path") || ""), String(url.searchParams.get("ref") || ""));
+      return json(g.ok ? { ok: true, exists: !!g.exists, size: g.size || 0, content: g.text || "" } : g, g.ok ? 200 : 400);
+    }
+
     // ---- 对话（SSE 流式）----
     if (path === "/v1/chat/completions" && request.method === "POST") {
       if (env.REQUIRE_LOGIN === "1" && !(await userFromReq(request, env, url))) return json({ error: "请先登录", choices: [{ message: { role: "assistant", content: "❌ 请先登录" } }] }, 401);
@@ -8016,6 +8137,16 @@ async function handle(request, env, ctx) {
           // GitHub 拦截：用户说搜 GitHub，就直接调 GitHub API，不让模型编数据
           const lastUser = [...msgs].reverse().find(m=>m.role==="user");
           const lastText = textOf(lastUser?.content||"");
+          // v100：代码助手——前端「OpenRouter → 代码助手」。只走代码模型和代码提示词，不碰飞书 / 待办那套 WORK_SYSTEM_PROMPT，也不影响原来的聊天模型
+          if (normProvider(b.provider) === "OpenRouter" && String(b.model || "").trim() === CODE_MODEL_ID) {
+            try {
+              const cu = await userFromReq(request, env, url, String(b.token || ""));
+              if (!cu) await emit("请先登录后再用代码助手。");
+              else await emit((await codeAssist(env, cu, lastText, msgs)).reply);
+            } catch (e) { await emit("代码助手出错：" + String(e && e.message || e).slice(0, 200)); }
+            if (wantStream) await write("data: [DONE]\n\n"); else await write(JSON.stringify({ choices: [{ message: { role: "assistant", content: collected || "(空回复)" } }] }));
+            clearInterval(ping); await writer.close().catch(() => {}); return;
+          }
           // v94：口令“测试早报”——马上推 1 条早报到飞书，不等 8 点
           if (/^\s*测试早报\s*$/.test(lastText)) {
             try { const r = await agMorningBrief(env, { force: true }); await emit(r.ok ? "✅ 早报已推送到飞书群（下面是推送的内容）\n\n" + r.preview : "❌ 早报没推出去：" + r.msg + (r.preview ? "\n\n（本来要推的内容）\n\n" + r.preview : "")); }
