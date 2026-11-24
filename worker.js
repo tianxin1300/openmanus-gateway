@@ -1,5 +1,6 @@
 // openmanus-gateway v99y：一个脑子。飞书消息不再自己猜意图，直接调前端同一个 runWorkChat（同一份 WORK_SYSTEM_PROMPT / 同一个模型轮换 / 同一张 FS_TOOLS）。选哪个工具完全由模型自己定：代码里没有关键词分流、没有白名单、没有预调工具，只给任务结构（工具表 + 会话态 + 多轮循环 + 最终自由文本）。删掉飞书先猜意图那层 / 关键词 if-else / 写文档先搜一遍 / 待办提醒与待办表混用。
 // v100：新增「代码助手」（CODE_SYSTEM_PROMPT / codeLLM / codeAssist，OpenRouter 免费代码模型 → Groq llama-3.3-70b 兜底；可经 GitHub REST 读写文件）。其余代码一行没改。
+// v102/v103：新增备用模型「肖恩AI」(go.toter.me，OpenAI 兼容)：环境变量 TOTER_API_KEY（必填）/ TOTER_BASE（主接口）/ TOTER_BASE_BACKUP（备用接口）/ TOTER_MODELS。排在火山豆包之后，前面的都不通才用。口令“测试备用 toter”可单独测试。
 // v99w：1101 已定位修好，恢复模块顶层直接执行；表全从 FEISHU_BITABLE_TABLES 变量读；读信类代码整体移除。
 // v99u：写操作一轮超过 FS_MAX_WRITES(10) 次不直接停，改成问用户“还要继续写吗”，确认后接着写。
 // v99u 补丁：删 fsContentCheck 和 precheck 闸；删「模型没给正文就让系统起草」；工具只收 [标题、正文]，正文有没有由模型自己判断（缺参数只如实退回，不数字数、不搜关键词）。
@@ -392,15 +393,16 @@ const WORK_MODELS = {
 // 不动 WORK_SYSTEM_PROMPT（飞书 / 待办 / 地图 / 文件解读都靠它）和原来的聊天模型轮换。
 // 入口 1：前端「模型」选 OpenRouter → 子模型选「代码助手」；入口 2：POST /api/code。两个入口都要登录。
 // 只用已有的 OPENROUTER_KEYS / GROQ_KEYS / GH_PAT，不需要任何新 API。
+// v101：直接说“改就医伴侣 …” / “改聚合体 …”就自动读该项目的前端 + 后端（只挑相关片段给模型，模型只回修改块），改完问“要推上去吗？”，回“推”才推、回“不推”就丢弃。
 // 推送相关变量（Worker 环境变量，都可选）：CODE_OWNER=能推送的登录账号（默认 AGENT_USER）；CODE_REPOS=允许读写的仓库，逗号分隔（默认 tianxin1300/openmanus-gateway）；
-//   CODE_PUSH_BRANCH=推到哪个分支（默认 main）；CODE_PROTECT=0 才允许推 worker.js / wrangler.toml；CODE_MODELS=想优先用的 OpenRouter 模型名，逗号分隔。
+//   CODE_PUSH_BRANCH=推到哪个分支（默认 main）；CODE_PROTECT=1 才保护 worker.js 不被推（wrangler.toml / .github 永远不推）；CODE_MODELS=想优先用的 OpenRouter 模型名，逗号分隔。
 const CODE_MODEL_ID = "代码助手";
 const CODE_SYSTEM_PROMPT = "你是一个专业的代码助手，只负责写代码。用户说什么功能，你就直接给完整、可运行的代码，不要只讲思路；改完直接给完整代码（整份文件，不要省略，不要写“其余不变”）。不要删掉原有功能。代码放在带语言标记的 ``` 代码块里，代码块外最多写一两句说明。";
 const CODE_OR_MODELS = ["cohere/north-mini-code:free", "recursive/flint-v1.0:free"];   // OpenRouter 免费代码模型；OpenRouter 常下架免费模型，所以失败会自动换下一个，最后落到 Groq
 const CODE_GROQ_MODELS = ["llama-3.3-70b-versatile"];
 const CODE_PUSH_LIMIT = 40000;   // 被改的原文件超过这个字数，不让模型整份重写，也不推送
-async function codeLLM(env, msgs) {
-  const tried = [], t0 = Date.now(), budget = 110000, targets = [];
+async function codeLLM(env, msgs, budgetMs) {
+  const tried = [], t0 = Date.now(), budget = Math.max(15000, Number(budgetMs) || 110000), targets = [];
   for (const m of [...new Set([...getKeys(env.CODE_MODELS), ...CODE_OR_MODELS])]) targets.push({ name: "OpenRouter", url: "https://openrouter.ai/api/v1/chat/completions", keys: getKeys(env.OPENROUTER_KEYS), model: m });
   for (const m of CODE_GROQ_MODELS) targets.push({ name: "Groq", url: "https://api.groq.com/openai/v1/chat/completions", keys: getKeys(env.GROQ_KEYS), model: m });
   for (const t of targets) {
@@ -421,7 +423,7 @@ async function codeLLM(env, msgs) {
 // GitHub 读写：用 REST（Worker 里不能用 MCP），等价于 MCP 的 get_file / update_file，用你已有的 GH_PAT（要有 Contents 写权限才能推送）
 const codeGhHeaders = (env) => ({ Authorization: "Bearer " + env.GH_PAT, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "openmanus-gateway" });
 const codeGhUrl = (repo, path) => "https://api.github.com/repos/" + repo + "/contents/" + path.split("/").map(encodeURIComponent).join("/");
-const codeRepoOk = (env, repo) => /^[A-Za-z0-9_.\-]+\/[A-Za-z0-9_.\-]+$/.test(String(repo)) && getKeys(env.CODE_REPOS || "tianxin1300/openmanus-gateway").map((x) => x.toLowerCase()).includes(String(repo).toLowerCase());
+const codeRepoOk = (env, repo) => /^[A-Za-z0-9_.\-]+\/[A-Za-z0-9_.\-]+$/.test(String(repo)) && getKeys(env.CODE_REPOS || "tianxin1300/openmanus-gateway,tianxin1300/jiuyibanlv").map((x) => x.toLowerCase()).includes(String(repo).toLowerCase());
 const codePathOk = (p) => /^[A-Za-z0-9._\-\/]{1,200}$/.test(String(p)) && !String(p).split("/").some((s) => s === "" || s === "." || s === "..");
 async function codeGetFile(env, repo, path, ref) {   // = MCP get_file
   if (!env.GH_PAT) return { ok: false, msg: "GH_PAT 没有配置" };
@@ -451,7 +453,8 @@ function codePushGuard(env, user, repo, path) {   // 返回空串 = 允许；否
   if (String(user) !== owner) return "只有主人账号能推送";
   if (!codeRepoOk(env, repo)) return "仓库 " + repo + " 不在允许名单里（Worker 变量 CODE_REPOS，逗号分隔）";
   if (!codePathOk(path)) return "文件路径不合法";
-  if (env.CODE_PROTECT !== "0" && /^worker\.js$|(^|\/)wrangler\.toml$|^\.github\//i.test(path)) return "这个文件受保护：推到 main 会让 Cloudflare 重新部署网关本身，改坏就整个挂了（确实要放开：Worker 变量 CODE_PROTECT=0）";
+  if (/(^|\/)wrangler\.toml$|^\.github\//i.test(path)) return "部署配置文件（wrangler.toml / .github）不让 AI 推送，请手动改";
+  if (env.CODE_PROTECT === "1" && /^worker\.js$/i.test(path)) return "worker.js 受保护（Worker 变量 CODE_PROTECT=1）；去掉这个变量才能推";
   return "";
 }
 // 口令：消息里写 “@文件 owner/仓库:路径” 先读出当前文件给模型看；再写 “@推送” 才会把代码块推上去（不写不会推）
@@ -493,10 +496,154 @@ async function codeAssist(env, user, raw, history) {
   }
   return { ok: true, pushed, model: r.from, reply: r.text + (notes.length ? "\n\n" + notes.join("\n") : "") + "\n\n（" + r.from + "）" };
 }
+// ===== v101：说“改就医伴侣 / 改聚合体”→ 自动读前端+后端 → 出修改块 → 问“要推上去吗？” → 回“推”才推 =====
+const CODE_PROJECTS = [
+  { names: ["就医伴侣"], repo: "tianxin1300/jiuyibanlv", files: ["frontend/index.html", "worker.js"] },
+  { names: ["聚合体"], repo: "tianxin1300/openmanus-gateway", files: ["frontend/index.html", "worker.js"] }
+];
+const CODE_EDIT_RE = /^\s*(?:请|帮我|麻烦你?)?\s*(?:修改|改一下|改)\s*(就医伴侣|聚合体)\s*[,，:：、]?\s*([\s\S]*)$/;
+const CODE_CONFIRM_RE = /^\s*(推上去|推吧|确认推|推|不推|别推|取消)\s*[。.!！~]*\s*$/;
+const codeShortcutKind = (t) => { t = String(t || ""); return CODE_CONFIRM_RE.test(t) ? "confirm" : CODE_EDIT_RE.test(t) ? "edit" : ""; };
+function codeEditRules(proj) {
+  return "你是一个专业的代码助手，只负责写代码，用户说什么功能你就直接改，不要只讲思路。你现在在改「" + proj.names[0] + "」项目（仓库 " + proj.repo + "，文件：" + proj.files.join("、") + "）。文件很大，用户消息里只给了和需求最相关的片段，不能整份重写。改动一律用修改块，格式严格如下，可以有多个块、可以改多个文件：\n<<<<<<< SEARCH 文件路径\n（原文件里一字不差的连续片段，1–8 行，必须在该文件里唯一，可以只是一行的一部分）\n=======\n（替换后的完整内容）\n>>>>>>> REPLACE\n要新增代码：SEARCH 写插入位置附近的一两行原文，REPLACE 里把这几行原样保留再加上新代码。文件路径只能用上面列出的路径。不要删掉原有功能，不要改和需求无关的地方。块外只写一两句话说明改了什么。如果给的片段不够判断，不要瞎猜，整条回复只写一行：NEED_MORE: 关键词1, 关键词2（要去文件里找的函数名 / 变量名 / 界面上的文字）。";
+}
+function codeChunks(text) {
+  const out = []; let s = 0; const n = text.length;
+  while (s < n) { let e = text.indexOf("\n", s + 3000); e = (e < 0 || e - s > 4500) ? Math.min(n, s + 4000) : e + 1; out.push([s, e]); s = e; }
+  return out;
+}
+function codeKeywords(text, extra) {
+  const m = new Map(), t = String(text).slice(0, 400);
+  for (const x of t.match(/[A-Za-z_$][A-Za-z0-9_$\-\.\/]{2,}/g) || []) m.set(x.toLowerCase(), 10);
+  for (const s of t.match(/[\u4e00-\u9fa5]{2,}/g) || []) for (let k = 2; k <= 4; k++) for (let i = 0; i + k <= s.length; i++) { const w = s.slice(i, i + k); if (!m.has(w)) m.set(w, k === 2 ? 1 : k === 3 ? 2 : 3); }
+  for (const x of extra || []) m.set(String(x).toLowerCase(), 12);
+  return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 80);
+}
+function codePick(text, kws, budget) {   // 按关键词给每段打分（越稀有的词越值钱），挑分最高的几段，总字数不超过 budget
+  const chunks = codeChunks(text), low = text.toLowerCase(), N = chunks.length, starts = chunks.map((c) => c[0]), score = new Float64Array(N);
+  const idxOf = (pos) => { let lo = 0, hi = N - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] <= pos) lo = mid; else hi = mid - 1; } return lo; };
+  for (const [kw, w] of kws) {
+    const hit = new Map(); let p = low.indexOf(kw), guard = 0;
+    while (p >= 0 && guard++ < 3000) { const ci = idxOf(p); hit.set(ci, (hit.get(ci) || 0) + 1); p = low.indexOf(kw, p + kw.length); }
+    if (!hit.size || hit.size > N * 0.6) continue;
+    const idf = Math.log(1 + N / hit.size);
+    for (const [ci, c] of hit) score[ci] += w * idf * idf * Math.min(c, 3);   // idf 平方：越稀有的词越决定排名
+  }
+  const order = [...score.keys()].filter((i) => score[i] > 0).sort((a, b) => score[b] - score[a]), picked = []; let used = 0;
+  for (const i of order) { const len = Math.min(chunks[i][1] - chunks[i][0], 4500); if (used + len > budget) continue; picked.push(i); used += len; if (used >= budget) break; }
+  return { chunks, picked: picked.sort((a, b) => a - b) };
+}
+function codeLineAt(text, pos) { let n = 1, p = -1; while ((p = text.indexOf("\n", p + 1)) >= 0 && p < pos) n++; return n; }
+function codeShow(path, text, pk) {
+  if (!pk.picked.length) return "【" + path + "】（没有匹配到相关片段）\n";
+  return "【" + path + "】\n" + pk.picked.map((i) => { const [s, e] = pk.chunks[i]; return "── 第 " + codeLineAt(text, s) + " 行附近 ──\n" + text.slice(s, Math.min(e, s + 4500)); }).join("\n") + "\n";
+}
+const CODE_BLOCK_RE = /<{5,9} SEARCH[ \t]*(\S*)[ \t]*\r?\n([\s\S]*?)\r?\n={5,9}[ \t]*\r?\n([\s\S]*?)\r?\n?>{5,9} REPLACE/g;
+function codeParseEdits(reply) { const out = []; let m; const re = new RegExp(CODE_BLOCK_RE.source, "g"); while ((m = re.exec(String(reply)))) out.push({ path: m[1] || "", old: m[2], new: m[3] }); return out; }
+function codeApply(files, edits) {   // 在完整文件上逐块替换；SEARCH 必须找得到且唯一，否则这一块算失败
+  const out = { ...files }, errs = [], done = [], paths = Object.keys(out);
+  edits.forEach((ed, i) => {
+    const old = String(ed.old);
+    if (!old.trim()) { errs.push({ i, msg: "SEARCH 是空的" }); return; }
+    const want = String(ed.path || "").replace(/^\.?\//, ""), cand = want ? paths.filter((p) => p === want || p.endsWith("/" + want)) : paths;
+    if (!cand.length) { errs.push({ i, msg: "文件路径 " + ed.path + " 不在这个项目里" }); return; }
+    let hit = null, hp = "", multi = false;
+    for (const p of cand) {
+      let o = old, a = out[p].indexOf(o);
+      if (a < 0 && out[p].includes("\r\n")) { o = old.replace(/\n/g, "\r\n"); a = out[p].indexOf(o); }
+      if (a >= 0) { if (hit) multi = true; hit = { a, o, uniq: out[p].indexOf(o, a + 1) < 0 }; hp = p; }
+    }
+    if (!hit) { errs.push({ i, msg: "在文件里找不到这段 SEARCH（要一字不差，包括缩进）" }); return; }
+    if (multi || !hit.uniq) { errs.push({ i, msg: "这段 SEARCH 在文件里出现了不止一处，要多带几行上下文让它唯一" }); return; }
+    const line = codeLineAt(out[hp], hit.a);
+    out[hp] = out[hp].slice(0, hit.a) + ed.new + out[hp].slice(hit.a + hit.o.length);
+    done.push({ path: hp, line, old: ed.old, new: ed.new });
+  });
+  return { out, errs, done };
+}
+const codeBalanceWarn = (a, b) => ["{}", "()", "[]"].filter((p) => { const d = (t) => t.split(p[0]).length - t.split(p[1]).length; return d(a) !== d(b); });
+const codeCut = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n) + "…（共 " + s.length + " 字）" : s; };
+async function codeProject(env, user, proj, req) {
+  const branch = String(env.CODE_PUSH_BRANCH || "main"), deadline = Date.now() + 170000, tag = proj.names[0];
+  if (!req) return { ok: false, reply: "想改什么？比如：改" + tag + "，把某某按钮的文字改成……" };
+  if (!env.KV) return { ok: false, reply: "❌ KV 没有绑定，没法暂存待推送的修改" };
+  const bad = codePushGuard(env, user, proj.repo, proj.files[0]);
+  if (bad) return { ok: false, reply: "⚠️ 不能改：" + bad };
+  const files = {};
+  for (const p of proj.files) {
+    const g = await codeGetFile(env, proj.repo, p, branch);
+    if (!g.ok) return { ok: false, reply: "❌ 读 " + proj.repo + " 的 " + p + " 失败：" + g.msg };
+    if (g.exists) files[p] = g.text;
+  }
+  if (!Object.keys(files).length) return { ok: false, reply: "❌ " + proj.repo + "@" + branch + " 里没找到 " + proj.files.join(" / ") };
+  const sys = codeEditRules(proj), buildUser = (extra, note) => "需求：" + req + "\n\n【相关片段】\n" + Object.keys(files).map((p) => codeShow(p, files[p], codePick(files[p], codeKeywords(req, extra), 16000))).join("\n") + (note || "");
+  let extra = [], msgs = [{ role: "system", content: sys }, { role: "user", content: buildUser(extra) }], good = [], last = null, model = "", more = 0, fixes = 0, res = { done: [], errs: [], out: files };
+  for (let call = 0; call < 5; call++) {
+    const r = await codeLLM(env, msgs, deadline - Date.now());
+    if (!r.text) return { ok: false, reply: "❌ 代码模型都没接上：" + (r.tried.join("；") || "没有可用的 OPENROUTER_KEYS / GROQ_KEYS") };
+    model = r.from; last = r.text;
+    const fresh = codeParseEdits(r.text), need = /NEED_MORE\s*[:：]\s*(.+)/.exec(r.text);
+    if (!fresh.length && need && more < 2) {   // 片段不够：按它点的名字再找一轮，重新给片段
+      more++; extra = extra.concat(need[1].split(/[,，、;；\s]+/).filter((x) => x.length >= 2).slice(0, 12));
+      msgs = [{ role: "system", content: sys }, { role: "user", content: buildUser(extra) }]; continue;
+    }
+    if (!fresh.length && !good.length) return { ok: true, reply: codeCut(r.text, 1500) + "\n\n（这次没有产生修改块，没有东西可推。换个说法再告诉我一次需求。）" };
+    const all = good.concat(fresh); res = codeApply(files, all);
+    const bad = new Set(res.errs.map((e) => e.i)); good = all.filter((_, i) => !bad.has(i));
+    if (res.errs.length && fixes < 2 && Date.now() < deadline - 20000) {   // 有块对不上：把原因和更精确的片段发回去，只让它重给失败的那几块
+      fixes++;
+      const failed = res.errs.map((e) => all[e.i]), ex2 = failed.flatMap((f) => String(f.old).match(/[A-Za-z_$][A-Za-z0-9_$]{3,}/g) || []).slice(0, 12);
+      msgs = msgs.concat([{ role: "assistant", content: r.text }, { role: "user", content: "有 " + res.errs.length + " 个修改块没能应用：\n" + res.errs.map((e) => "- 第 " + (e.i + 1) + " 块：" + e.msg).join("\n") + "\n其余块已经成功，不用重发。请只重新给出失败的那几块（SEARCH 要从下面的原文里一字不差地复制）。\n\n" + buildUser(extra.concat(ex2)) }]);
+      continue;
+    }
+    break;
+  }
+  if (!good.length) return { ok: false, reply: "❌ 这次没能生成可用的修改：" + (res.errs.map((e) => e.msg).join("；") || "模型没有给出修改块") + "。换个说法再试一次。" };
+  const final = codeApply(files, good), summary = req.replace(/\s+/g, " ").slice(0, 60);
+  await env.KV.put("code:pend:" + user, JSON.stringify({ repo: proj.repo, branch, edits: good.map((g, i) => ({ path: final.done[i] ? final.done[i].path : g.path, old: g.old, new: g.new })), summary, at: Date.now() }), { expirationTtl: 3600 });
+  const warn = [...new Set(final.done.map((d) => d.path))].flatMap((p) => codeBalanceWarn(files[p], final.out[p]).map((w) => p + " 的 " + w + " 数量和原来不一致"));
+  const explain = String(last).replace(new RegExp(CODE_BLOCK_RE.source, "g"), "").replace(/```[^\n]*\n?/g, "").trim();
+  return { ok: true, pending: true, model, reply: (explain ? codeCut(explain, 300) + "\n\n" : "") + "改动预览（" + tag + "，共 " + final.done.length + " 处）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行\n- " + codeCut(d.old, 400).replace(/\n/g, "\n- ") + "\n+ " + codeCut(d.new, 400).replace(/\n/g, "\n+ ")).join("\n\n") + (warn.length ? "\n\n⚠️ " + warn.join("；") + "（可能是括号写漏了，推之前请留意）" : "") + (res.errs.length ? "\n\n⚠️ 另有 " + res.errs.length + " 处没能应用，已跳过。" : "") + "\n\n要推上去吗？回「推」或「不推」。（推到 " + proj.repo + "@" + branch + "，推上去 Cloudflare 会自动重新部署）\n（" + model + "）" };
+}
+async function codeConfirm(env, user, yes) {
+  const key = "code:pend:" + user, pend = env.KV ? await env.KV.get(key, "json") : null;
+  if (!pend) return { ok: false, reply: "没有待推送的修改（可能放了超过 1 小时，已经过期）。" };
+  if (!yes) { await env.KV.delete(key); return { ok: true, reply: "好，这次的修改已丢弃，没推。" }; }
+  const paths = [...new Set(pend.edits.map((e) => e.path))];
+  for (const p of paths) { const bad = codePushGuard(env, user, pend.repo, p); if (bad) return { ok: false, reply: "⚠️ 没推送：" + bad }; }
+  const files = {}, shas = {};
+  for (const p of paths) {
+    const g = await codeGetFile(env, pend.repo, p, pend.branch);
+    if (!g.ok || !g.exists) return { ok: false, reply: "❌ 没推送：重新读 " + p + " 失败" + (g.msg ? "（" + g.msg + "）" : "") + "。修改还留着，再回一次「推」重试。" };
+    files[p] = g.text; shas[p] = g.sha;
+  }
+  const res = codeApply(files, pend.edits);
+  if (res.errs.length) { await env.KV.delete(key); return { ok: false, reply: "⚠️ 没推送：你确认之前这些文件又被改过，有 " + res.errs.length + " 处对不上原文。为了不覆盖别人的改动，已丢弃，请重新说一次需求。" }; }
+  await env.KV.delete(key);
+  const lines = [];
+  for (const p of paths) {
+    const up = await codeUpdateFile(env, pend.repo, p, res.out[p], "AI: " + pend.summary, pend.branch, shas[p]);
+    lines.push(up.ok ? "✅ 已推送 " + pend.repo + "@" + pend.branch + "：" + p + (up.url ? "\n" + up.url : "") : "❌ " + p + " 推送失败：" + up.msg);
+    if (!up.ok) break;
+  }
+  return { ok: true, pushed: true, reply: lines.join("\n") };
+}
+async function codeChatEntry(env, user, text, history, inCode) {   // 返回 {ok, reply}；返回 null 表示这句话不归代码助手管，走原来的聊天
+  const kind = codeShortcutKind(text);
+  if (kind === "confirm") {
+    if (!inCode && !(env.KV && await env.KV.get("code:pend:" + user))) return null;
+    return await codeConfirm(env, user, !/^\s*(不推|别推|取消)/.test(text));
+  }
+  if (kind === "edit") {
+    const m = CODE_EDIT_RE.exec(text), proj = CODE_PROJECTS.find((p) => p.names.includes(m[1]));
+    return await codeProject(env, user, proj, String(m[2] || "").trim());
+  }
+  return inCode ? await codeAssist(env, user, text, history) : null;
+}
 // 前端带 stream:true → SSE 流式(每 5 秒心跳)；老前端不带 → 一整段 JSON(等待时发空格保活)
 // 需要：KV 绑定(变量名 KV)、REG_TOKEN；可选：GROQ_KEYS / OPENROUTER_KEYS / GEMINI_KEYS(逗号分隔)、AGG_URL、
 //       REQUIRE_LOGIN=1(开启后对话也必须带登录 token)
-// v93 备用模型（Key 只放环境变量，代码里没有）：Poe = POE_API_KEY + 可选 POE_MODELS(逗号分隔，默认 GPT-4o-mini,Gemini-2.5-Flash)；Coze = COZE_API_TOKEN + COZE_BOT_ID + COZE_API_BASE(默认 https://api.coze.cn)；火山豆包 = VOLCANO_API_KEY + 可选 VOLCANO_MODEL(默认 doubao-seed-1.6-flash)。
+// v93 备用模型（Key 只放环境变量，代码里没有）：Poe = POE_API_KEY + 可选 POE_MODELS(逗号分隔，默认 GPT-4o-mini,Gemini-2.5-Flash)；Coze = COZE_API_TOKEN + COZE_BOT_ID + COZE_API_BASE(默认 https://api.coze.cn)；火山豆包 = VOLCANO_API_KEY + 可选 VOLCANO_MODEL(默认 doubao-seed-1.6-flash)；v102 肖恩AI = TOTER_API_KEY + 可选 TOTER_BASE(主接口，默认 https://speed25.toter.me) + 可选 TOTER_BASE_BACKUP(备用接口，默认 https://api.supxh.xin) + 可选 TOTER_MODELS(默认 gemini-3.8-flash,gemini-3.5-flash)。
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
@@ -1109,6 +1256,15 @@ const POE_DEFAULT_MODELS = ["GPT-4o-mini", "Gemini-2.5-Flash"];
 const poeModels = (env) => { const l = getKeys(env && env.POE_MODELS); return l.length ? l : POE_DEFAULT_MODELS; };
 const VOLCANO_DEFAULT_MODELS = ["doubao-seed-1.6-flash"];   // v93：火山方舟（豆包）。想换模型/接入点在环境变量 VOLCANO_MODEL 里填，逗号分隔
 const volcanoModels = (env) => { const l = getKeys(env && env.VOLCANO_MODEL); return l.length ? l : VOLCANO_DEFAULT_MODELS; };
+// v102：肖恩AI（go.toter.me，OpenAI 兼容中转站）。Key 只放环境变量 TOTER_API_KEY（多个用逗号分隔）；可选 TOTER_BASE（主接口，默认 https://speed25.toter.me）、TOTER_BASE_BACKUP（备用接口，默认 https://api.supxh.xin）、TOTER_MODELS（逗号分隔，默认 gemini-3.8-flash,gemini-3.5-flash）。
+// TOTER_BASE 可以填到 host（自动补 /v1/chat/completions）、填到 /v1（自动补 /chat/completions），或直接填完整的 …/chat/completions 地址。
+const TOTER_DEFAULT_BASE = "https://speed25.toter.me";   // 主接口
+const TOTER_BACKUP_BASE = "https://api.supxh.xin";   // 备用接口（主接口不通时自动换它，用同一个 TOTER_API_KEY；地址可用 TOTER_BASE_BACKUP 改）
+const TOTER_DEFAULT_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash"];
+const toterModels = (env) => { const l = getKeys(env && env.TOTER_MODELS); return l.length ? l : TOTER_DEFAULT_MODELS; };
+const toterBuild = (base) => { let b = String(base).trim().replace(/\/+$/, ""); if (/\/chat\/completions$/.test(b)) return b; if (!/\/v1$/.test(b)) b += "/v1"; return b + "/chat/completions"; };
+const toterUrl = (env) => toterBuild((env && env.TOTER_BASE) || TOTER_DEFAULT_BASE);
+const toterUrl2 = (env) => toterBuild((env && env.TOTER_BASE_BACKUP) || TOTER_BACKUP_BASE);
 const EXTRA = [
     { name: "Cerebras", url: "https://api.cerebras.ai/v1/chat/completions", keys: "CEREBRAS_KEYS", models: ["llama-3.3-70b"], max: 8192 },
     { name: "DeepSeek", url: "https://api.deepseek.com/chat/completions", keys: "DEEPSEEK_KEYS", models: ["deepseek-chat"], max: 8192 },
@@ -1134,13 +1290,15 @@ const EXTRA = [
     // models.inference.ai.azure.com 无 DNS 记录（Cloudflare 530 / error 1016）——两个入口都不可用，等官方修好再加回
     { name: "Poe", url: "https://api.poe.com/v1/chat/completions", keys: "POE_API_KEY", models: POE_DEFAULT_MODELS, max: 8192, ms: 10000 },   // v93 备用：只放环境变量 POE_API_KEY
     { name: "Volcano", url: "https://ark.cn-beijing.volces.com/api/v3/chat/completions", keys: "VOLCANO_API_KEY", models: VOLCANO_DEFAULT_MODELS, max: 8192, ms: 10000 },   // v93 备用：火山豆包，只放环境变量 VOLCANO_API_KEY
+    { name: "Toter", url: TOTER_DEFAULT_BASE + "/v1/chat/completions", keys: "TOTER_API_KEY", models: TOTER_DEFAULT_MODELS, max: 8192, ms: 10000 },
+    { name: "Toter2", url: TOTER_BACKUP_BASE + "/v1/chat/completions", keys: "TOTER_API_KEY", models: TOTER_DEFAULT_MODELS, max: 8192, ms: 10000 },   // v103：肖恩AI 备用接口   // v102 备用：肖恩AI，只放环境变量 TOTER_API_KEY（真正调用时地址/模型取 toterUrl / toterModels）
   ];
 
 // 前端“模型”面板发来的 provider 名 → 内部来源名
-const PROVIDER_ALIAS = { groq: "Groq", gemini: "Gemini", openrouter: "OpenRouter", nvidia: "NVIDIA", "英伟达": "NVIDIA", zhipu: "Zhipu", "智谱": "Zhipu", cerebras: "Cerebras", deepseek: "DeepSeek", claude: "Claude", poe: "Poe", coze: "Coze", "扣子": "Coze", volcano: "Volcano", "火山": "Volcano", "火山豆包": "Volcano", "豆包": "Volcano", doubao: "Volcano" };
+const PROVIDER_ALIAS = { groq: "Groq", gemini: "Gemini", openrouter: "OpenRouter", nvidia: "NVIDIA", "英伟达": "NVIDIA", zhipu: "Zhipu", "智谱": "Zhipu", cerebras: "Cerebras", deepseek: "DeepSeek", claude: "Claude", poe: "Poe", coze: "Coze", "扣子": "Coze", volcano: "Volcano", "火山": "Volcano", "火山豆包": "Volcano", "豆包": "Volcano", doubao: "Volcano", toter: "Toter", "肖恩": "Toter", "肖恩ai": "Toter", toter2: "Toter2", "肖恩ai备用": "Toter2" };
 const normProvider = (p) => PROVIDER_ALIAS[String(p || "").toLowerCase().replace(/\s+/g, "")] || "";
 // v93：Poe / Coze / 火山豆包 排在 Gemini 之后、Kaggle 之前（Kaggle 在 tryAllFree 全部失败后才用）。前面的都挂了才轮到它们，不抢额度
-const SRC_ORDER = ["Groq", "OpenRouter", "Cerebras", "DeepSeek", "Zhipu", "NVIDIA", "Gemini", "Poe", "Coze", "Volcano", "CFAI", "Claude"];
+const SRC_ORDER = ["Groq", "OpenRouter", "Cerebras", "DeepSeek", "Zhipu", "NVIDIA", "Gemini", "Poe", "Coze", "Volcano", "Toter", "Toter2", "CFAI", "Claude"];
 // v101：GitHub Models 摘掉——两个入口都不可用（详见 EXTRA 里的说明），探针退回 7 源
 const AUTO_SKIP = new Set([]);
 
@@ -1401,7 +1559,7 @@ async function mtRun(one, env, text, to, gap) {
   return outs.join("\n");
 }
 // v95：翻译主力 = 聚合体模型（Groq gpt-oss-120b → OpenRouter → Gemini，跟聊天同一套）；百度 → 有道 → Riva 只在聚合体都没返回时才用
-const AGG_TR_SKIP = ["Cerebras", "DeepSeek", "Zhipu", "NVIDIA", "Poe", "Coze", "Volcano", "CFAI", "Claude"];   // 只留 Groq / OpenRouter / Gemini
+const AGG_TR_SKIP = ["Cerebras", "DeepSeek", "Zhipu", "NVIDIA", "Poe", "Coze", "Volcano", "Toter", "Toter2", "CFAI", "Claude"];   // 只留 Groq / OpenRouter / Gemini
 function trDir(text) { return cjkRatio(String(text || "")) > 0.5 ? "en" : "zh"; }   // 中文 > 50% 当中文翻英文；否则当英文翻中文
 async function aggTranslate(env, text, to) {
   const srcLang = to === "en" ? "中文" : "英文", dstLang = to === "en" ? "英文" : "简体中文";
@@ -1571,13 +1729,15 @@ async function runBackupTest(env, msgs, which) {
   const defs = [
     { id: "Poe", label: "Poe", ok: () => getKeys(env.POE_API_KEY).length > 0, miss: "POE_API_KEY" },
     { id: "Coze", label: "Coze", ok: () => !!(env.COZE_API_TOKEN && env.COZE_BOT_ID), miss: "COZE_API_TOKEN / COZE_BOT_ID" },
-    { id: "Volcano", label: "火山豆包", ok: () => getKeys(env.VOLCANO_API_KEY).length > 0, miss: "VOLCANO_API_KEY" }
+    { id: "Volcano", label: "火山豆包", ok: () => getKeys(env.VOLCANO_API_KEY).length > 0, miss: "VOLCANO_API_KEY" },
+    { id: "Toter", label: "肖恩AI", ok: () => getKeys(env.TOTER_API_KEY).length > 0, miss: "TOTER_API_KEY" },
+    { id: "Toter2", label: "肖恩AI（备用接口）", ok: () => getKeys(env.TOTER_API_KEY).length > 0, miss: "TOTER_API_KEY" }
   ].filter((d) => !which || d.id === which);
   const lines = [];
   for (const d of defs) {
     if (!d.ok()) { lines.push("- " + d.label + "：❌ 没配置 " + d.miss); continue; }
     let r = null; try { r = await tryAllFree(msgs, env, async () => {}, false, d.id, { raw: true, noBreaker: true, skip: SRC_ORDER.filter((x) => x !== d.id) }); } catch {}
-    lines.push(r && r.text ? "- " + d.label + "：✅ " + String(r.text).replace(/\s+/g, " ").slice(0, 120) + "（这次是 " + String(r.from).replace(/^Volcano/, "火山豆包") + " 回答的）" : "- " + d.label + "：❌ 没有回答（Key 不对 / 机器人没发布成 API / 模型名不对 / 超时）");
+    lines.push(r && r.text ? "- " + d.label + "：✅ " + String(r.text).replace(/\s+/g, " ").slice(0, 120) + "（这次是 " + String(r.from).replace(/^Volcano/, "火山豆包").replace(/^Toter2/, "肖恩AI备用接口").replace(/^Toter/, "肖恩AI") + " 回答的）" : "- " + d.label + "：❌ 没有回答（Key 不对 / 机器人没发布成 API / 模型名不对 / 超时）");
   }
   return "【测试备用】\n" + lines.join("\n");
 }
@@ -1596,6 +1756,8 @@ async function tryAllFree(rawMsgs, env, emit = async () => {}, wantStream = fals
   };
   oai.Poe = { ...oai.Poe, models: poeModels(env) };   // v93：Poe 的机器人名可用 POE_MODELS 改
   oai.Volcano = { ...oai.Volcano, models: volcanoModels(env) };
+  oai.Toter = { ...oai.Toter, models: toterModels(env), url: toterUrl(env) };   // v102
+  oai.Toter2 = { ...oai.Toter2, models: toterModels(env), url: toterUrl2(env) };   // v103：备用接口，同 Key、同模型清单
   oai.Zhipu = { ...oai.Zhipu, nsMs: 20000 };   // v98e-tools：非流式（飞书群问答）智谱最多等 20 秒，不再默认等 60 秒；网页流式不受影响   // v93：火山模型可用 VOLCANO_MODEL 改
   // 用户在前端选了供应商 + 具体模型：先试这个模型，通了就用；不通再按原来的顺序兜底
   const skipSet = new Set(opts.skip || []);   // v93：只给“测试备用”口令用，跳过指定来源
@@ -7830,7 +7992,8 @@ async function handle(request, env, ctx) {
         { id: "智谱", name: "智谱", models: ex("Zhipu") },
         { id: "Poe", name: "Poe", models: poeModels(env) },
         { id: "Coze", name: "Coze", models: [] },
-        { id: "火山豆包", name: "火山豆包", models: volcanoModels(env) }
+        { id: "火山豆包", name: "火山豆包", models: volcanoModels(env) },
+        { id: "肖恩AI", name: "肖恩AI", models: toterModels(env) }
       ] });
     }
     // ---- v30 导出：/api/export/{docx|pptx|xlsx|csv|html}，纯 JS 生成，每次传完整 Markdown + part ----
@@ -8069,12 +8232,12 @@ async function handle(request, env, ctx) {
       return json({ ok: true, build: FS_BUILD, reply: r.reply || "", awaiting: !!r.awaiting, confirm: r.confirmQ || "", tools: (r.steps || []).map((x) => x.tool), steps: (r.steps || []).map((x) => ({ tool: x.tool, ok: !!x.ok, held: !!x.held, text: String(x.text || "").slice(0, 1200) })) });
     }
 
-    // ---- v100：代码助手 HTTP 接口（要登录）：POST /api/code {text, token?, history?}；GET /api/code/file?repo=&path=&ref= ----
+    // ---- v100/v101：代码助手 HTTP 接口（要登录）：POST /api/code {text, token?, history?}（text 可以直接写“改聚合体 …”/“推”/“不推”）；GET /api/code/file?repo=&path=&ref= ----
     if (path === "/api/code" && request.method === "POST") {
       const b = await request.json().catch(() => ({}));
       const user = await userFromReq(request, env, url, String(b.token || ""));
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
-      const r = await codeAssist(env, user, String(b.text == null ? (b.prompt || "") : b.text), b.history);
+      const r = await codeChatEntry(env, user, String(b.text == null ? (b.prompt || "") : b.text), b.history, true);
       return json(r, r.ok ? 200 : 502);
     }
     if (path === "/api/code/file" && request.method === "GET") {
@@ -8137,15 +8300,19 @@ async function handle(request, env, ctx) {
           // GitHub 拦截：用户说搜 GitHub，就直接调 GitHub API，不让模型编数据
           const lastUser = [...msgs].reverse().find(m=>m.role==="user");
           const lastText = textOf(lastUser?.content||"");
-          // v100：代码助手——前端「OpenRouter → 代码助手」。只走代码模型和代码提示词，不碰飞书 / 待办那套 WORK_SYSTEM_PROMPT，也不影响原来的聊天模型
-          if (normProvider(b.provider) === "OpenRouter" && String(b.model || "").trim() === CODE_MODEL_ID) {
+          // v100/v101：代码助手。1) 前端选「OpenRouter → 代码助手」；2) 任何模型下，说“改就医伴侣 …”/“改聚合体 …”，或有待推送修改时回“推”/“不推”。其余话原样走聊天
+          const codeIn = normProvider(b.provider) === "OpenRouter" && String(b.model || "").trim() === CODE_MODEL_ID, codeKind = codeShortcutKind(lastText);
+          if (codeIn || codeKind) {
+            let handled = false;
             try {
               const cu = await userFromReq(request, env, url, String(b.token || ""));
-              if (!cu) await emit("请先登录后再用代码助手。");
-              else await emit((await codeAssist(env, cu, lastText, msgs)).reply);
-            } catch (e) { await emit("代码助手出错：" + String(e && e.message || e).slice(0, 200)); }
-            if (wantStream) await write("data: [DONE]\n\n"); else await write(JSON.stringify({ choices: [{ message: { role: "assistant", content: collected || "(空回复)" } }] }));
-            clearInterval(ping); await writer.close().catch(() => {}); return;
+              if (!cu) { if (codeIn || codeKind === "edit") { await emit("请先登录后再用代码助手。"); handled = true; } }
+              else { const cr = await codeChatEntry(env, cu, lastText, msgs, codeIn); if (cr) { await emit(cr.reply); handled = true; } }
+            } catch (e) { await emit("代码助手出错：" + String(e && e.message || e).slice(0, 200)); handled = true; }
+            if (handled) {
+              if (wantStream) await write("data: [DONE]\n\n"); else await write(JSON.stringify({ choices: [{ message: { role: "assistant", content: collected || "(空回复)" } }] }));
+              clearInterval(ping); await writer.close().catch(() => {}); return;
+            }
           }
           // v94：口令“测试早报”——马上推 1 条早报到飞书，不等 8 点
           if (/^\s*测试早报\s*$/.test(lastText)) {
@@ -8298,7 +8465,7 @@ async function handle(request, env, ctx) {
           } catch {}
           { const lm1 = await lmLoad(env, lmUser); if (lm1) msgs2 = mergeSys(msgs2, lm1); }   // v91：长期记忆（昨天说过的话 / 未完成待办 / 笔记）放进 system 最前面
           // v93：口令“测试备用[ Poe|Coze|火山]：你好”——不走前面的来源，直接测 Poe / Coze / 火山豆包，回答里写明是谁答的
-          const tm = lastText.match(/^\s*测试备用\s*(poe|coze|火山豆包|火山|豆包|volcano)?\s*[:：]?\s*/i);
+          const tm = lastText.match(/^\s*测试备用\s*(poe|coze|火山豆包|火山|豆包|volcano|toter2|toter|肖恩ai备用|肖恩ai|肖恩)?\s*[:：]?\s*/i);
           if (tm) msgs2 = stripLastUser(msgs2, tm[0], lastText.slice(tm[0].length).trim() ? "" : "你好");
           const which = tm && tm[1] ? (normProvider(tm[1]) || "") : "";
           const freeFirst = tm ? { text: await runBackupTest(env, msgs2, which), from: "测试备用", streamed: false, err: "" } : (hotCtx ? await hotGuard(env, msgs2, hotCtxM, requested, requestedModel, mem) : await tryAllFree(msgs2, env, emit, wantStream, requested, { model: requestedModel, memory: mem }));
