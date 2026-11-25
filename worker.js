@@ -1,6 +1,7 @@
 // openmanus-gateway v99y：一个脑子。飞书消息不再自己猜意图，直接调前端同一个 runWorkChat（同一份 WORK_SYSTEM_PROMPT / 同一个模型轮换 / 同一张 FS_TOOLS）。选哪个工具完全由模型自己定：代码里没有关键词分流、没有白名单、没有预调工具，只给任务结构（工具表 + 会话态 + 多轮循环 + 最终自由文本）。删掉飞书先猜意图那层 / 关键词 if-else / 写文档先搜一遍 / 待办提醒与待办表混用。
 // v100：新增「代码助手」（CODE_SYSTEM_PROMPT / codeLLM / codeAssist，OpenRouter 免费代码模型 → Groq llama-3.3-70b 兜底；可经 GitHub REST 读写文件）。其余代码一行没改。
 // v102/v103：新增备用模型「肖恩AI」(go.toter.me，OpenAI 兼容)：环境变量 TOTER_API_KEY（必填）/ TOTER_BASE（主接口）/ TOTER_BASE_BACKUP（备用接口）/ TOTER_MODELS。排在火山豆包之后，前面的都不通才用。口令“测试备用 toter”可单独测试。
+// v105：代码模式改成“前端开关 + 对话记忆”：请求带 code_mode:true 就一定进代码模式（不再猜措辞），追问只问一个问题并留在代码模式里；新增 /api/code/pending、/api/code/confirm 给前端 studio.js 的预览面板（推 / 不推按钮）用。
 // v99w：1101 已定位修好，恢复模块顶层直接执行；表全从 FEISHU_BITABLE_TABLES 变量读；读信类代码整体移除。
 // v99u：写操作一轮超过 FS_MAX_WRITES(10) 次不直接停，改成问用户“还要继续写吗”，确认后接着写。
 // v99u 补丁：删 fsContentCheck 和 precheck 闸；删「模型没给正文就让系统起草」；工具只收 [标题、正文]，正文有没有由模型自己判断（缺参数只如实退回，不数字数、不搜关键词）。
@@ -501,11 +502,12 @@ const CODE_PROJECTS = [
   { names: ["就医伴侣"], repo: "tianxin1300/jiuyibanlv", files: ["frontend/index.html", "worker.js"] },
   { names: ["聚合体"], repo: "tianxin1300/openmanus-gateway", files: ["frontend/index.html", "worker.js"] }
 ];
-const CODE_EDIT_RE = /^\s*(?:请|帮我|麻烦你?)?\s*(?:修改|改一下|改)\s*(就医伴侣|聚合体)\s*[,，:：、]?\s*([\s\S]*)$/;
+const CODE_EDIT_RE = /(?:修改|改一下|改)\s*(就医伴侣|聚合体)/;   // v105：消息里任何位置出现都算，不再要求在句首
+const CODE_TRIGGER_RE = /(?:请|帮我|麻烦你?)?\s*(?:修改|改一下|改)\s*(?:就医伴侣|聚合体)\s*[,，:：、]?\s*/g;
 const CODE_CONFIRM_RE = /^\s*(推上去|推吧|确认推|推|不推|别推|取消)\s*[。.!！~]*\s*$/;
 const codeShortcutKind = (t) => { t = String(t || ""); return CODE_CONFIRM_RE.test(t) ? "confirm" : CODE_EDIT_RE.test(t) ? "edit" : ""; };
 function codeEditRules(proj) {
-  return "你是一个专业的代码助手，只负责写代码，用户说什么功能你就直接改，不要只讲思路。你现在在改「" + proj.names[0] + "」项目（仓库 " + proj.repo + "，文件：" + proj.files.join("、") + "）。文件很大，用户消息里只给了和需求最相关的片段，不能整份重写。改动一律用修改块，格式严格如下，可以有多个块、可以改多个文件：\n<<<<<<< SEARCH 文件路径\n（原文件里一字不差的连续片段，1–8 行，必须在该文件里唯一，可以只是一行的一部分）\n=======\n（替换后的完整内容）\n>>>>>>> REPLACE\n要新增代码：SEARCH 写插入位置附近的一两行原文，REPLACE 里把这几行原样保留再加上新代码。文件路径只能用上面列出的路径。不要删掉原有功能，不要改和需求无关的地方。块外只写一两句话说明改了什么。如果给的片段不够判断，不要瞎猜，整条回复只写一行：NEED_MORE: 关键词1, 关键词2（要去文件里找的函数名 / 变量名 / 界面上的文字）。";
+  return "你是一个专业的代码助手，只负责写代码，用户说什么功能你就直接改，不要只讲思路。你现在在改「" + proj.names[0] + "」项目（仓库 " + proj.repo + "，文件：" + proj.files.join("、") + "）。文件很大，用户消息里只给了和需求最相关的片段，不能整份重写。改动一律用修改块，格式严格如下，可以有多个块、可以改多个文件：\n<<<<<<< SEARCH 文件路径\n（原文件里一字不差的连续片段，1–8 行，必须在该文件里唯一，可以只是一行的一部分）\n=======\n（替换后的完整内容）\n>>>>>>> REPLACE\n要新增代码：SEARCH 写插入位置附近的一两行原文，REPLACE 里把这几行原样保留再加上新代码。文件路径只能用上面列出的路径。不要删掉原有功能，不要改和需求无关的地方。块外只写一两句话说明改了什么。\n需求笼统时（比如“改成统一视觉效果”），先看片段里相邻 / 同类元素现有的写法（class、颜色、尺寸），按“和它们保持一致”直接改，不要反问。只有必须由用户拍板、片段里又找不到依据的信息（比如到底要换成哪种颜色），才提问：整条回复以 ASK: 开头，只问一个问题，最好给 2–3 个可选项，不要一次问多个问题。用户消息里可能带有之前的对话：如果你上一轮问过问题，用户最新这句就是回答，直接据此修改。如果给的片段不够判断，不要瞎猜，整条回复只写一行：NEED_MORE: 关键词1, 关键词2（要去文件里找的函数名 / 变量名 / 界面上的文字）。";
 }
 function codeChunks(text) {
   const out = []; let s = 0; const n = text.length;
@@ -563,12 +565,12 @@ function codeApply(files, edits) {   // 在完整文件上逐块替换；SEARCH 
 }
 const codeBalanceWarn = (a, b) => ["{}", "()", "[]"].filter((p) => { const d = (t) => t.split(p[0]).length - t.split(p[1]).length; return d(a) !== d(b); });
 const codeCut = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n) + "…（共 " + s.length + " 字）" : s; };
-async function codeProject(env, user, proj, req) {
+async function codeProject(env, user, proj, req, history, ui) {
   const branch = String(env.CODE_PUSH_BRANCH || "main"), deadline = Date.now() + 170000, tag = proj.names[0];
-  if (!req) return { ok: false, reply: "想改什么？比如：改" + tag + "，把某某按钮的文字改成……" };
+  if (!req) return { ok: false, reply: "想改什么？比如：把顶栏某个按钮改成和旁边的按钮一个样式。（你现在在代码模式里，直接说就行。）" };
   if (!env.KV) return { ok: false, reply: "❌ KV 没有绑定，没法暂存待推送的修改" };
-  const bad = codePushGuard(env, user, proj.repo, proj.files[0]);
-  if (bad) return { ok: false, reply: "⚠️ 不能改：" + bad };
+  const bad0 = codePushGuard(env, user, proj.repo, proj.files[0]);
+  if (bad0) return { ok: false, reply: "⚠️ 不能改：" + bad0 };
   const files = {};
   for (const p of proj.files) {
     const g = await codeGetFile(env, proj.repo, p, branch);
@@ -576,18 +578,30 @@ async function codeProject(env, user, proj, req) {
     if (g.exists) files[p] = g.text;
   }
   if (!Object.keys(files).length) return { ok: false, reply: "❌ " + proj.repo + "@" + branch + " 里没找到 " + proj.files.join(" / ") };
-  const sys = codeEditRules(proj), buildUser = (extra, note) => "需求：" + req + "\n\n【相关片段】\n" + Object.keys(files).map((p) => codeShow(p, files[p], codePick(files[p], codeKeywords(req, extra), 16000))).join("\n") + (note || "");
-  let extra = [], msgs = [{ role: "system", content: sys }, { role: "user", content: buildUser(extra) }], good = [], last = null, model = "", more = 0, fixes = 0, res = { done: [], errs: [], out: files };
-  for (let call = 0; call < 5; call++) {
+  // 对话记忆：之前的问答带给模型，找片段时也把前两句用户的话算进关键词（回答“蓝色”这种短句也能找回原来那段代码）
+  const turns = (Array.isArray(history) ? history : []).filter((m) => m && (m.role === "user" || m.role === "assistant")).map((m) => ({ role: m.role, content: textOf(m.content).replace(/\s+/g, " ").trim().slice(0, 1200) })).filter((m) => m.content);
+  while (turns.length && turns[turns.length - 1].role === "user") turns.pop();   // 末尾的用户话就是当前这句（req 里已有）
+  const prior = turns.slice(-6), kwText = [req.slice(0, 300), ...prior.filter((m) => m.role === "user").slice(-2).map((m) => m.content.slice(0, 150))].join(" ");
+  const bg = prior.length ? "【之前的对话（背景；你上一轮如果问过问题，我最新这句就是回答）】\n" + prior.map((m) => (m.role === "user" ? "用户：" : "你：") + m.content).join("\n") + "\n\n" : "";
+  const sys = codeEditRules(proj), buildUser = (extra, note) => bg + "需求（最新一句）：" + req + "\n\n【相关片段】\n" + Object.keys(files).map((p) => codeShow(p, files[p], codePick(files[p], codeKeywords(kwText, extra), 16000))).join("\n") + (note || "");
+  let extra = [], msgs = [{ role: "system", content: sys }, { role: "user", content: buildUser(extra) }], good = [], last = null, model = "", more = 0, fixes = 0, nudges = 0, res = { done: [], errs: [], out: files };
+  for (let call = 0; call < 7; call++) {
     const r = await codeLLM(env, msgs, deadline - Date.now());
     if (!r.text) return { ok: false, reply: "❌ 代码模型都没接上：" + (r.tried.join("；") || "没有可用的 OPENROUTER_KEYS / GROQ_KEYS") };
     model = r.from; last = r.text;
-    const fresh = codeParseEdits(r.text), need = /NEED_MORE\s*[:：]\s*(.+)/.exec(r.text);
+    const fresh = codeParseEdits(r.text), ask = /(?:^|\n)\s*ASK\s*[:：]\s*([\s\S]+)/i.exec(r.text), need = /NEED_MORE\s*[:：]\s*(.+)/.exec(r.text);
+    if (!fresh.length && !good.length && ask) return { ok: true, ask: true, model, reply: "❓ " + codeCut(ask[1].trim(), 700) + "\n\n（还在代码模式里，直接回答就行，我接着改。）\n（" + model + "）" };
     if (!fresh.length && need && more < 2) {   // 片段不够：按它点的名字再找一轮，重新给片段
       more++; extra = extra.concat(need[1].split(/[,，、;；\s]+/).filter((x) => x.length >= 2).slice(0, 12));
       msgs = [{ role: "system", content: sys }, { role: "user", content: buildUser(extra) }]; continue;
     }
-    if (!fresh.length && !good.length) return { ok: true, reply: codeCut(r.text, 1500) + "\n\n（这次没有产生修改块，没有东西可推。换个说法再告诉我一次需求。）" };
+    if (!fresh.length && !good.length) {
+      if (nudges < 1 && Date.now() < deadline - 20000) {   // 既没改也没按规矩问：催一次，只能“直接改”或“只问一个问题”
+        nudges++;
+        msgs = msgs.concat([{ role: "assistant", content: r.text }, { role: "user", content: "不要列多个问题，也不要只做解释。二选一：1）按修改块格式直接改（需求笼统就参照片段里相邻元素的现有写法保持一致）；2）只有确实缺少必须由用户决定的信息，整条回复只写一行 ASK: 一个最关键的问题（最好带 2–3 个可选项）。" }]); continue;
+      }
+      return { ok: true, reply: codeCut(r.text, 1500) + "\n\n（还在代码模式里：这次没有产生修改块。把要求说得再具体一点，我接着改。）" };
+    }
     const all = good.concat(fresh); res = codeApply(files, all);
     const bad = new Set(res.errs.map((e) => e.i)); good = all.filter((_, i) => !bad.has(i));
     if (res.errs.length && fixes < 2 && Date.now() < deadline - 20000) {   // 有块对不上：把原因和更精确的片段发回去，只让它重给失败的那几块
@@ -600,10 +614,14 @@ async function codeProject(env, user, proj, req) {
   }
   if (!good.length) return { ok: false, reply: "❌ 这次没能生成可用的修改：" + (res.errs.map((e) => e.msg).join("；") || "模型没有给出修改块") + "。换个说法再试一次。" };
   const final = codeApply(files, good), summary = req.replace(/\s+/g, " ").slice(0, 60);
-  await env.KV.put("code:pend:" + user, JSON.stringify({ repo: proj.repo, branch, edits: good.map((g, i) => ({ path: final.done[i] ? final.done[i].path : g.path, old: g.old, new: g.new })), summary, at: Date.now() }), { expirationTtl: 3600 });
   const warn = [...new Set(final.done.map((d) => d.path))].flatMap((p) => codeBalanceWarn(files[p], final.out[p]).map((w) => p + " 的 " + w + " 数量和原来不一致"));
+  await env.KV.put("code:pend:" + user, JSON.stringify({ repo: proj.repo, branch, edits: good.map((g, i) => ({ path: final.done[i] ? final.done[i].path : g.path, line: final.done[i] ? final.done[i].line : 0, old: g.old, new: g.new })), summary, warn, at: Date.now() }), { expirationTtl: 3600 });
   const explain = String(last).replace(new RegExp(CODE_BLOCK_RE.source, "g"), "").replace(/```[^\n]*\n?/g, "").trim();
-  return { ok: true, pending: true, model, reply: (explain ? codeCut(explain, 300) + "\n\n" : "") + "改动预览（" + tag + "，共 " + final.done.length + " 处）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行\n- " + codeCut(d.old, 400).replace(/\n/g, "\n- ") + "\n+ " + codeCut(d.new, 400).replace(/\n/g, "\n+ ")).join("\n\n") + (warn.length ? "\n\n⚠️ " + warn.join("；") + "（可能是括号写漏了，推之前请留意）" : "") + (res.errs.length ? "\n\n⚠️ 另有 " + res.errs.length + " 处没能应用，已跳过。" : "") + "\n\n要推上去吗？回「推」或「不推」。（推到 " + proj.repo + "@" + branch + "，推上去 Cloudflare 会自动重新部署）\n（" + model + "）" };
+  const tail = (warn.length ? "\n\n⚠️ " + warn.join("；") + "（可能是括号写漏了，推之前请留意）" : "") + (res.errs.length ? "\n\n⚠️ 另有 " + res.errs.length + " 处没能应用，已跳过。" : "");
+  const where = "（推到 " + proj.repo + "@" + branch + "，推上去 Cloudflare 会自动重新部署）\n（" + model + "）";
+  const head = explain ? codeCut(explain, 300) + "\n\n" : "";
+  if (ui) return { ok: true, pending: true, model, reply: head + "已生成 " + final.done.length + " 处改动（" + tag + "）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行").join("\n") + tail + "\n\n预览在面板里，点「推」或「不推」。" + where };
+  return { ok: true, pending: true, model, reply: head + "改动预览（" + tag + "，共 " + final.done.length + " 处）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行\n- " + codeCut(d.old, 400).replace(/\n/g, "\n- ") + "\n+ " + codeCut(d.new, 400).replace(/\n/g, "\n+ ")).join("\n\n") + tail + "\n\n要推上去吗？回「推」或「不推」。" + where };
 }
 async function codeConfirm(env, user, yes) {
   const key = "code:pend:" + user, pend = env.KV ? await env.KV.get(key, "json") : null;
@@ -628,15 +646,18 @@ async function codeConfirm(env, user, yes) {
   }
   return { ok: true, pushed: true, reply: lines.join("\n") };
 }
-async function codeChatEntry(env, user, text, history, inCode) {   // 返回 {ok, reply}；返回 null 表示这句话不归代码助手管，走原来的聊天
-  const kind = codeShortcutKind(text);
+async function codeChatEntry(env, user, text, history, o) {   // 返回 {ok, reply}；返回 null 表示这句话不归代码助手管，走原来的聊天。o 也可以直接传 true/false（= inCode，旧写法）
+  o = o && typeof o === "object" ? o : { inCode: !!o };
+  const kind = codeShortcutKind(text), inCode = !!(o.inCode || o.forced);
   if (kind === "confirm") {
     if (!inCode && !(env.KV && await env.KV.get("code:pend:" + user))) return null;
     return await codeConfirm(env, user, !/^\s*(不推|别推|取消)/.test(text));
   }
-  if (kind === "edit") {
-    const m = CODE_EDIT_RE.exec(text), proj = CODE_PROJECTS.find((p) => p.names.includes(m[1]));
-    return await codeProject(env, user, proj, String(m[2] || "").trim());
+  if (o.forced || kind === "edit") {   // v105：开了代码模式（forced）就一定进来，不再猜这句话说了什么
+    const nm = CODE_EDIT_RE.exec(String(text)), name = nm ? nm[1] : String(o.project || "");
+    const proj = CODE_PROJECTS.find((p) => p.names.includes(name)) || CODE_PROJECTS.find((p) => p.names.includes("聚合体"));
+    const req = String(text).replace(CODE_TRIGGER_RE, " ").replace(/^[\s,，:：、]+/, "").trim();
+    return await codeProject(env, user, proj, req, history, !!o.ui);
   }
   return inCode ? await codeAssist(env, user, text, history) : null;
 }
@@ -8237,7 +8258,7 @@ async function handle(request, env, ctx) {
       const b = await request.json().catch(() => ({}));
       const user = await userFromReq(request, env, url, String(b.token || ""));
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
-      const r = await codeChatEntry(env, user, String(b.text == null ? (b.prompt || "") : b.text), b.history, true);
+      const r = await codeChatEntry(env, user, String(b.text == null ? (b.prompt || "") : b.text), b.history, { inCode: true, forced: b.code_mode === true, project: String(b.code_project || ""), ui: b.code_mode === true });
       return json(r, r.ok ? 200 : 502);
     }
     if (path === "/api/code/file" && request.method === "GET") {
@@ -8245,6 +8266,24 @@ async function handle(request, env, ctx) {
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
       const g = await codeGetFile(env, String(url.searchParams.get("repo") || ""), String(url.searchParams.get("path") || ""), String(url.searchParams.get("ref") || ""));
       return json(g.ok ? { ok: true, exists: !!g.exists, size: g.size || 0, content: g.text || "" } : g, g.ok ? 200 : 400);
+    }
+
+    // ---- v105：代码助手的预览面板接口（全部要登录）----
+    //   GET  /api/code/pending → 当前待推送的修改（前端预览面板用）    POST /api/code/confirm {yes:true|false} → 推 / 不推（面板按钮用）
+    if (path === "/api/code/pending" && request.method === "GET") {
+      const user = await userFromReq(request, env, url, "");
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const pend = env.KV ? await env.KV.get("code:pend:" + user, "json") : null;
+      return json({ ok: true, pending: pend && Array.isArray(pend.edits) ? { repo: pend.repo, branch: pend.branch, summary: pend.summary, at: pend.at, warn: pend.warn || [], edits: pend.edits.map((e) => ({ path: e.path, line: e.line || 0, old: codeCut(e.old, 4000), new: codeCut(e.new, 4000) })) } : null });
+    }
+    if (path === "/api/code/confirm" && request.method === "POST") {
+      const b = await request.json().catch(() => ({}));
+      const user = await userFromReq(request, env, url, String(b.token || ""));
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const yes = b.yes === true || b.yes === "true", no = b.yes === false || b.yes === "false";
+      if (!yes && !no) return json({ ok: false, msg: "yes 必须是 true（推）或 false（不推）" }, 400);
+      const r = await codeConfirm(env, user, yes);
+      return json(r, r.ok ? 200 : 400);
     }
 
     // ---- 对话（SSE 流式）----
@@ -8300,14 +8339,19 @@ async function handle(request, env, ctx) {
           // GitHub 拦截：用户说搜 GitHub，就直接调 GitHub API，不让模型编数据
           const lastUser = [...msgs].reverse().find(m=>m.role==="user");
           const lastText = textOf(lastUser?.content||"");
-          // v100/v101：代码助手。1) 前端选「OpenRouter → 代码助手」；2) 任何模型下，说“改就医伴侣 …”/“改聚合体 …”，或有待推送修改时回“推”/“不推”。其余话原样走聊天
-          const codeIn = normProvider(b.provider) === "OpenRouter" && String(b.model || "").trim() === CODE_MODEL_ID, codeKind = codeShortcutKind(lastText);
-          if (codeIn || codeKind) {
+          // v100/v101/v105：代码助手。进代码模式的三种方式：1) 前端「代码模式」开关（请求里带 code_mode:true，后端不再猜）；2) 消息里出现“改聚合体 / 改就医伴侣”（任何位置）；3) 选了「OpenRouter → 代码助手」。有待推送的修改时回“推 / 不推”也归这里；其余话走聊天
+          const rawMsg = String(b.message || "").trim() || lastText;
+          const codeForced = b.code_mode === true || b.code_mode === "true" || b.code_mode === 1;
+          const codeIn = normProvider(b.provider) === "OpenRouter" && String(b.model || "").trim() === CODE_MODEL_ID, codeKind = codeShortcutKind(rawMsg) || codeShortcutKind(lastText);
+          if (codeForced || codeIn || codeKind) {
             let handled = false;
             try {
               const cu = await userFromReq(request, env, url, String(b.token || ""));
-              if (!cu) { if (codeIn || codeKind === "edit") { await emit("请先登录后再用代码助手。"); handled = true; } }
-              else { const cr = await codeChatEntry(env, cu, lastText, msgs, codeIn); if (cr) { await emit(cr.reply); handled = true; } }
+              if (!cu) { if (codeForced || codeIn || codeKind === "edit") { await emit("请先登录后再用代码助手。"); handled = true; } }
+              else {
+                const cr = await codeChatEntry(env, cu, (codeForced || codeKind) ? rawMsg : lastText, msgs, { inCode: codeIn || codeForced, forced: codeForced, project: String(b.code_project || ""), ui: codeForced });
+                if (cr) { await emit(cr.reply); handled = true; }
+              }
             } catch (e) { await emit("代码助手出错：" + String(e && e.message || e).slice(0, 200)); handled = true; }
             if (handled) {
               if (wantStream) await write("data: [DONE]\n\n"); else await write(JSON.stringify({ choices: [{ message: { role: "assistant", content: collected || "(空回复)" } }] }));
