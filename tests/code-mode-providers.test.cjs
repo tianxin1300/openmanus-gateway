@@ -183,6 +183,16 @@ test('Trae batch 1: isolated branches, history/rollback/preview, and file-level 
   assert.equal(studioSource, fs.readFileSync(path.join(root, 'studio.js'), 'utf8'));
 });
 
+test('workbench starts frontend/backend together and renders the full delivery chain', () => {
+  assert.match(frontendSource, /id="wb-both"/);
+  assert.match(frontendSource, /npm\",\["run","dev"\]/);
+  assert.match(frontendSource, /wrangler","dev","--local","--port","8787/);
+  assert.match(frontendSource, /wb-front-log/);
+  assert.match(frontendSource, /wb-back-log/);
+  for (const label of ['已生成', '已验证', '已提交', '部署中', '线上健康', '部署失败']) assert.match(frontendSource, new RegExp(label));
+  assert.match(frontendSource, /renderDeliveryChain/);
+});
+
 test('persistent runner, KV logs and Pages deployment are wired end to end', () => {
   const deploy = fs.readFileSync(path.join(root, '.github/workflows/deploy-project.yml'), 'utf8');
   const wrangler = fs.readFileSync(path.join(root, 'wrangler.toml'), 'utf8');

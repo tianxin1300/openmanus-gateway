@@ -658,7 +658,7 @@ button.om-ic-only .om-ic{margin:0;width:16px;height:16px}
 .wb-thead{flex:0 0 28px;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:12px;color:#9fc3a8;background:#0f2419}
 .wb-thead .sp{flex:1}
 .wb-thead button{padding:2px 9px;font-size:11px;border-radius:6px;background:#1d4030;color:#d8ecd9}
-#wb-xterm{flex:1;min-height:0;padding:4px 8px;overflow:hidden}
+#wb-parallel-logs{display:none;flex:0 0 38%;min-height:110px;gap:8px;padding:7px 8px;background:#09150f}#wb-parallel-logs.on{display:flex}#wb-parallel-logs .wb-logbox{flex:1;min-width:0;display:flex;flex-direction:column;border:1px solid #28543a;border-radius:7px;overflow:hidden;background:#0d2116}#wb-parallel-logs .wb-logtitle{flex:0 0 23px;padding:4px 7px;color:#a9d6b1;background:#12301e;font-size:11px;font-weight:700}#wb-parallel-logs pre{flex:1;min-height:0;margin:0;padding:5px 7px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:#d8ecd9;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}#wb-xterm{flex:1;min-height:0;padding:4px 8px;overflow:hidden}
 #wb-xterm pre{margin:0;height:100%;overflow:auto;white-space:pre-wrap;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#d8ecd9}
 @media(max-width:820px){#wb-main{flex-direction:column}#wb-left{flex:1 1 45%;border-right:0;border-bottom:1px solid #1d4030}#wb-right{flex:1 1 45%}#wb-term{flex-basis:26%}#wb-file{display:none}}
 </style></head>
@@ -5634,6 +5634,7 @@ const bestPlace = (list, q) => {
     <button id="wb-reload" class="sec" type="button" title="重新从 GitHub 读取 index.html（会丢掉未保存的修改）">重新读取</button>
     <button id="wb-save" type="button" title="把编辑器里的内容通过 MCP update_file 推到 GitHub main（Ctrl/Cmd+S）">保存到 GitHub</button>
     <button id="wb-run" type="button" title="在浏览器里启动 WebContainer：安装依赖，自动运行 test/build（如果有），再运行 dev 或 start">运行</button>
+    <button id="wb-both" class="sec" type="button" title="同时启动前端 npm run dev 和后端 wrangler dev，日志分开显示">同时启动</button>
     <button id="wb-ci" class="sec" type="button" title="触发 GitHub Actions：checkout → npm install → npm test → npm run build，并把结果回传到开发台">运行 / 验证</button>
     <button id="wb-deploy" class="sec" type="button" title="验证通过后构建并部署到 Cloudflare Pages">部署</button>
     <button id="wb-lint" type="button" title="代码检测：检查脚本语法、重复 id、$() 引用不到的 id、遗留 console.log" onclick="wbLint()">代码检测</button>
@@ -5655,6 +5656,7 @@ const bestPlace = (list, q) => {
   </div>
   <div id="wb-term">
     <div class="wb-thead"><span>终端</span><span class="sp"></span><button id="wb-term-clear" type="button">清屏</button></div>
+    <div id="wb-parallel-logs"><div class="wb-logbox"><div class="wb-logtitle">前端日志 · npm run dev</div><pre id="wb-front-log"></pre></div><div class="wb-logbox"><div class="wb-logtitle">后端日志 · wrangler dev</div><pre id="wb-back-log"></pre></div></div>
     <div id="wb-xterm"></div>
   </div>
 </div>
@@ -6031,12 +6033,24 @@ function verifyLink(label, href) {
 async function loadRunHistory() {
   try { const r = await authFetch(GATEWAY + "/api/code/runs", {cache:"no-store"}), d = await r.json().catch(() => ({})); if (!r.ok || !d.ok) return; const res = g("wb-res"); if (!res) return; const box = document.createElement("details"); box.style.cssText = "margin-top:12px"; const sum = document.createElement("summary"); sum.textContent = "历史运行日志（" + (d.runs || []).length + "）"; box.appendChild(sum); (d.runs || []).slice(0, 20).forEach(x => { const b = document.createElement("button"); b.type="button"; b.className="sec"; b.style.cssText="margin:6px 6px 0 0;font-size:11px"; b.textContent=(x.kind === "deploy" ? "部署" : "验证")+" · "+(x.state || x.status || "未知")+" · "+String(x.run_id || "").slice(-12); b.onclick=async()=>{ const q=await authFetch(GATEWAY+"/api/code/logs?run_id="+encodeURIComponent(x.run_id),{cache:"no-store"}), j=await q.json().catch(()=>({})); if(j.ok) renderVerifyResult({...j,state:j.state||x.state,fromHistory:true}); else toast(j.msg||"读取日志失败"); }; box.appendChild(b); }); res.appendChild(box); } catch (_) {}
 }
+function renderDeliveryChain(d) {
+  const res = document.createElement("div"); res.className = "delivery-chain"; res.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px";
+  const failed = d.state === "failure";
+  const verified = d.deploy || d.conclusion === "success" || d.state === "success";
+  const submitted = !!(d.deploy || d.head_sha || d.submitted);
+  const deploying = !!(d.deploy && (d.state === "queued" || d.state === "running"));
+  const online = !!(d.deploy && d.state === "success");
+  const steps = [{name:"已生成", ok:true}, {name:"已验证", ok:verified && !failed}, {name:"已提交", ok:submitted && !failed}, {name:"部署中", ok:deploying}, {name:"线上健康", ok:online}];
+  if (failed) steps.push({name:"部署失败", bad:true});
+  steps.forEach((x) => { const b=document.createElement("button"); b.type="button"; b.textContent=(x.ok ? "✓ " : x.bad ? "✗ " : "○ ")+x.name; b.className="sec"; b.style.cssText="padding:5px 8px;font-size:11px;border-radius:8px;color:"+(x.ok ? "#247a43" : x.bad ? "#b33b32" : "#7a887d")+";background:"+(x.ok ? "#e6f5e8" : x.bad ? "#fde8e6" : "#f1f4f0"); if (x.bad) b.onclick=()=>{ const pre=res.parentElement && res.parentElement.querySelector("pre"); if(pre) pre.scrollIntoView({behavior:"smooth",block:"nearest"}); }; res.appendChild(b); }); return res;
+}
 function renderVerifyResult(d) {
   const res = g("wb-res"); if (!res) return;
   g("wb-runframe").dataset.live = "0"; res.innerHTML = "";
   const state = d.state || (d.status === "completed" ? (d.conclusion === "success" ? "success" : "failure") : "running");
   const noun = d.deploy ? "部署" : "验证";
   const title = state === "success" ? noun + "完成" : state === "failure" ? noun + "失败" : state === "queued" ? noun + "排队中" : noun + "运行中";
+  res.appendChild(renderDeliveryChain(d));
   const h = document.createElement("h4"); h.textContent = title; h.style.color = state === "success" ? "#247a43" : state === "failure" ? "#b33b32" : "#8b6b16"; res.appendChild(h);
   const p = document.createElement("pre"); p.textContent = state === "failure" ? ((d.failed_step ? "失败步骤：" + d.failed_step + "\n\n" : "") + ((d.error_lines || []).join("\n") || "GitHub 没有返回可提取的报错行。")) : "checkout ✓\nnpm install ✓\nnpm test " + (state === "success" ? "✓" : "…") + "\nnpm run build " + (state === "success" ? "✓" : "…"); res.appendChild(p);
   const links = document.createElement("div");
@@ -6161,15 +6175,33 @@ async function ensureWC(log) {
   try { wc = await withTimeout(wcMod.WebContainer.boot(coep === "credentialless" ? {coep: "credentialless"} : {}), 60000, "boot()"); }
   catch (e) { const m = "boot() 失败：" + e.message; termLn("\x1b[31m✗ " + m + "\x1b[0m"); card("WebContainer boot() 失败", m, true); wc = null; return null; }
   wc.on("server-ready", (port, url) => {
-    const fr = g("wb-runframe"); fr.dataset.live = "1"; fr.src = url; showTab("run"); termLn("\x1b[32m✓ 服务已就绪：端口 " + port + "\x1b[0m");
+    if (!parallelRunning || Number(port) === 3000) { const fr = g("wb-runframe"); fr.dataset.live = "1"; fr.src = url; showTab("run"); }
+    termLn("\x1b[32m✓ 服务已就绪：端口 " + port + "\x1b[0m");
     if (serverWait) { serverWait(url); serverWait = null; }
   });
   wc.on("error", e => termLn("\x1b[31mWebContainer 错误：" + (e && e.message || e) + "\x1b[0m"));
   return wc;
 }
 function pipeOut(proc, sink) { proc.output.pipeTo(new WritableStream({write(d) { termW(d); if (sink) sink.text += d; }})).catch(() => {}); }
+let parallelRunning = false;
+let parallelProcs = [];
+function parallelLog(kind, text) { const pre = g(kind === "front" ? "wb-front-log" : "wb-back-log"); if (!pre) return; pre.textContent += stripAnsi(String(text || "")); pre.scrollTop = pre.scrollHeight; }
+function pipeParallel(proc, kind) { proc.output.pipeTo(new WritableStream({write(d) { parallelLog(kind, d); }})).catch(() => {}); }
+async function collectProjectFiles(notes) {
+  const frontend = await collectFiles(notes), files = {};
+  Object.entries(frontend).forEach(([k,v]) => { files["frontend/" + k] = v; });
+  for (const path of ["package.json", "wrangler.toml", "worker.js"]) { try { const r = await mcpGet(path); if (r && typeof r.text === "string") files[path] = r.text; } catch (e) { notes.push("跳过 " + path + "（" + e.message + "）"); } }
+  let pkg = {}; try { pkg = JSON.parse(files["package.json"] || "{}"); } catch (_) {}
+  pkg.scripts = pkg.scripts || {}; if (!pkg.scripts.dev) pkg.scripts.dev = "npx --yes serve -l 3000 frontend";
+  files["package.json"] = JSON.stringify(pkg, null, 2); return files;
+}
+async function runBoth() {
+  const btn=g("wb-both"); if (parallelRunning || !ed) return; parallelRunning=true; parallelProcs=[]; if(btn){btn.disabled=true;btn.textContent="启动中…";} g("wb-parallel-logs").classList.add("on"); g("wb-front-log").textContent=""; g("wb-back-log").textContent=""; showTab("run"); renderVerifyResult({state:"running",submitted:false,local:true}); say("正在同时启动前端和后端 …");
+  try { if (!(await ensureWC())) throw new Error("WebContainer 不可用"); procs.forEach(p=>{try{p.kill()}catch(_){}}); procs=[]; const notes=[], files=await collectProjectFiles(notes); await wc.mount(toTree(files)); parallelLog("front","已 mount 项目，准备 npm install\n"); const install=await wc.spawn("npm",["install","--no-audit","--no-fund"]); parallelProcs.push(install); pipeParallel(install,"front"); const code=await install.exit; if(code!==0) throw new Error("npm install 失败，退出码 "+code); parallelLog("front","\n✓ npm install 完成\n"); const front=await wc.spawn("npm",["run","dev"]); const back=await wc.spawn("npx",["wrangler","dev","--local","--port","8787"]); parallelProcs.push(front,back); pipeParallel(front,"front"); pipeParallel(back,"back"); parallelLog("front","$ npm run dev\n"); parallelLog("back","$ npx wrangler dev --local --port 8787\n"); notes.forEach(n=>parallelLog("back","· "+n+"\n")); say("前后端已同时启动，日志已分栏显示");
+  } catch(e) { parallelLog("back","\n✗ "+(e.message||String(e))+"\n"); renderVerifyResult({state:"failure",error_lines:[e.message||String(e)],local:true}); say("同时启动失败，已显示报错",true); parallelRunning=false; if(btn){btn.disabled=false;btn.textContent="同时启动";} }
+}
 async function run() {
-  if (running || !ed) return; running = true; g("wb-run").disabled = true; showTab("run");
+  if (running || parallelRunning || !ed) return; running = true; g("wb-run").disabled = true; showTab("run");
   card("正在运行…", "准备 WebContainer"); say("正在运行 …");
   try {
     termLn("\r\n\x1b[36m$ 运行：boot → mount /" + DIR + " → npm install\x1b[0m");
@@ -6226,9 +6258,10 @@ g("wb-open").addEventListener("click", openWb);
 g("wb-close").addEventListener("click", closeWb);
 g("wb-save").addEventListener("click", save);
 g("wb-run").addEventListener("click", run);
+g("wb-both").addEventListener("click", runBoth);
 g("wb-reload").addEventListener("click", () => { if (!ed) return; if (dirty && !confirm("重新读取会丢掉未保存的修改，继续？")) return; loadFile(); });
 g("wb-prev-refresh").addEventListener("click", renderPreview);
-g("wb-term-clear").addEventListener("click", () => { if (term) term.clear(); else { const pre = g("wb-xterm").querySelector("pre"); if (pre) pre.textContent = ""; } });
+g("wb-term-clear").addEventListener("click", () => { if (term) term.clear(); else { const pre = g("wb-xterm").querySelector("pre"); if (pre) pre.textContent = ""; } ["wb-front-log","wb-back-log"].forEach(id=>{const p=g(id);if(p)p.textContent="";}); });
 document.querySelectorAll("#wb .wb-tab").forEach(b => b.addEventListener("click", () => showTab(b.dataset.wbtab)));
 document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s" && document.body.classList.contains("wb-open")) { e.preventDefault(); save(); } });
 /* 登录框加关闭：右上角 × 或点框外都能关（开发台层级也已高于登录遮罩） */
