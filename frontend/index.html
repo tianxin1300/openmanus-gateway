@@ -6037,6 +6037,7 @@ function renderVerifyResult(d) {
   const links = document.createElement("div");
   const actions = verifyLink("打开 Actions 运行记录", d.actions_url || d.run_url); if (actions) links.appendChild(actions);
   const preview = verifyLink("打开项目预览", d.preview_url); if (preview) links.appendChild(preview);
+  if (state === "failure") { const retry = document.createElement("button"); retry.type = "button"; retry.textContent = "失败重试"; retry.className = "sec"; retry.style.cssText = "margin-top:8px"; retry.onclick = runRemoteVerify; links.appendChild(retry); }
   if (state === "success" && !d.preview_url) { const tip = document.createElement("div"); tip.textContent = "验证已通过，但当前没有配置真实公网预览部署地址；点击“运行”可查看浏览器内 WebContainer 预览。"; tip.style.cssText = "margin-top:10px;color:#7a887d;font-size:12px"; links.appendChild(tip); }
   res.appendChild(links); showTab("run");
 }

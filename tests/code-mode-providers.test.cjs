@@ -70,6 +70,17 @@ test('editor delivery: pending work is resumable and deployment state is not ove
   assert.match(studioSource, /p\.project \|\| state\.project/);
 });
 
+test('project isolation: code edits use a temporary branch before merging to the base branch', () => {
+  assert.match(workerSource, /async function codeCreateTempBranch\(env, repo, project, base = "main"\)/);
+  assert.match(workerSource, /ref: "refs\/heads\/" \+ branch/);
+  assert.match(workerSource, /async function codeMergeTempBranch\(env, repo, branch, base, message\)/);
+  assert.match(workerSource, /await codeMergeTempBranch\(env, pend\.repo, pend\.branch/);
+  assert.match(workerSource, /await codeDeleteBranch\(env, pend\.repo, pend\.branch\)/);
+  assert.match(workerSource, /branch_deleted: true/);
+  assert.match(workerSource, /baseBranch: temp\.base/);
+  assert.doesNotMatch(workerSource, /codeUpdateFile\(env, pend\.repo, path, applied\.out\[path\], [\s\S]{0,160}branch = String\(env\.CODE_PUSH_BRANCH/);
+});
+
 test('web workbench: refuses unsafe save and recognizes dev/test/build scripts', () => {
   assert.match(frontendSource, /没有拿到文件基线 SHA，为避免覆盖线上改动/);
   assert.match(frontendSource, /const scripts = pkg && pkg\.scripts \|\| \{\}/);
@@ -148,6 +159,28 @@ test('BUG-03/04/06: push confirmation uses Durable Object atomic claim and idemp
     assert.match(source, /project: op\.project/);
     assert.match(source, /operation_id: operationId\(\)/);
   }
+});
+
+test('Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions', () => {
+  assert.match(workerSource, /return "code\/" \+ tag \+ "-"/);
+  assert.match(workerSource, /function codeTempPreview\(branch\)/);
+  assert.match(workerSource, /codeHistoryKey/);
+  assert.match(workerSource, /async function codeRollback/);
+  assert.match(workerSource, /path === "\/api\/code\/history"/);
+  assert.match(workerSource, /path === "\/api\/code\/rollback"/);
+  assert.match(workerSource, /path === "\/api\/code\/tree"/);
+  assert.match(workerSource, /accepted_paths/);
+  assert.match(workerSource, /conflict_resolutions/);
+  assert.match(workerSource, /choice\.choice === "mine"/);
+  assert.match(studioSource, /打开临时预览/);
+  assert.match(studioSource, /历史版本/);
+  assert.match(studioSource, /搜索文件/);
+  assert.match(studioSource, /接受/);
+  assert.match(studioSource, /拒绝/);
+  assert.match(studioSource, /我的/);
+  assert.match(studioSource, /他的/);
+  assert.match(frontendSource, /失败重试/);
+  assert.equal(studioSource, fs.readFileSync(path.join(root, 'studio.js'), 'utf8'));
 });
 
 function extract(source, startMarker, endMarker) {
