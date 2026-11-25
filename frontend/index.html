@@ -5570,8 +5570,9 @@ const bestPlace = (list, q) => {
 </script>
 <style>
 /* 开发台顶栏在手机上换行显示，避免「代码检测」等按钮被挤出屏幕 */
-@media (max-width: 900px) {
-  #wb-bar { flex-wrap: wrap; overflow-x: visible; -webkit-overflow-scrolling: touch; row-gap: 6px; height: auto; min-height: 44px; padding-bottom: 6px; }
+@media (max-width: 1100px) {
+  #wb { grid-template-rows: auto minmax(0, 1fr) 180px; }
+  #wb-bar { flex-wrap: wrap !important; overflow: visible !important; -webkit-overflow-scrolling: touch; row-gap: 6px; height: auto !important; min-height: 44px; padding-bottom: 6px; }
   #wb-bar > * { flex: 0 0 auto; }
   #wb-bar .sp { display: none; }
   #wb-bar strong, #wb-bar #wb-file, #wb-bar #wb-state { flex: 0 0 auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
