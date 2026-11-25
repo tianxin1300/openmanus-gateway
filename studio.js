@@ -178,7 +178,7 @@
     var root = ensurePanel(); clear(root); panelState = "pending";
     var head = el("div", "om-ph");
     head.appendChild(el("strong", "", "改动预览"));
-    head.appendChild(el("span", "om-meta", state.project + " · 共 " + p.edits.length + " 处 · 推到 " + p.repo + "@" + p.branch));
+    head.appendChild(el("span", "om-meta", (p.project || state.project) + " · 共 " + p.edits.length + " 处 · 目标 " + p.repo + "@" + p.branch + (p.status && p.status !== "awaiting_approval" ? " · " + p.status : "")));
     var x = el("button", "om-x", "×"); x.type = "button"; x.setAttribute("aria-label", "关闭预览（修改仍保留 1 小时）");
     x.addEventListener("click", hide); head.appendChild(x); root.appendChild(head);
     var body = el("div", "om-pb");
@@ -190,7 +190,7 @@
       card.appendChild(diffBox(e.old, e.new)); body.appendChild(card);
     });
     root.appendChild(body);
-    footer = el("div", "om-pf"); stEl = el("div", "om-st", "推到 " + p.branch + " 后，Cloudflare 会自动重新部署。");
+    footer = el("div", "om-pf"); stEl = el("div", "om-st", "确认后写入 GitHub；线上部署状态需要单独确认。");
     noBtn = el("button", "om-btn om-no", "不推"); noBtn.type = "button";
     yesBtn = el("button", "om-btn om-yes", "推"); yesBtn.type = "button";
     noBtn.addEventListener("click", function () { decide(false); });
@@ -214,9 +214,11 @@
       .then(function (r) { return r.json().catch(function () { return { ok: false, reply: "服务器返回的不是 JSON（HTTP " + r.status + "）" }; }); })
       .then(function (j) {
         var text = j.reply || j.msg || (j.ok ? "完成" : "失败");
-        return api("/api/code/pending").then(function (r) { return r.json(); }).catch(function () { return null; }).then(function (pj) {
-          var still = !!(pj && pj.ok && pj.pending && pj.pending.edits && pj.pending.edits.length);
-          showResult(text, !!j.ok, still, !yes);
+        return api("/api/code/pending").then(function (r) { return r.json(); }).then(function (pj) {
+          var known = !!(pj && pj.ok), still = known ? !!(pj.pending && pj.pending.edits && pj.pending.edits.length) : true;
+          showResult(known ? text : text + "\n状态暂时无法确认，修改仍保留，请稍后重试。", !!j.ok && known, still, !yes);
+        }).catch(function () {
+          showResult(text + "\n状态暂时无法确认，修改仍保留，请稍后重试。", false, true, !yes);
         });
       })
       .catch(function (e) { showResult("请求失败：" + (e && e.message || e), false, true, !yes); });

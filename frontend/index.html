@@ -5622,7 +5622,7 @@ const bestPlace = (list, q) => {
     <span class="sp"></span>
     <button id="wb-reload" class="sec" type="button" title="重新从 GitHub 读取 index.html（会丢掉未保存的修改）">重新读取</button>
     <button id="wb-save" type="button" title="把编辑器里的内容通过 MCP update_file 推到 GitHub main（Ctrl/Cmd+S）">保存到 GitHub</button>
-    <button id="wb-run" type="button" title="在浏览器里启动 WebContainer：mount /frontend → npm install → 结果显示在右侧">运行</button>
+    <button id="wb-run" type="button" title="在浏览器里启动 WebContainer：安装依赖，自动运行 test/build（如果有），再运行 dev 或 start">运行</button>
     <button id="wb-ci" class="sec" type="button" title="打开 GitHub Actions：推上去后会自动跑 node --check，绿了就是语法过了，红了点开看报错行">语法检查</button>
     <button id="wb-lint" type="button" title="代码检测：检查脚本语法、重复 id、$() 引用不到的 id、遗留 console.log" onclick="wbLint()">代码检测</button>
     <button id="wb-close" class="sec" type="button" aria-label="关闭开发台">×</button>
@@ -5996,7 +5996,8 @@ async function save() {
   if (!ed || saving) return;
   const val = ed.get();
   if (val.length < 2000 || !/<html/i.test(val)) { say("内容看起来不完整（太短或没有 <html>），已拒绝保存", true); return; }
-  if (!confirm("把编辑器里的内容推送到 " + REPO.owner + "/" + REPO.repo + " 的 " + REPO.branch + "：" + FILE + "？\n大小约 " + Math.round(val.length / 1024) + " KB" + (curSha ? "" : "\n（没有拿到文件 sha，MCP 若要求 sha 会失败）"))) return;
+  if (!curSha) { say("没有拿到文件基线 SHA，为避免覆盖线上改动，请先重新读取后再保存", true); return; }
+  if (!confirm("把编辑器里的内容推送到 " + REPO.owner + "/" + REPO.repo + " 的 " + REPO.branch + "：" + FILE + "？\n大小约 " + Math.round(val.length / 1024) + " KB")) return;
   saving = true; g("wb-save").disabled = true; say("正在推送到 GitHub …");
   try {
     const out = await mcpPut(FILE, val, "workbench: update " + FILE + " (" + new Date().toISOString().slice(0, 16).replace("T", " ") + ")", curSha);
@@ -6083,11 +6084,21 @@ async function run() {
     const code = await p1.exit; const tail = stripAnsi(inst.text).split("\n").map(s => s.trimEnd()).filter(Boolean).slice(-40).join("\n");
     if (code !== 0) { termLn("\x1b[31m✗ npm install 失败，退出码 " + code + "\x1b[0m"); card("npm install 失败（退出码 " + code + "）", tail, true); say("npm install 失败", true); return; }
     termLn("\x1b[32m✓ npm install 完成\x1b[0m");
-    let start = false; try { start = !!(JSON.parse(files["package.json"]).scripts || {}).start; } catch (_) {}
-    if (!start) { card("npm install 完成", (tail || "（无输出）") + "\n\n/package.json 里没有 start 脚本，所以没有启动服务。"); say("npm install 完成"); }
+    let pkg = {}; try { pkg = JSON.parse(files["package.json"]); } catch (_) {}
+    const scripts = pkg && pkg.scripts || {}, checks = ["test", "build"].filter((name, i, a) => scripts[name] && a.indexOf(name) === i);
+    for (const name of checks) {
+      termLn("\x1b[36m$ npm run " + name + "\x1b[0m");
+      const out = {text: ""}, cp = await wc.spawn("npm", ["run", name]); procs.push(cp); pipeOut(cp, out);
+      const result = await Promise.race([cp.exit, new Promise(ok => setTimeout(() => { try { cp.kill(); } catch (_) {} ok(124); }, 120000))]);
+      const log = stripAnsi(out.text).split("\n").filter(Boolean).slice(-30).join("\n");
+      if (result !== 0) { termLn("\x1b[33m· npm run " + name + " 未通过（退出码 " + result + "），仍继续尝试启动服务\x1b[0m"); card("npm run " + name + " 未通过", log, true); }
+      else termLn("\x1b[32m✓ npm run " + name + " 通过\x1b[0m");
+    }
+    const start = scripts.dev ? "dev" : scripts.start ? "start" : "";
+    if (!start) { card("检查完成", (tail || "（无输出）") + "\n\n/package.json 里没有 dev 或 start 脚本，所以没有启动服务。"); say("检查完成"); }
     else {
-      card("npm install 完成，正在启动服务…", tail);
-      const ready = new Promise(ok => { serverWait = ok; }), p2 = await wc.spawn("npm", ["run", "start"]); procs.push(p2); pipeOut(p2);
+      card("检查完成，正在运行 npm run " + start + "…", tail);
+      const ready = new Promise(ok => { serverWait = ok; }), p2 = await wc.spawn("npm", ["run", start]); procs.push(p2); pipeOut(p2);
       const url = await Promise.race([ready, new Promise(ok => setTimeout(() => ok(null), 60000))]);
       if (!url) { serverWait = null; card("npm install 完成，但服务 60 秒内没有监听端口", tail, true); say("服务没起来", true); }
       else say("运行完成，结果在右侧「运行结果」");

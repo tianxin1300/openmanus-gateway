@@ -12,6 +12,7 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const workerSource = fs.readFileSync(path.join(root, 'worker.js'), 'utf8');
 const frontendSource = fs.readFileSync(path.join(root, 'frontend/index.html'), 'utf8');
+const studioSource = fs.readFileSync(path.join(root, 'frontend/studio.js'), 'utf8');
 const blockedProviders = ['肖恩AI', 'Toter', 'Toter2'];
 const messages = [{ role: 'user', content: 'Write a small function.' }];
 const openRouterUrl = 'https://openrouter.ai/api/v1/chat/completions';
@@ -57,6 +58,23 @@ test('chat experience: prompt restores natural dialogue and frontend hides routi
   assert.doesNotMatch(workerSource, /直接回答就行，我接着改。\\n\\n（" \+ model \+ "）/);
   assert.match(frontendSource, /\(m\.notes \|\| \[\]\)\.filter\(n =>/);
   assert.match(frontendSource, /模型切换、联网成功、来源统计等内部状态不混进正文/);
+});
+
+test('editor delivery: pending work is resumable and deployment state is not overstated', () => {
+  assert.match(workerSource, /status: "awaiting_approval"/);
+  assert.match(workerSource, /status = "partial"/);
+  assert.match(workerSource, /已保留未成功的文件修改，可以重试/);
+  assert.match(workerSource, /consumed: true, status: "applied"/);
+  assert.match(studioSource, /状态暂时无法确认，修改仍保留，请稍后重试/);
+  assert.doesNotMatch(studioSource, /Cloudflare 会自动重新部署/);
+  assert.match(studioSource, /p\.project \|\| state\.project/);
+});
+
+test('web workbench: refuses unsafe save and recognizes dev/test/build scripts', () => {
+  assert.match(frontendSource, /没有拿到文件基线 SHA，为避免覆盖线上改动/);
+  assert.match(frontendSource, /const scripts = pkg && pkg\.scripts \|\| \{\}/);
+  assert.match(frontendSource, /\["test", "build"\]/);
+  assert.match(frontendSource, /scripts\.dev \? "dev" : scripts\.start \? "start"/);
 });
 
 function extract(source, startMarker, endMarker) {

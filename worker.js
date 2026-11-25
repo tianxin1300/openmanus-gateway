@@ -616,13 +616,17 @@ async function codeProject(env, user, proj, req, history, ui) {
   const branch = String(env.CODE_PUSH_BRANCH || "main"), deadline = Date.now() + 170000, tag = proj.names[0];
   if (!req) return { ok: false, reply: "想改什么？比如：把顶栏某个按钮改成和旁边的按钮一个样式。（你现在在代码模式里，直接说就行。）" };
   if (!env.KV) return { ok: false, reply: "❌ KV 没有绑定，没法暂存待推送的修改" };
+  const pendingKey = "code:pend:" + user, previous = await env.KV.get(pendingKey, "json").catch(() => null);
+  if (previous && Array.isArray(previous.edits) && previous.edits.length && ["awaiting_approval", "applying", "partial", "conflict"].includes(previous.status || "awaiting_approval")) {
+    return { ok: false, pending: true, reply: "上一项代码修改还没有处理完，请先在预览面板选择「推」或「不推」，再开始新的修改。" };
+  }
   const bad0 = codePushGuard(env, user, proj.repo, proj.files[0]);
   if (bad0) return { ok: false, reply: "⚠️ 不能改：" + bad0 };
-  const files = {};
+  const files = {}, baseSha = {};
   for (const p of proj.files) {
     const g = await codeGetFile(env, proj.repo, p, branch);
     if (!g.ok) return { ok: false, reply: "❌ 读 " + proj.repo + " 的 " + p + " 失败：" + g.msg };
-    if (g.exists) files[p] = g.text;
+    if (g.exists) { files[p] = g.text; baseSha[p] = g.sha || ""; }
   }
   if (!Object.keys(files).length) return { ok: false, reply: "❌ " + proj.repo + "@" + branch + " 里没找到 " + proj.files.join(" / ") };
   // 对话记忆：之前的问答带给模型，找片段时也把前两句用户的话算进关键词（回答“蓝色”这种短句也能找回原来那段代码）
@@ -662,7 +666,8 @@ async function codeProject(env, user, proj, req, history, ui) {
   if (!good.length) return { ok: false, reply: "❌ 这次没能生成可用的修改：" + (res.errs.map((e) => e.msg).join("；") || "模型没有给出修改块") + "。换个说法再试一次。" };
   const final = codeApply(files, good), summary = req.replace(/\s+/g, " ").slice(0, 60);
   const warn = [...new Set(final.done.map((d) => d.path))].flatMap((p) => codeBalanceWarn(files[p], final.out[p]).map((w) => p + " 的 " + w + " 数量和原来不一致"));
-  await env.KV.put("code:pend:" + user, JSON.stringify({ repo: proj.repo, branch, edits: good.map((g, i) => ({ path: final.done[i] ? final.done[i].path : g.path, line: final.done[i] ? final.done[i].line : 0, old: g.old, new: g.new })), summary, warn, at: Date.now() }), { expirationTtl: 3600 });
+  const pendingId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(36).slice(2));
+  await env.KV.put(pendingKey, JSON.stringify({ id: pendingId, project: tag, repo: proj.repo, branch, status: "awaiting_approval", edits: good.map((g, i) => ({ path: final.done[i] ? final.done[i].path : g.path, line: final.done[i] ? final.done[i].line : 0, old: g.old, new: g.new })), baseSha, summary, warn, at: Date.now(), updatedAt: Date.now() }), { expirationTtl: 3600 });
   const explain = String(last).replace(new RegExp(CODE_BLOCK_RE.source, "g"), "").replace(/```[^\n]*\n?/g, "").trim();
   const tail = (warn.length ? "\n\n⚠️ " + warn.join("；") + "（可能是括号写漏了，推之前请留意）" : "") + (res.errs.length ? "\n\n⚠️ 另有 " + res.errs.length + " 处没能应用，已跳过。" : "");
   const head = explain ? codeCut(explain, 300) + "\n\n" : "";
@@ -670,27 +675,58 @@ async function codeProject(env, user, proj, req, history, ui) {
   return { ok: true, pending: true, model, reply: head + "改动预览（" + tag + "，共 " + final.done.length + " 处）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行\n- " + codeCut(d.old, 400).replace(/\n/g, "\n- ") + "\n+ " + codeCut(d.new, 400).replace(/\n/g, "\n+ ")).join("\n\n") + tail + "\n\n要推上去吗？" };
 }
 async function codeConfirm(env, user, yes) {
-  const key = "code:pend:" + user, pend = env.KV ? await env.KV.get(key, "json") : null;
-  if (!pend) return { ok: false, reply: "没有待推送的修改（可能放了超过 1 小时，已经过期）。" };
-  if (!yes) { await env.KV.delete(key); return { ok: true, reply: "好，这次的修改已丢弃，没推。" }; }
-  const paths = [...new Set(pend.edits.map((e) => e.path))];
-  for (const p of paths) { const bad = codePushGuard(env, user, pend.repo, p); if (bad) return { ok: false, reply: "⚠️ 没推送：" + bad }; }
-  const files = {}, shas = {};
-  for (const p of paths) {
-    const g = await codeGetFile(env, pend.repo, p, pend.branch);
-    if (!g.ok || !g.exists) return { ok: false, reply: "❌ 没推送：重新读 " + p + " 失败" + (g.msg ? "（" + g.msg + "）" : "") + "。修改还留着，再回一次「推」重试。" };
-    files[p] = g.text; shas[p] = g.sha;
+  const key = "code:pend:" + user, lockKey = "code:lock:" + user, pend = env.KV ? await env.KV.get(key, "json") : null;
+  if (!pend || !Array.isArray(pend.edits) || !pend.edits.length) return { ok: false, reply: "没有待推送的修改（可能放了超过 1 小时，已经过期）。" };
+  if (pend.status === "applying") return { ok: false, pending: true, busy: true, reply: "这项修改正在处理，请不要重复点击；稍后刷新预览查看结果。" };
+  const lockId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(36).slice(2));
+  const existingLock = await env.KV.get(lockKey);
+  if (existingLock) return { ok: false, pending: true, busy: true, reply: "这项修改正在处理，请不要重复点击；稍后刷新预览查看结果。" };
+  // KV 没有 compare-and-swap；短租约至少能阻止普通重复点击和多标签页重入。
+  await env.KV.put(lockKey, lockId, { expirationTtl: 180 });
+  try {
+    const current = await env.KV.get(key, "json");
+    if (!current || current.id !== pend.id) return { ok: false, pending: true, reply: "待推送内容已经变化，请刷新预览后再操作。" };
+    if (!yes) { await env.KV.delete(key); return { ok: true, discarded: true, consumed: true, status: "discarded", reply: "好，这次的修改已丢弃，没推。" }; }
+    pend.status = "applying"; pend.updatedAt = Date.now(); pend.attempt = Number(pend.attempt || 0) + 1;
+    await env.KV.put(key, JSON.stringify(pend), { expirationTtl: 3600 });
+    const paths = [...new Set(pend.edits.map((e) => e.path))];
+    for (const p of paths) { const bad = codePushGuard(env, user, pend.repo, p); if (bad) { pend.status = "failed"; await env.KV.put(key, JSON.stringify(pend), { expirationTtl: 3600 }); return { ok: false, pending: true, reply: "⚠️ 没推送：" + bad }; } }
+    const files = {}, shas = {};
+    for (const p of paths) {
+      const g = await codeGetFile(env, pend.repo, p, pend.branch);
+      if (!g.ok || !g.exists) { pend.status = "conflict"; await env.KV.put(key, JSON.stringify(pend), { expirationTtl: 3600 }); return { ok: false, pending: true, conflict: true, reply: "❌ 没推送：重新读 " + p + " 失败" + (g.msg ? "（" + g.msg + "）" : "") + "。修改仍保留，请刷新后重试。" }; }
+      files[p] = g.text; shas[p] = g.sha;
+    }
+    const res = codeApply(files, pend.edits);
+    if (res.errs.length) {
+      pend.status = "conflict"; pend.updatedAt = Date.now();
+      await env.KV.put(key, JSON.stringify(pend), { expirationTtl: 3600 });
+      return { ok: false, pending: true, conflict: true, reply: "⚠️ 没推送：你确认之前文件已经变化，有 " + res.errs.length + " 处对不上原文。修改仍保留，请刷新后重试。" };
+    }
+    const lines = [], failed = [], succeeded = [];
+    for (const p of paths) {
+      let up;
+      try { up = await codeUpdateFile(env, pend.repo, p, res.out[p], "AI: " + pend.summary, pend.branch, shas[p]); }
+      catch (e) { up = { ok: false, msg: String(e && e.message || e).slice(0, 160) }; }
+      if (up.ok) { succeeded.push(p); lines.push("✅ 已推送 " + pend.repo + "@" + pend.branch + "：" + p + (up.url ? "\n" + up.url : "")); }
+      else { failed.push(p); lines.push("❌ " + p + " 推送失败：" + up.msg); }
+    }
+    if (failed.length) {
+      pend.edits = pend.edits.filter((e) => failed.includes(e.path));
+      pend.status = "partial"; pend.updatedAt = Date.now();
+      await env.KV.put(key, JSON.stringify(pend), { expirationTtl: 3600 });
+      return { ok: false, pending: true, partial: true, pushed: succeeded.length > 0, status: "partial", reply: lines.join("\n") + "\n⚠️ 已保留未成功的文件修改，可以重试。" };
+    }
+    await env.KV.delete(key);
+    return { ok: true, pushed: true, consumed: true, status: "applied", reply: lines.join("\n") };
+  } catch (e) {
+    const latest = await env.KV.get(key, "json").catch(() => null);
+    if (latest && latest.id === pend.id) { latest.status = "failed"; latest.updatedAt = Date.now(); await env.KV.put(key, JSON.stringify(latest), { expirationTtl: 3600 }); }
+    return { ok: false, pending: true, reply: "❌ 推送过程出错，修改仍保留，可重试：" + String(e && e.message || e).slice(0, 160) };
+  } finally {
+    const held = await env.KV.get(lockKey);
+    if (held === lockId) await env.KV.delete(lockKey);
   }
-  const res = codeApply(files, pend.edits);
-  if (res.errs.length) { await env.KV.delete(key); return { ok: false, reply: "⚠️ 没推送：你确认之前这些文件又被改过，有 " + res.errs.length + " 处对不上原文。为了不覆盖别人的改动，已丢弃，请重新说一次需求。" }; }
-  await env.KV.delete(key);
-  const lines = [];
-  for (const p of paths) {
-    const up = await codeUpdateFile(env, pend.repo, p, res.out[p], "AI: " + pend.summary, pend.branch, shas[p]);
-    lines.push(up.ok ? "✅ 已推送 " + pend.repo + "@" + pend.branch + "：" + p + (up.url ? "\n" + up.url : "") : "❌ " + p + " 推送失败：" + up.msg);
-    if (!up.ok) break;
-  }
-  return { ok: true, pushed: true, reply: lines.join("\n") };
 }
 async function codeChatEntry(env, user, text, history, o) {   // 返回 {ok, reply}；返回 null 表示这句话不归代码助手管，走原来的聊天。o 也可以直接传 true/false（= inCode，旧写法）
   o = o && typeof o === "object" ? o : { inCode: !!o };
@@ -8320,7 +8356,7 @@ async function handle(request, env, ctx) {
       const user = await userFromReq(request, env, url, "");
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
       const pend = env.KV ? await env.KV.get("code:pend:" + user, "json") : null;
-      return json({ ok: true, pending: pend && Array.isArray(pend.edits) ? { repo: pend.repo, branch: pend.branch, summary: pend.summary, at: pend.at, warn: pend.warn || [], edits: pend.edits.map((e) => ({ path: e.path, line: e.line || 0, old: codeCut(e.old, 4000), new: codeCut(e.new, 4000) })) } : null });
+      return json({ ok: true, pending: pend && Array.isArray(pend.edits) ? { id: pend.id || "", project: pend.project || "", status: pend.status || "awaiting_approval", repo: pend.repo, branch: pend.branch, summary: pend.summary, at: pend.at, updatedAt: pend.updatedAt || pend.at, warn: pend.warn || [], edits: pend.edits.map((e) => ({ path: e.path, line: e.line || 0, old: codeCut(e.old, 4000), new: codeCut(e.new, 4000) })) } : null });
     }
     if (path === "/api/code/confirm" && request.method === "POST") {
       const b = await request.json().catch(() => ({}));
