@@ -51,12 +51,16 @@ test('worker and frontend expose only the requested Groq, OpenRouter and NVIDIA 
 });
 
 test('chat experience: prompt restores natural dialogue and frontend hides routine notes', () => {
-  assert.match(workerSource, /<conversation_agency>[\s\S]*自然对话与自主推进/);
-  assert.match(workerSource, /不要把每一轮都套成固定/);
-  assert.match(workerSource, /只有存在会影响使用的重要不确定性或风险时才说明/);
-  assert.match(workerSource, /reply: r\.text \+ \(notes\.length \? "\\n\\n" \+ notes\.join\("\\n"\) : ""\) \};/);
-  assert.doesNotMatch(workerSource, /直接回答就行，我接着改。\\n\\n（" \+ model \+ "）/);
-  assert.match(frontendSource, /\(m\.notes \|\| \[\]\)\.filter\(n =>/);
+  const agency = workerSource.match(/<conversation_agency>([\s\S]*?)<\/conversation_agency>/);
+  assert.ok(agency, 'natural dialogue prompt exists');
+  assert.match(agency[1], /不要把每一轮都套成固定/);
+  assert.match(agency[1], /只有缺少会改变结果的关键信息、涉及高影响副作用或安全边界时才提问/);
+  assert.match(agency[1], /不展示内部推理、路由、模型切换、工具调用过程/);
+
+  const noteFilter = frontendSource.match(/\(m\.notes \|\| \[\]\)\.filter\(n => ([\s\S]*?)\)\.forEach/);
+  assert.ok(noteFilter, 'frontend filters notes before rendering');
+  assert.match(noteFilter[1], /⚠\|❌\|⏹/);
+  assert.match(noteFilter[1], /失败\|错误\|超时\|没取到\|没找到\|无法/);
   assert.match(frontendSource, /模型切换、联网成功、来源统计等内部状态不混进正文/);
 });
 
