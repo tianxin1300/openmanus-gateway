@@ -670,7 +670,7 @@ button.om-ic-only .om-ic{margin:0;width:16px;height:16px}
     <section class="om-side-section"><div class="om-side-heading"><span>项目</span><button id="project-add" class="om-mini-btn" type="button" title="新建项目">＋</button></div><div id="project-list" class="om-project-list"><button class="om-project-item on" type="button" data-project="全部对话"><span class="om-project-dot">◈</span><span>全部对话</span></button><button class="om-project-item" type="button" data-project="工作项目"><span class="om-project-dot">◇</span><span>工作项目</span></button></div></section>
         <section class="om-side-section"><button id="kb-open" class="om-project-item" type="button" title="我的论文、查过的链接、草稿"><span class="om-project-dot">▥</span><span>我的资料</span></button></section>
     <section class="om-side-section om-recent-section"><div class="om-side-heading"><span>最近</span><span style="display:flex;gap:4px"><button id="side-select-toggle" class="om-mini-btn" type="button" title="多选删除对话" aria-label="多选删除对话">☑</button><button id="side-search-toggle" class="om-mini-btn" type="button" title="搜索对话">⌕</button></span></div><div class="search-wrap om-search-wrap"><input id="chat-search" type="search" placeholder="搜索对话内容或文件名" aria-label="搜索最近对话"></div><div id="sel-bar" class="sel-bar" hidden><b id="sel-count">已选 0 个</b><button type="button" id="sel-all">全选</button><button type="button" id="sel-del" class="danger" disabled>删除</button><button type="button" id="sel-done">完成</button></div><div id="list"></div><button id="view-all" class="om-view-all" type="button">查看全部 <span>›</span></button><button id="wipe" class="sec om-wipe" type="button" title="删除本地保存的全部对话" aria-label="清空全部对话">清空全部对话</button></section>
-    <section class="om-side-section"><div class="om-side-heading"><span>模型</span><span id="current-model" class="om-current-model">OpenManus</span></div><div id="model-list" class="om-model-list"><button type="button" data-model="Groq"><span>G</span>Groq</button><button type="button" data-model="Gemini"><span>✦</span>Gemini</button><button type="button" data-model="OpenRouter"><span>O</span>OpenRouter</button><button type="button" data-model="英伟达"><span>N</span>英伟达</button><button type="button" data-model="智谱"><span>智</span>智谱</button><button type="button" data-model="GitHub Models"><span>GH</span>GitHub Models</button><button type="button" data-model="Poe"><span>P</span>Poe</button><button type="button" data-model="Coze"><span>C</span>Coze</button><button type="button" data-model="火山豆包"><span>火</span>火山豆包</button><button type="button" data-model="Dify Agent"><span>D</span>Dify 智能体</button></div></section>
+    <section class="om-side-section"><div class="om-side-heading"><span>模型</span><span id="current-model" class="om-current-model">OpenManus</span></div><div id="model-list" class="om-model-list"><button type="button" data-model="Groq"><span>G</span>Groq</button><button type="button" data-model="Gemini"><span>✦</span>Gemini</button><button type="button" data-model="肖恩AI"><span>肖</span>肖恩AI</button><button type="button" data-model="OpenRouter"><span>O</span>OpenRouter</button><button type="button" data-model="英伟达"><span>N</span>英伟达</button><button type="button" data-model="智谱"><span>智</span>智谱</button><button type="button" data-model="GitHub Models"><span>GH</span>GitHub Models</button><button type="button" data-model="Poe"><span>P</span>Poe</button><button type="button" data-model="Coze"><span>C</span>Coze</button><button type="button" data-model="火山豆包"><span>火</span>火山豆包</button><button type="button" data-model="Dify Agent"><span>D</span>Dify 智能体</button></div></section>
     <section class="om-side-section"><div class="om-side-heading"><span>文件 / 资料库</span><button id="library-refresh" class="om-mini-btn" type="button" title="刷新资料库">↻</button></div><div id="library-list" class="om-library-list"><div class="om-library-empty">当前对话中的文件会显示在这里</div></div></section>
   </div>
   <button id="user-settings" class="om-user-settings" type="button"><span class="om-avatar">M</span><span class="om-user-copy"><b>用户设置</b><small>账户与应用设置</small></span><span>›</span></button>
@@ -3233,15 +3233,18 @@ if (previewDownloadCurrent) previewDownloadCurrent.onclick = e => { if (previewD
 const FALLBACK_MODELS = {
   "Groq": ["openai/gpt-oss-120b"],
   "Gemini": ["gemini-3.5-flash-lite"],
+  "肖恩AI": ["gemini-3.8-flash", "gemini-3.5-flash"],
   "OpenRouter": []
 };
 const MODEL_HINT = {
   "openai/gpt-oss-120b": "Groq 主力 · 聊天/代码",
-  "gemini-3.5-flash-lite": "Gemini 备用"
+  "gemini-3.5-flash-lite": "Gemini 备用",
+  "gemini-3.8-flash": "肖恩AI 主接口",
+  "gemini-3.5-flash": "肖恩AI 备用模型"
 };
 let MODEL_MAP = null, modelMenuOpen = true, selModels = lsJSON("openmanus_selected_models", {});
 if (!selModels || typeof selModels !== "object") selModels = {};
-function modelField() { return selModels[selectedProvider] || (selectedProvider === "Gemini" ? "gemini-3.5-flash-lite" : "openai/gpt-oss-120b"); }
+function modelField() { return selModels[selectedProvider] || ({Groq: "openai/gpt-oss-120b", Gemini: "gemini-3.5-flash-lite", "肖恩AI": "gemini-3.8-flash"}[selectedProvider] || "openai/gpt-oss-120b"); }
 function providerField() { return selectedProvider !== "OpenManus" ? {provider: selectedProvider} : {}; }
 const shortModel = m => String(m).split("/").pop().replace(/:free$/, "");
 function updateModelLabel() { const m = selModels[selectedProvider]; $("current-model").textContent = selectedProvider + (m ? " · " + shortModel(m) : ""); }

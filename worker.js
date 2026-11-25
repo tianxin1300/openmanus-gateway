@@ -665,7 +665,7 @@ async function codeChatEntry(env, user, text, history, o) {   // 返回 {ok, rep
 // 前端带 stream:true → SSE 流式(每 5 秒心跳)；老前端不带 → 一整段 JSON(等待时发空格保活)
 // 需要：KV 绑定(变量名 KV)、REG_TOKEN；可选：GROQ_KEYS / OPENROUTER_KEYS / GEMINI_KEYS(逗号分隔)、AGG_URL、
 //       REQUIRE_LOGIN=1(开启后对话也必须带登录 token)
-// v93 备用模型（Key 只放环境变量，代码里没有）：Poe = POE_API_KEY + 可选 POE_MODELS(逗号分隔，默认 GPT-4o-mini,Gemini-2.5-Flash)；Coze = COZE_API_TOKEN + COZE_BOT_ID + COZE_API_BASE(默认 https://api.coze.cn)；火山豆包 = VOLCANO_API_KEY + 可选 VOLCANO_MODEL(默认 doubao-seed-1.6-flash)；v102 肖恩AI = TOTER_API_KEY + 可选 TOTER_BASE(主接口，默认 https://speed25.toter.me) + 可选 TOTER_BASE_BACKUP(备用接口，默认 https://api.supxh.xin) + 可选 TOTER_MODELS(默认 gemini-3.8-flash,gemini-3.5-flash)。
+// v93 备用模型（Key 只放环境变量，代码里没有）：Poe = POE_API_KEY + 可选 POE_MODELS(逗号分隔，默认 GPT-4o-mini,Gemini-2.5-Flash)；Coze = COZE_API_TOKEN + COZE_BOT_ID + COZE_API_BASE(默认 https://api.coze.cn)；火山豆包 = VOLCANO_API_KEY + 可选 VOLCANO_MODEL(默认 doubao-seed-1.6-flash)；v102 肖恩AI = TOTER_API_KEY + 可选 TOTER_BASE(主接口，默认 https://speed25.toter.me) + 可选 TOTER_BASE_BACKUP(备用接口，默认 https://api-119.supxh.in) + 可选 TOTER_MODELS(默认 gemini-3.8-flash,gemini-3.5-flash)。
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
@@ -1278,10 +1278,10 @@ const POE_DEFAULT_MODELS = ["GPT-4o-mini", "Gemini-2.5-Flash"];
 const poeModels = (env) => { const l = getKeys(env && env.POE_MODELS); return l.length ? l : POE_DEFAULT_MODELS; };
 const VOLCANO_DEFAULT_MODELS = ["doubao-seed-1.6-flash"];   // v93：火山方舟（豆包）。想换模型/接入点在环境变量 VOLCANO_MODEL 里填，逗号分隔
 const volcanoModels = (env) => { const l = getKeys(env && env.VOLCANO_MODEL); return l.length ? l : VOLCANO_DEFAULT_MODELS; };
-// v102：肖恩AI（go.toter.me，OpenAI 兼容中转站）。Key 只放环境变量 TOTER_API_KEY（多个用逗号分隔）；可选 TOTER_BASE（主接口，默认 https://speed25.toter.me）、TOTER_BASE_BACKUP（备用接口，默认 https://api.supxh.xin）、TOTER_MODELS（逗号分隔，默认 gemini-3.8-flash,gemini-3.5-flash）。
+// v102：肖恩AI（go.toter.me，OpenAI 兼容中转站）。Key 只放环境变量 TOTER_API_KEY（多个用逗号分隔）；可选 TOTER_BASE（主接口，默认 https://speed25.toter.me）、TOTER_BASE_BACKUP（备用接口，默认 https://api-119.supxh.xin）、TOTER_MODELS（逗号分隔，默认 gemini-3.8-flash,gemini-3.5-flash）。
 // TOTER_BASE 可以填到 host（自动补 /v1/chat/completions）、填到 /v1（自动补 /chat/completions），或直接填完整的 …/chat/completions 地址。
 const TOTER_DEFAULT_BASE = "https://speed25.toter.me";   // 主接口
-const TOTER_BACKUP_BASE = "https://api.supxh.xin";   // 备用接口（主接口不通时自动换它，用同一个 TOTER_API_KEY；地址可用 TOTER_BASE_BACKUP 改）
+const TOTER_BACKUP_BASE = "https://api-119.supxh.xin";   // 备用接口（主接口不通时自动换它，用同一个 TOTER_API_KEY；地址可用 TOTER_BASE_BACKUP 改）
 const TOTER_DEFAULT_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash"];
 const toterModels = (env) => { const l = getKeys(env && env.TOTER_MODELS); return l.length ? l : TOTER_DEFAULT_MODELS; };
 const toterBuild = (base) => { let b = String(base).trim().replace(/\/+$/, ""); if (/\/chat\/completions$/.test(b)) return b; if (!/\/v1$/.test(b)) b += "/v1"; return b + "/chat/completions"; };
