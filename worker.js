@@ -385,10 +385,20 @@ function workRuntime() {
   try { now = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false }) + "（Asia/Shanghai）"; } catch { now = new Date().toISOString(); }
   return "\n\n<runtime>\n<current_datetime>" + now + "</current_datetime>\n<locale>zh-CN</locale>\n</runtime>";
 }
-// 工作用模型：Groq 主力，Gemini 备用；不再把不稳定的 OpenRouter 免费模型放进聚合体。
+// 工作用模型：Groq 主力，OpenRouter 免费模型与 Gemini 作为聊天/代码备用。
 const WORK_MODELS = {
   groq: ["openai/gpt-oss-120b"],
-  openrouter: [],
+  openrouter: [
+    "inclusionai/ling-3.2-flash:free",
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "google/gemma-4-26b-a4b-it:free",
+    "google/gemma-4-31b-it:free",
+    "liquid/lfm-3-1.7b:free",
+    "recursive/flint-v1.0:free",
+    "particle-ai/particle-1:free",
+    "baidu/ernie-5.5-flash-preview:free",
+    "nvidia/nemotron-3.5-super-vl:free"
+  ],
   gemini: ["gemini-3.5-flash-lite"]
 };
 // ===== v100：代码助手（只加不改）=====
@@ -398,10 +408,14 @@ const WORK_MODELS = {
 // v101：直接说“改就医伴侣 …” / “改聚合体 …”就自动读该项目的前端 + 后端（只挑相关片段给模型，模型只回修改块），改完问“要推上去吗？”，回“推”才推、回“不推”就丢弃。
 // 推送相关变量（Worker 环境变量，都可选）：CODE_OWNER=能推送的登录账号（默认 AGENT_USER）；CODE_REPOS=允许读写的仓库，逗号分隔（默认 tianxin1300/openmanus-gateway）；
 //   CODE_PUSH_BRANCH=推到哪个分支（默认 main）；CODE_PROTECT=1 才保护 worker.js 不被推（wrangler.toml / .github 永远不推）；CODE_MODELS=想优先用的 OpenRouter 模型名，逗号分隔。
-const CODE_MODEL_ID = "openai/gpt-oss-120b";
+const CODE_MODEL_ID = "particle-ai/particle-1:free";
 const CODE_SYSTEM_PROMPT = "你是一个专业的代码助手，只负责写代码。用户说什么功能，你就直接给完整、可运行的代码，不要只讲思路；改完直接给完整代码（整份文件，不要省略，不要写“其余不变”）。不要删掉原有功能。代码放在带语言标记的 ``` 代码块里，代码块外最多写一两句说明。";
-const CODE_OR_MODELS = [];
-const CODE_GROQ_MODELS = ["openai/gpt-oss-120b"];
+const CODE_OR_MODELS = [
+  "particle-ai/particle-1:free",
+  "baidu/ernie-5.5-flash-preview:free",
+  "nvidia/nemotron-3.5-super-vl:free"
+];
+const CODE_GROQ_MODELS = [];
 const CODE_PUSH_LIMIT = 40000;   // 被改的原文件超过这个字数，不让模型整份重写，也不推送
 async function codeLLM(env, msgs, budgetMs) {
   const tried = [], t0 = Date.now(), budget = Math.max(15000, Number(budgetMs) || 110000), targets = [];
@@ -1095,7 +1109,7 @@ async function getOpenRouterModel(key) {
     try {
       const r = await fetch("https://openrouter.ai/api/v1/models", { headers: { Authorization: "Bearer " + key }, signal: T(8000) });
       const ids = ((await r.json()).data || []).filter((m) => m.pricing && Number(m.pricing.prompt) === 0 && m.id.endsWith(":free")).map((m) => m.id);
-      return pickGood(ids, ["inclusionai/ling-3.2-flash", "nemotron-3-ultra-550b-a55b", "gemma-4-26b-a4b-it"]) || "inclusionai/ling-3.2-flash:free";
+      return pickGood(ids, ["inclusionai/ling-3.2-flash:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "google/gemma-4-26b-a4b-it:free", "google/gemma-4-31b-it:free", "liquid/lfm-3-1.7b:free", "recursive/flint-v1.0:free"]) || "inclusionai/ling-3.2-flash:free";
     } catch { return "inclusionai/ling-3.2-flash:free"; }
   });
 }

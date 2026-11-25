@@ -3234,7 +3234,7 @@ const FALLBACK_MODELS = {
   "Groq": ["openai/gpt-oss-120b"],
   "Gemini": ["gemini-3.5-flash-lite"],
   "肖恩AI": ["gemini-3.8-flash", "gemini-3.5-flash", "deepseek-v4.1-flash", "入梦 Flash", "gemini-3-flash", "gemini-2.5-pro", "gemini-3.1-pro", "claude-sonnet-4-5", "claude-opus-4-5"],
-  "OpenRouter": []
+  "OpenRouter": ["particle-ai/particle-1:free", "baidu/ernie-5.5-flash-preview:free", "nvidia/nemotron-3.5-super-vl:free", "inclusionai/ling-3.2-flash:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "google/gemma-4-26b-a4b-it:free", "google/gemma-4-31b-it:free", "liquid/lfm-3-1.7b:free", "recursive/flint-v1.0:free"]
 };
 const MODEL_HINT = {
   "openai/gpt-oss-120b": "Groq 主力 · 聊天/代码",
@@ -3247,11 +3247,20 @@ const MODEL_HINT = {
   "gemini-2.5-pro": "肖恩AI · Gemini Pro",
   "gemini-3.1-pro": "肖恩AI · Gemini Pro",
   "claude-sonnet-4-5": "肖恩AI · Claude Sonnet",
-  "claude-opus-4-5": "肖恩AI · Claude Opus"
+  "claude-opus-4-5": "肖恩AI · Claude Opus",
+  "particle-ai/particle-1:free": "代码主力 · Particle-1",
+  "baidu/ernie-5.5-flash-preview:free": "代码备用 · ERNIE 5.5",
+  "nvidia/nemotron-3.5-super-vl:free": "代码备用 · Nemotron Super VL",
+  "inclusionai/ling-3.2-flash:free": "聊天主力 · Ling 3.2 Flash",
+  "nvidia/nemotron-3-ultra-550b-a55b:free": "聊天备用 · Nemotron Ultra",
+  "google/gemma-4-26b-a4b-it:free": "聊天备用 · Gemma 4 26B",
+  "google/gemma-4-31b-it:free": "聊天备用 · Gemma 4 31B",
+  "liquid/lfm-3-1.7b:free": "聊天备用 · LFM3-1.7B",
+  "recursive/flint-v1.0:free": "聊天备用 · Flint"
 };
 let MODEL_MAP = null, modelMenuOpen = true, selModels = lsJSON("openmanus_selected_models", {});
 if (!selModels || typeof selModels !== "object") selModels = {};
-function modelField() { return selModels[selectedProvider] || ({Groq: "openai/gpt-oss-120b", Gemini: "gemini-3.5-flash-lite", "肖恩AI": "gemini-3.8-flash"}[selectedProvider] || "openai/gpt-oss-120b"); }
+function modelField() { return selModels[selectedProvider] || ({Groq: "openai/gpt-oss-120b", Gemini: "gemini-3.5-flash-lite", "肖恩AI": "gemini-3.8-flash", OpenRouter: "inclusionai/ling-3.2-flash:free"}[selectedProvider] || "openai/gpt-oss-120b"); }
 function providerField() { return selectedProvider !== "OpenManus" ? {provider: selectedProvider} : {}; }
 const shortModel = m => String(m).split("/").pop().replace(/:free$/, "");
 function updateModelLabel() { const m = selModels[selectedProvider]; $("current-model").textContent = selectedProvider + (m ? " · " + shortModel(m) : ""); }
