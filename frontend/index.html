@@ -6116,9 +6116,9 @@ async function runRemoteDeploy() {
   let timer = null, started = Date.now();
   const finish = (bad, text) => { if (timer) clearTimeout(timer); if (btn) { btn.disabled = false; btn.textContent = "部署"; } say(text, bad); };
   try {
-    const start = await authFetch(GATEWAY+"/api/code/deploy", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ref:REPO.branch})});
+    const start = await authFetch(GATEWAY+"/api/code/deploy", {method:"POST",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({ref:REPO.branch})});
     let d = await start.json().catch(()=>({})); if (!start.ok || d.ok === false) throw new Error(d.msg || "无法启动部署"); renderVerifyResult({...d, state:"queued", deploy:true});
-    const poll = async () => { try { if (Date.now()-started > VERIFY_MAX_MS) { finish(true,"部署超时，已恢复按钮"); return; } const r=await authFetch(GATEWAY+"/api/code/deploy",{cache:"no-store"}), j=await r.json().catch(()=>({})); if(!r.ok||j.ok===false) throw new Error(j.msg||"读取部署状态失败"); renderVerifyResult({...j,deploy:true}); if(j.state==="success"){finish(false,"部署完成，CODE_PREVIEW_URL 已返回");return;} if(j.state==="failure"){finish(true,"部署失败，已显示日志");return;} timer=setTimeout(poll,3500); } catch(e) { renderVerifyResult({state:"failure",error_lines:[e.message||String(e)],deploy:true}); finish(true,"部署状态读取失败，已恢复按钮"); } }; timer=setTimeout(poll,2500);
+    const poll = async () => { try { if (Date.now()-started > VERIFY_MAX_MS) { finish(true,"部署超时，已恢复按钮"); return; } const r=await authFetch(GATEWAY+"/api/code/deploy",{cache:"no-store",headers:{"Accept":"application/json"}}), j=await r.json().catch(()=>({})); if(!r.ok||j.ok===false) throw new Error(j.msg||"读取部署状态失败"); renderVerifyResult({...j,deploy:true}); if(j.state==="success"){finish(false,"部署完成，CODE_PREVIEW_URL 已返回");return;} if(j.state==="failure"){finish(true,"部署失败，已显示日志");return;} timer=setTimeout(poll,3500); } catch(e) { renderVerifyResult({state:"failure",error_lines:[e.message||String(e)],deploy:true}); finish(true,"部署状态读取失败，已恢复按钮"); } }; timer=setTimeout(poll,2500);
   } catch(e) { renderVerifyResult({state:"failure",error_lines:[e.message||String(e)],deploy:true}); finish(true,"部署启动失败，已恢复按钮"); }
 }
 const ciBtn = g("wb-ci");
