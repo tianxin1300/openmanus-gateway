@@ -473,6 +473,67 @@ const codeGhHeaders = (env) => ({ Authorization: "Bearer " + env.GH_PAT, Accept:
 const codeGhUrl = (repo, path) => "https://api.github.com/repos/" + repo + "/contents/" + path.split("/").map(encodeURIComponent).join("/");
 const codeRepoOk = (env, repo) => /^[A-Za-z0-9_.\-]+\/[A-Za-z0-9_.\-]+$/.test(String(repo)) && getKeys(env.CODE_REPOS || "tianxin1300/openmanus-gateway,tianxin1300/jiuyibanlv").map((x) => x.toLowerCase()).includes(String(repo).toLowerCase());
 const codePathOk = (p) => /^[A-Za-z0-9._\-\/]{1,200}$/.test(String(p)) && !String(p).split("/").some((s) => s === "" || s === "." || s === "..");
+const CODE_VERIFY_WORKFLOW = "verify-project.yml";
+const codeVerifyRepo = (env) => String(env.CODE_REPO || "tianxin1300/openmanus-gateway").trim();
+const codeVerifyRef = (ref) => /^[A-Za-z0-9._\-/]{1,120}$/.test(String(ref || "main")) && !String(ref || "main").split("/").some((x) => x === "..") ? String(ref || "main") : "main";
+const codeVerifyKey = (user) => "code:verify:" + String(user || "").slice(0, 160);
+function codeVerifyPreview(env, runId) {
+  const raw = String(env.CODE_PREVIEW_URL || env.PREVIEW_URL || "").trim();
+  if (!/^https?:\/\//i.test(raw)) return "";
+  return raw.replaceAll("{run_id}", encodeURIComponent(String(runId || "")));
+}
+async function codeGhApi(env, api, options = {}) {
+  if (!env.GH_PAT) return { ok: false, status: 503, msg: "GH_PAT 没有配置" };
+  const r = await fetch(api, { ...options, headers: { ...codeGhHeaders(env), ...(options.headers || {}) }, signal: T(20000) });
+  const text = await r.text().catch(() => ""), data = (() => { try { return JSON.parse(text); } catch { return null; } })();
+  if (!r.ok) return { ok: false, status: r.status, msg: String((data && (data.message || data.error)) || text || ("GitHub HTTP " + r.status)).slice(0, 500), data };
+  return { ok: true, status: r.status, data, text };
+}
+async function codeVerifyStart(env, user, body) {
+  const repo = codeVerifyRepo(env), ref = codeVerifyRef(body && body.ref), requestId = "verify-" + Date.now().toString(36) + "-" + rand(6);
+  if (!codeRepoOk(env, repo)) return { ok: false, msg: "验证仓库不在允许名单里" };
+  const api = "https://api.github.com/repos/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW + "/dispatches";
+  const dispatched = await codeGhApi(env, api, { method: "POST", body: JSON.stringify({ ref, inputs: { request_id: requestId, ref } }), headers: { "Content-Type": "application/json" } });
+  if (!dispatched.ok) return { ok: false, msg: "无法启动验证：" + dispatched.msg, status: dispatched.status };
+  const job = { request_id: requestId, repo, ref, workflow: CODE_VERIFY_WORKFLOW, started_at: new Date().toISOString(), status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW, preview_url: codeVerifyPreview(env, ""), error_lines: [] };
+  if (env.KV) await env.KV.put(codeVerifyKey(user), JSON.stringify(job), { expirationTtl: 86400 });
+  return { ok: true, ...job, message: "验证已排队：checkout → npm install → npm test → npm run build" };
+}
+function codeVerifyErrorLines(text) {
+  const lines = String(text || "").split(/\r?\n/).map((x) => x.trimEnd()).filter(Boolean);
+  const hit = lines.filter((x) => /(npm ERR!|error|failed|failure|exception|syntaxerror|exit code|✖|✗)/i.test(x));
+  return (hit.length ? hit : lines).slice(-30).map((x) => x.slice(0, 1000));
+}
+async function codeVerifyStatus(env, user) {
+  const old = env.KV ? await env.KV.get(codeVerifyKey(user), "json") : null;
+  if (!old) return { ok: false, msg: "没有找到验证任务，请先点击运行 / 验证" };
+  const repo = old.repo || codeVerifyRepo(env), base = "https://api.github.com/repos/" + repo;
+  if (!old.run_id) {
+    const listed = await codeGhApi(env, base + "/actions/workflows/" + CODE_VERIFY_WORKFLOW + "/runs?event=workflow_dispatch&per_page=20");
+    if (listed.ok) {
+      const after = Date.parse(old.started_at || 0) - 30000;
+      const run = (listed.data && listed.data.workflow_runs || []).find((x) => Date.parse(x.created_at || 0) >= after && x.head_branch === old.ref);
+      if (run) { old.run_id = run.id; old.run_url = run.html_url || ""; }
+    }
+  }
+  if (old.run_id) {
+    const got = await codeGhApi(env, base + "/actions/runs/" + encodeURIComponent(String(old.run_id)));
+    if (got.ok && got.data) { old.status = got.data.status || old.status; old.conclusion = got.data.conclusion || null; old.run_url = got.data.html_url || old.run_url; old.head_sha = got.data.head_sha || old.head_sha; }
+    if (old.conclusion && old.conclusion !== "success") {
+      const jobs = await codeGhApi(env, base + "/actions/runs/" + encodeURIComponent(String(old.run_id)) + "/jobs?per_page=20");
+      const all = jobs.data && jobs.data.jobs || [], failed = all.find((x) => x.conclusion === "failure") || all[0];
+      if (failed) {
+        const log = await codeGhApi(env, base + "/actions/jobs/" + encodeURIComponent(String(failed.id)) + "/logs", { headers: { Accept: "text/plain" } });
+        old.error_lines = codeVerifyErrorLines(log.text || log.msg || "验证失败，但 GitHub 没有返回日志");
+        old.failed_step = (failed.steps || []).find((x) => x.conclusion === "failure")?.name || "验证步骤";
+      }
+    }
+  }
+  old.preview_url = codeVerifyPreview(env, old.run_id);
+  old.state = old.status === "completed" ? (old.conclusion === "success" ? "success" : "failure") : "running";
+  if (env.KV) await env.KV.put(codeVerifyKey(user), JSON.stringify(old), { expirationTtl: 86400 });
+  return { ok: true, ...old, actions_url: old.run_url || ("https://github.com/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW) };
+}
 async function codeGetFile(env, repo, path, ref) {   // = MCP get_file
   if (!env.GH_PAT) return { ok: false, msg: "GH_PAT 没有配置" };
   if (!codeRepoOk(env, repo)) return { ok: false, msg: "仓库 " + repo + " 不在允许名单里（Worker 变量 CODE_REPOS，逗号分隔）" };
@@ -8348,6 +8409,21 @@ async function handle(request, env, ctx) {
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
       const g = await codeGetFile(env, String(url.searchParams.get("repo") || ""), String(url.searchParams.get("path") || ""), String(url.searchParams.get("ref") || ""));
       return json(g.ok ? { ok: true, exists: !!g.exists, size: g.size || 0, content: g.text || "" } : g, g.ok ? 200 : 400);
+    }
+
+    // ---- v108：复用现有 GitHub 仓库，触发独立 verify-project workflow 并把结果回传开发台 ----
+    if (path === "/api/code/verify" && request.method === "POST") {
+      const b = await request.json().catch(() => ({}));
+      const user = await userFromReq(request, env, url, String(b.token || ""));
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeVerifyStart(env, user, b);
+      return json(r, r.ok ? 200 : (r.status || 502));
+    }
+    if (path === "/api/code/verify" && request.method === "GET") {
+      const user = await userFromReq(request, env, url, "");
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeVerifyStatus(env, user);
+      return json(r, r.ok ? 200 : 404);
     }
 
     // ---- v105：代码助手的预览面板接口（全部要登录）----

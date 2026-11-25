@@ -1,0 +1,9 @@
+{
+  "name": "openmanus-gateway",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "test": "node --test tests/code-mode-providers.test.cjs",
+    "build": "cp worker.js /tmp/openmanus-worker-build-check.mjs && node --check /tmp/openmanus-worker-build-check.mjs && node --check frontend/studio.js && node --check studio.js"
+  }
+}

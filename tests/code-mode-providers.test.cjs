@@ -77,6 +77,30 @@ test('web workbench: refuses unsafe save and recognizes dev/test/build scripts',
   assert.match(frontendSource, /scripts\.dev \? "dev" : scripts\.start \? "start"/);
 });
 
+test('remote verification: reuses a dispatchable workflow and returns status fields', () => {
+  const workflow = fs.readFileSync(path.join(root, '.github/workflows/verify-project.yml'), 'utf8');
+  assert.match(workflow, /name: verify-project/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /actions\/checkout@v4/);
+  assert.match(workflow, /run: npm install/);
+  assert.match(workflow, /run: npm test/);
+  assert.match(workflow, /run: npm run build/);
+  assert.match(workerSource, /CODE_VERIFY_WORKFLOW = "verify-project\.yml"/);
+  assert.match(workerSource, /actions\/workflows\/" \+ CODE_VERIFY_WORKFLOW \+ "\/dispatches/);
+  assert.match(workerSource, /error_lines/);
+  assert.match(workerSource, /preview_url/);
+  assert.match(workerSource, /path === "\/api\/code\/verify"/);
+});
+
+test('remote verification UI: green success, red failures, and no invented preview URL', () => {
+  assert.match(frontendSource, /验证通过/);
+  assert.match(frontendSource, /验证失败/);
+  assert.match(frontendSource, /d\.error_lines/);
+  assert.match(frontendSource, /verifyLink\("打开项目预览", d\.preview_url\)/);
+  assert.match(frontendSource, /没有配置真实公网预览部署地址/);
+  assert.doesNotMatch(frontendSource, /window\.open\("https:\/\/github\.com\/" \+ REPO\.owner \+ "\/" \+ REPO\.repo \+ "\/actions"/);
+});
+
 function extract(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
   assert.notEqual(start, -1, `Source marker missing: ${startMarker}`);

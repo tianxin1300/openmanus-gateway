@@ -1,0 +1,59 @@
+name: verify-project
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: "OpenManus verification request id"
+        required: false
+        type: string
+      ref:
+        description: "Branch or commit to verify"
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-project-${{ github.event.inputs.ref || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: install, test and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: npm install
+        run: npm install --no-audit --no-fund
+
+      - name: npm test
+        run: npm test
+
+      - name: npm run build
+        run: npm run build
+
+      - name: Write verification summary
+        if: always()
+        run: |
+          {
+            echo "## OpenManus project verification"
+            echo
+            echo "- Ref: ${{ github.event.inputs.ref || github.ref }}"
+            echo "- Request: ${{ github.event.inputs.request_id || 'manual' }}"
+            echo "- Result: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
