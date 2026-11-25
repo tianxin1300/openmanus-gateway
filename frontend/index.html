@@ -3264,10 +3264,16 @@ function modelField() { return selModels[selectedProvider] || ({Groq: "openai/gp
 function providerField() { return selectedProvider !== "OpenManus" ? {provider: selectedProvider} : {}; }
 const shortModel = m => String(m).split("/").pop().replace(/:free$/, "");
 function codeProviderBlocked(p) { return !!(window.omStudio && window.omStudio.state.on && ["肖恩AI", "Toter", "Toter2"].includes(p)); }
+const CODE_MODELS_FRONTEND = ["particle-ai/particle-1:free", "baidu/ernie-5.5-flash-preview:free", "nvidia/nemotron-3.5-super-vl:free"];
+function codeModeOn() { return !!(window.omStudio && window.omStudio.state.on); }
 function updateModelLabel() { const m = selModels[selectedProvider]; $("current-model").textContent = selectedProvider + (m ? " · " + shortModel(m) : ""); }
 function renderModelMenu() {
   const list = $("model-list"); if (!list) return;
   if (codeProviderBlocked(selectedProvider)) {
+    selectedProvider = "OpenRouter"; modelMenuOpen = true;
+    lsSet("openmanus_selected_provider", selectedProvider);
+  }
+  if (codeModeOn() && selectedProvider !== "OpenRouter") {
     selectedProvider = "OpenRouter"; modelMenuOpen = true;
     lsSet("openmanus_selected_provider", selectedProvider);
   }
@@ -3278,7 +3284,8 @@ function renderModelMenu() {
     btn.classList.toggle("on", !blocked && p === selectedProvider);
     if (blocked) return;
     if (p !== selectedProvider || !modelMenuOpen) return;
-    const models = Array.from(new Set([...(MODEL_MAP && Array.isArray(MODEL_MAP[p]) ? MODEL_MAP[p] : []), ...(FALLBACK_MODELS[p] || [])])); if (!models.length) return;
+    const models = codeModeOn() && p === "OpenRouter" ? CODE_MODELS_FRONTEND.slice() : Array.from(new Set([...(MODEL_MAP && Array.isArray(MODEL_MAP[p]) ? MODEL_MAP[p] : []), ...(FALLBACK_MODELS[p] || [])])); if (!models.length) return;
+    if (codeModeOn() && p === "OpenRouter" && (!selModels[p] || !CODE_MODELS_FRONTEND.includes(selModels[p]))) selModels[p] = CODE_MODELS_FRONTEND[0];
     if (selModels[p] && !models.includes(selModels[p])) delete selModels[p];
     const sub = document.createElement("div"); sub.className = "om-model-sub"; sub.setAttribute("role", "listbox");
     const add = (label, val, hint) => {

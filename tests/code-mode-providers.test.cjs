@@ -316,6 +316,14 @@ test('frontend: without studio initialization, ordinary-chat providers remain av
 
 test('frontend: code mode hides/disables all Toter aliases and ignores their clicks', () => {
   const menu = loadMenu({ on: true, selected: 'Groq' });
+  assert.equal(menu.selected(), 'OpenRouter');
+  assert.equal(menu.storage.get('openmanus_selected_provider'), 'OpenRouter');
+  assert.deepEqual(menu.list.querySelectorAll('.om-model-sub')[0].children.map(option => option.title), [
+    '按默认顺序自动选',
+    'particle-ai/particle-1:free',
+    'baidu/ernie-5.5-flash-preview:free',
+    'nvidia/nemotron-3.5-super-vl:free'
+  ]);
   for (const provider of blockedProviders) {
     const button = menu.buttons.get(provider);
     assert.equal(menu.blocked(provider), true);
@@ -324,7 +332,7 @@ test('frontend: code mode hides/disables all Toter aliases and ignores their cli
     assert.equal(button.style.display, 'none');
     assert.equal(button.classList.contains('on'), false);
     button.onclick(); // Even a programmatic click must not change the provider.
-    assert.equal(menu.selected(), 'Groq');
+    assert.equal(menu.selected(), 'OpenRouter');
   }
   for (const provider of ['Groq', 'OpenRouter', 'Gemini']) {
     assert.equal(menu.blocked(provider), false);
