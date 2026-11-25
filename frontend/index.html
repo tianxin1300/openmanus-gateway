@@ -3066,7 +3066,7 @@ function workTask(preset) { if (window.omTaskPanel) window.omTaskPanel(preset); 
 <div id="settings-mask" aria-hidden="true"><div class="settings-card" role="dialog" aria-label="用户设置"><div class="settings-head"><strong id="settings-title">用户设置</strong><button id="settings-close" class="settings-close" type="button" aria-label="关闭设置">×</button></div><div id="settings-main" class="settings-view"><button class="settings-row" data-setting-view="profile"><span>个人资料</span><span class="arrow">›</span></button><button class="settings-row" data-setting-view="billing"><span>账单</span><span class="arrow">›</span></button><button class="settings-row" data-setting-view="notifications"><span>通知</span><span class="arrow">›</span></button><button class="settings-row" data-setting-view="privacy"><span>隐私</span><span class="arrow">›</span></button><button class="settings-row" data-setting-view="shares"><span>共享链接</span><span class="arrow">›</span></button><div class="settings-subtitle">应用</div><button class="settings-row" data-setting-view="features"><span>功能</span><span class="arrow">›</span></button><button class="settings-row" data-setting-view="connectors"><span>连接器</span><span class="arrow">›</span></button><button class="settings-row" data-setting-view="voice"><span>语音</span><span class="arrow">›</span></button><div class="settings-control"><span>链接打开方式</span><span>默认浏览器</span></div><div class="settings-control"><span>触感反馈</span><button id="haptic-toggle" class="settings-toggle on" type="button" aria-label="触感反馈开关"><i></i></button></div></div><div id="settings-detail" class="settings-view" hidden><button id="settings-back" class="settings-row" type="button"><span>‹ 返回设置</span><span></span></button><div id="settings-detail-content"></div></div></div></div>
 <script>
 /* ---------- OpenManus 三栏扩展（基于 index(3).html 增量加入） ---------- */
-let selectedProvider = lsGet("openmanus_selected_provider", "") || "OpenManus";
+let selectedProvider = lsGet("openmanus_selected_provider", "") || "Groq";
 window.omVoiceSettings = (() => { try { const v = JSON.parse(localStorage.getItem("openmanus_voice_settings") || "{}"); return v && typeof v === "object" ? v : {}; } catch (e) { return {}; } })();
 window.omVoiceSettings.language = "zh-CN";
 window.omVoiceSettings.rate = Number(window.omVoiceSettings.rate || 1);
@@ -3231,14 +3231,17 @@ if (previewDownloadCurrent) previewDownloadCurrent.onclick = e => { if (previewD
 
 /* ---------- 1. 点供应商 → 下面出下拉列表，点哪个用哪个 ---------- */
 const FALLBACK_MODELS = {
-  "Groq": ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b"],
-  "Gemini": ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash"],
-  "OpenRouter": ["nvidia/nemotron-3-ultra:free", "google/gemma-3-27b-it:free", "nvidia/nemotron-3.5-super-vl:free", "cohere/north-mini-code:free", "google/gemma-4-26b-a4b:free", "meta-llama/llama-3.3-70b-instruct:free"]
+  "Groq": ["openai/gpt-oss-120b"],
+  "Gemini": ["gemini-3.5-flash-lite"],
+  "OpenRouter": []
 };
-const MODEL_HINT = {"nvidia/nemotron-3.5-super-vl:free": "看图强", "cohere/north-mini-code:free": "写代码强", "google/gemma-4-26b-a4b:free": "快，随手问"};
+const MODEL_HINT = {
+  "openai/gpt-oss-120b": "Groq 主力 · 聊天/代码",
+  "gemini-3.5-flash-lite": "Gemini 备用"
+};
 let MODEL_MAP = null, modelMenuOpen = true, selModels = lsJSON("openmanus_selected_models", {});
 if (!selModels || typeof selModels !== "object") selModels = {};
-function modelField() { return selModels[selectedProvider] || "openmanus-qwen"; }
+function modelField() { return selModels[selectedProvider] || (selectedProvider === "Gemini" ? "gemini-3.5-flash-lite" : "openai/gpt-oss-120b"); }
 function providerField() { return selectedProvider !== "OpenManus" ? {provider: selectedProvider} : {}; }
 const shortModel = m => String(m).split("/").pop().replace(/:free$/, "");
 function updateModelLabel() { const m = selModels[selectedProvider]; $("current-model").textContent = selectedProvider + (m ? " · " + shortModel(m) : ""); }

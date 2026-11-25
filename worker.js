@@ -385,11 +385,11 @@ function workRuntime() {
   try { now = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false }) + "（Asia/Shanghai）"; } catch { now = new Date().toISOString(); }
   return "\n\n<runtime>\n<current_datetime>" + now + "</current_datetime>\n<locale>zh-CN</locale>\n</runtime>";
 }
-// 工作用模型（按干活能力排，免费优先）
+// 工作用模型：Groq 主力，Gemini 备用；不再把不稳定的 OpenRouter 免费模型放进聚合体。
 const WORK_MODELS = {
-  groq: ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b"], // v12: 只留 Groq 官网能确认的 3 个
-  openrouter: ["nvidia/nemotron-3-ultra:free", "google/gemma-3-27b-it:free", "nvidia/nemotron-3.5-super-vl:free" /* 看图强 */, "cohere/north-mini-code:free" /* 写代码强 */, "google/gemma-4-26b-a4b:free" /* 快，随手问 */, "meta-llama/llama-3.3-70b-instruct:free"], // v29：前端下拉直接读这张表（/api/models），以后加模型只改这里
-  gemini: ["gemini-3.8-flash"]   // 2.0-flash 已下线；2.5-flash 对新用户也已下线（404 no longer available to new users），只留 3.8-flash
+  groq: ["openai/gpt-oss-120b"],
+  openrouter: [],
+  gemini: ["gemini-3.5-flash-lite"]
 };
 // ===== v100：代码助手（只加不改）=====
 // 不动 WORK_SYSTEM_PROMPT（飞书 / 待办 / 地图 / 文件解读都靠它）和原来的聊天模型轮换。
@@ -398,15 +398,15 @@ const WORK_MODELS = {
 // v101：直接说“改就医伴侣 …” / “改聚合体 …”就自动读该项目的前端 + 后端（只挑相关片段给模型，模型只回修改块），改完问“要推上去吗？”，回“推”才推、回“不推”就丢弃。
 // 推送相关变量（Worker 环境变量，都可选）：CODE_OWNER=能推送的登录账号（默认 AGENT_USER）；CODE_REPOS=允许读写的仓库，逗号分隔（默认 tianxin1300/openmanus-gateway）；
 //   CODE_PUSH_BRANCH=推到哪个分支（默认 main）；CODE_PROTECT=1 才保护 worker.js 不被推（wrangler.toml / .github 永远不推）；CODE_MODELS=想优先用的 OpenRouter 模型名，逗号分隔。
-const CODE_MODEL_ID = "代码助手";
+const CODE_MODEL_ID = "openai/gpt-oss-120b";
 const CODE_SYSTEM_PROMPT = "你是一个专业的代码助手，只负责写代码。用户说什么功能，你就直接给完整、可运行的代码，不要只讲思路；改完直接给完整代码（整份文件，不要省略，不要写“其余不变”）。不要删掉原有功能。代码放在带语言标记的 ``` 代码块里，代码块外最多写一两句说明。";
-const CODE_OR_MODELS = ["cohere/north-mini-code:free", "recursive/flint-v1.0:free"];   // OpenRouter 免费代码模型；OpenRouter 常下架免费模型，所以失败会自动换下一个，最后落到 Groq
-const CODE_GROQ_MODELS = ["llama-3.3-70b-versatile"];
+const CODE_OR_MODELS = [];
+const CODE_GROQ_MODELS = ["openai/gpt-oss-120b"];
 const CODE_PUSH_LIMIT = 40000;   // 被改的原文件超过这个字数，不让模型整份重写，也不推送
 async function codeLLM(env, msgs, budgetMs) {
   const tried = [], t0 = Date.now(), budget = Math.max(15000, Number(budgetMs) || 110000), targets = [];
   for (const m of [...new Set([...getKeys(env.CODE_MODELS), ...CODE_OR_MODELS])]) targets.push({ name: "OpenRouter", url: "https://openrouter.ai/api/v1/chat/completions", keys: getKeys(env.OPENROUTER_KEYS), model: m });
-  for (const m of CODE_GROQ_MODELS) targets.push({ name: "Groq", url: "https://api.groq.com/openai/v1/chat/completions", keys: getKeys(env.GROQ_KEYS), model: m });
+  for (const m of CODE_GROQ_MODELS) targets.push({ name: "Groq", url: "https://api.groq.com/openai/v1/chat/completions", keys: getKeys(env.GROQ_KEYS || env.GROQ_API_KEY), model: m });
   for (const t of targets) {
     for (const key of t.keys) {
       const left = budget - (Date.now() - t0); if (left < 8000) return { text: "", tried };
@@ -1095,8 +1095,8 @@ async function getOpenRouterModel(key) {
     try {
       const r = await fetch("https://openrouter.ai/api/v1/models", { headers: { Authorization: "Bearer " + key }, signal: T(8000) });
       const ids = ((await r.json()).data || []).filter((m) => m.pricing && Number(m.pricing.prompt) === 0 && m.id.endsWith(":free")).map((m) => m.id);
-      return pickGood(ids, ["nemotron-3-ultra", "gemma-3", "llama-3.3"]) || "nvidia/nemotron-3-ultra:free";
-    } catch { return "openai/gpt-oss-120b:free"; }
+      return pickGood(ids, ["inclusionai/ling-3.2-flash", "nemotron-3-ultra-550b-a55b", "gemma-4-26b-a4b-it"]) || "inclusionai/ling-3.2-flash:free";
+    } catch { return "inclusionai/ling-3.2-flash:free"; }
   });
 }
 async function getGeminiModel(key) {
@@ -1108,12 +1108,12 @@ async function getGeminiModel(key) {
         const names = ((await r.json()).models || [])
           .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
           .map((m) => m.name.replace("models/", ""));
-        const pick = names.find((n) => n.includes("3.8-flash")) || names.find((n) => n.includes("3-flash")) ||
+        const pick = names.find((n) => n.includes("3.5-flash-lite")) || names.find((n) => n.includes("flash-lite-latest")) || names.find((n) => n.includes("3-flash")) ||
           names.find((n) => n.includes("flash") && !n.includes("image") && !n.includes("lite") && !n.includes("2.5")) || names.find((n) => n.includes("flash")) || names[0];
         if (pick) return { ver, model: pick, all: names.slice(0, 12) };
       }
     } catch {}
-    return { ver: "v1", model: "gemini-3.8-flash", all: [] };
+    return { ver: "v1", model: "gemini-3.5-flash-lite", all: [] };
   });
 }
 
@@ -1620,7 +1620,7 @@ async function mtDiag(env) {
     try { const s = await one(env, "Hello, world.", "zh"); rows.push({ name, configured: true, ok: true, ms: Date.now() - t0, sample: s.slice(0, 40) }); }
     catch (e) { rows.push({ name, configured: true, ok: false, ms: Date.now() - t0, err: String(e && e.message || e).slice(0, 200) }); }
   }
-  rows.unshift({ name: "聚合体翻译（主力：Groq gpt-oss-120b → OpenRouter → Gemini）", configured: getKeys(env.GROQ_KEYS).length > 0 || getKeys(env.OPENROUTER_KEYS).length > 0 || getKeys(env.GEMINI_KEYS).length > 0 });
+  rows.unshift({ name: "聚合体翻译（主力：Groq gpt-oss-120b → OpenRouter → Gemini）", configured: getKeys(env.GROQ_KEYS || env.GROQ_API_KEY).length > 0 || getKeys(env.OPENROUTER_KEYS).length > 0 || getKeys(env.GEMINI_KEYS || env.GEMINI_API_KEY).length > 0 });
   rows.push({ name: "Riva 翻译模型（兜底）", configured: getKeys(env.NVIDIA_KEYS).length > 0 });
   return rows;
 }
@@ -1800,7 +1800,7 @@ async function tryAllFree(rawMsgs, env, emit = async () => {}, wantStream = fals
   for (const name of order) {
     if (oai[name]) {
       const src = oai[name];
-      for (const key of getKeys(env[src.keys])) {
+        for (const key of getKeys(src.keys === "GROQ_KEYS" ? (env.GROQ_KEYS || env.GROQ_API_KEY) : env[src.keys])) {
         for (const model of pick(name, src.models)) {
           const ck = cbKey(name, model, key), forced = name === requested && model === opts.model;
           if (opts.abortAt && Date.now() > opts.abortAt) return null;      // v98e：调用方给的截止时间到了，不再试后面的模型
@@ -1821,7 +1821,7 @@ async function tryAllFree(rawMsgs, env, emit = async () => {}, wantStream = fals
       continue;
     }
     if (name === "Gemini") {
-      for (const key of getKeys(env.GEMINI_KEYS)) { if (opts.abortAt && Date.now() > opts.abortAt) break; const r = await tryGemini(withCode(build()), key, name === requested ? opts.model : ""); dbgStat("Gemini", !!r, "没返回内容（过载 / 限流 / 超时）"); if (r) { if (wantStream && partial) await emit2(r); return { text: r, from: "Gemini", streamed: !!(wantStream && partial), err: "", resumed: hops > 0 }; } attempts++; }
+      for (const key of getKeys(env.GEMINI_KEYS || env.GEMINI_API_KEY)) { if (opts.abortAt && Date.now() > opts.abortAt) break; const r = await tryGemini(withCode(build()), key, name === requested ? opts.model : ""); dbgStat("Gemini", !!r, "没返回内容（过载 / 限流 / 超时）"); if (r) { if (wantStream && partial) await emit2(r); return { text: r, from: "Gemini", streamed: !!(wantStream && partial), err: "", resumed: hops > 0 }; } attempts++; }
     } else if (name === "Coze") {
       if (!env.COZE_API_TOKEN || !env.COZE_BOT_ID) continue;
       const ck = cbKey("Coze", "bot", env.COZE_API_TOKEN);
@@ -5143,9 +5143,9 @@ function fsLlmPlan(env) {
 }
 function fsHasKey(env, name) {
   if (name === "Zhipu") return getKeys(env.ZHIPU_KEYS).length > 0;
-  if (name === "Groq") return getKeys(env.GROQ_KEYS).length > 0;
+  if (name === "Groq") return getKeys(env.GROQ_KEYS || env.GROQ_API_KEY).length > 0;
   if (name === "OpenRouter") return getKeys(env.OPENROUTER_KEYS).length > 0;
-  if (name === "Gemini") return getKeys(env.GEMINI_KEYS).length > 0;
+  if (name === "Gemini") return getKeys(env.GEMINI_KEYS || env.GEMINI_API_KEY).length > 0;
   if (name === "Coze") return !!(env.COZE_API_TOKEN && env.COZE_BOT_ID);
   const p = EXTRA.find((x) => x.name === name); return !!(p && getKeys(env[p.keys]).length);
 }
@@ -5273,7 +5273,7 @@ async function llmProbeReport(env, url) {
     return last;
   };
   const probeGemini = async () => {
-    const keys = getKeys(env.GEMINI_KEYS);
+    const keys = getKeys(env.GEMINI_KEYS || env.GEMINI_API_KEY);
     if (!keys.length) return { status: "nokey", hasKey: false, err: "没有配置 GEMINI_KEYS" };
     const key = keys[0], deadline = Date.now() + PROBE_MS, notes = [];
     let last = { status: "error", hasKey: true, err: "没有返回内容" };
@@ -7089,7 +7089,7 @@ async function agToolChat(env, messages, tools, toolChoice) {
   const t0 = Date.now();                                           // 整个工具轮最多 20 秒，免得 3 个 Groq 模型都慢时拖到 Dify 超时
   for (let pass = 0; pass < 2; pass++) {                           // 第 2 轮无视熔断：只有“全在冷却、一个都没试”时才会走到
     let skipped = false, tried = false;
-    for (const key of getKeys(env.GROQ_KEYS)) for (const model of WORK_MODELS.groq) {
+    for (const key of getKeys(env.GROQ_KEYS || env.GROQ_API_KEY)) for (const model of WORK_MODELS.groq) {
       const ck = cbKey("Groq", model, key), left = 20000 - (Date.now() - t0);
       if (left < 1500) return null;
       if (pass === 0 && cbDown(ck)) { skipped = true; continue; }
@@ -7279,7 +7279,7 @@ async function handle(request, env, ctx) {
         } catch (e) { return { configured: true, source, agg: AGG, online: false, error: e.name === "TimeoutError" ? "超时" : e.message }; }
       });
       const groq = probe("groq", async () => {
-        const keys = getKeys(env.GROQ_KEYS); if (!keys.length) return { hasKey: false };
+        const keys = getKeys(env.GROQ_KEYS || env.GROQ_API_KEY); if (!keys.length) return { hasKey: false };
         const m = await getGroqModel(keys[0]);
         const r = await chatOpenAI("https://api.groq.com/openai/v1/chat/completions", keys[0], groqBody(m, [{ role: "user", content: "hi" }], { max_tokens: 64 }));
         const j = await r.json().catch(() => ({}));
@@ -7291,7 +7291,7 @@ async function handle(request, env, ctx) {
         return await chatProbe("https://openrouter.ai/api/v1/chat/completions", keys[0], m);
       });
       const gemini = probe("gemini", async () => {
-        const keys = getKeys(env.GEMINI_KEYS); if (!keys.length) return { hasKey: false };
+        const keys = getKeys(env.GEMINI_KEYS || env.GEMINI_API_KEY); if (!keys.length) return { hasKey: false };
         const t0 = Date.now(); let stage = "列模型";
         try {
           const { ver, model, all } = await getGeminiModel(keys[0]); stage = "生成(" + model + ")";
@@ -8009,7 +8009,7 @@ async function handle(request, env, ctx) {
       return json({ ok: true, providers: [
         { id: "Groq", name: "Groq", models: WORK_MODELS.groq },
         { id: "Gemini", name: "Gemini", models: WORK_MODELS.gemini },
-        { id: "OpenRouter", name: "OpenRouter", models: [...WORK_MODELS.openrouter, CODE_MODEL_ID] },
+        { id: "OpenRouter", name: "OpenRouter", models: WORK_MODELS.openrouter },
         { id: "英伟达", name: "英伟达", models: ex("NVIDIA") },
         { id: "智谱", name: "智谱", models: ex("Zhipu") },
         { id: "Poe", name: "Poe", models: poeModels(env) },
@@ -8343,7 +8343,7 @@ async function handle(request, env, ctx) {
           // v100/v101/v105：代码助手。进代码模式的三种方式：1) 前端「代码模式」开关（请求里带 code_mode:true，后端不再猜）；2) 消息里出现“改聚合体 / 改就医伴侣”（任何位置）；3) 选了「OpenRouter → 代码助手」。有待推送的修改时回“推 / 不推”也归这里；其余话走聊天
           const rawMsg = String(b.message || "").trim() || lastText;
           const codeForced = b.code_mode === true || b.code_mode === "true" || b.code_mode === 1;
-          const codeIn = normProvider(b.provider) === "OpenRouter" && String(b.model || "").trim() === CODE_MODEL_ID, codeKind = codeShortcutKind(rawMsg) || codeShortcutKind(lastText);
+          const codeIn = ["OpenRouter", "Groq"].includes(normProvider(b.provider)) && String(b.model || "").trim() === CODE_MODEL_ID, codeKind = codeShortcutKind(rawMsg) || codeShortcutKind(lastText);
           if (codeForced || codeIn || codeKind) {
             let handled = false;
             try {
