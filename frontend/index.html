@@ -5570,11 +5570,12 @@ const bestPlace = (list, q) => {
 </script>
 <style>
 /* 开发台顶栏在手机上换行显示，避免「代码检测」等按钮被挤出屏幕 */
-@media (max-width: 760px) {
-  #wb-bar { flex-wrap: wrap; overflow-x: auto; -webkit-overflow-scrolling: touch; row-gap: 6px; }
+@media (max-width: 900px) {
+  #wb-bar { flex-wrap: wrap; overflow-x: visible; -webkit-overflow-scrolling: touch; row-gap: 6px; height: auto; min-height: 44px; padding-bottom: 6px; }
   #wb-bar > * { flex: 0 0 auto; }
   #wb-bar .sp { display: none; }
-  #wb-bar button { min-height: 34px; padding: 0 10px; font-size: 13px; }
+  #wb-bar strong, #wb-bar #wb-file, #wb-bar #wb-state { flex: 0 0 auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #wb-bar button { min-height: 36px; padding: 0 10px; font-size: 13px; white-space: nowrap; }
   #wb-lint-panel { left: 8px !important; right: 8px !important; width: auto !important; max-height: 55vh !important; bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important; }
 }
 </style>
