@@ -850,7 +850,11 @@ function codePendingActive(p) {
 async function codePendingLoad(env, user) {
   const d = await codeClaimState(env, user);
   if (d.ok && d.pending) return d.pending;
-  if (d.configured === false && env.KV) return await env.KV.get("code:pend:" + user, "json").catch(() => null);
+  if (d.configured === false && env.KV) {
+    const p = await env.KV.get("code:pend:" + user, "json").catch(() => null);
+    if (p && p.created_at && Date.now() - p.created_at > CODE_PENDING_TTL_MS) { await env.KV.delete("code:pend:" + user).catch(() => {}); return null; }   // v108：读取时兜底过期
+    return p;
+  }
   return null;
 }
 async function codePendingCreate(env, user, pending) {
@@ -858,6 +862,44 @@ async function codePendingCreate(env, user, pending) {
   if (d.ok) return d;
   return d.configured === false && env.KV ? { ok: false, msg: "必须先部署 CODE_CLAIMS Durable Object，拒绝使用 KV 模拟锁" } : d;
 }
+const CODE_PENDING_TTL_MS = 600000;   // v108：待处理改动 10 分钟没点「接受 / 拒绝」就自动过期
+
+// v108 防死循环：所有丢弃路径共用这一个函数——删临时分支（404 当成功）→ 无条件清 Durable Object / KV 里的待处理记录。
+// 任何一步失败都不把记录留着卡死下一次改动：清失败只记日志，读取时还有过期兜底。
+async function codePendingDiscard(env, user, pending) {
+  const p = pending || (await codePendingLoad(env, user));
+  let branch = { ok: true, skipped: true };
+  if (p && p.repo && p.branch) branch = await codeDeleteBranch(env, p.repo, p.branch);   // 分支已不存在（404）也算删掉了
+  const cleared = await codeClaimCall(env, user, "clear", {});
+  if (!cleared.ok) console.log("[code] pending clear failed", JSON.stringify({ user: String(user).slice(0, 40), msg: cleared.msg || "" }));
+  if (env.KV) await env.KV.delete("code:pend:" + user).catch(() => {});   // v108：旧版 KV 遗留键也一并清掉
+  return { ok: true, branch_deleted: !!(branch && branch.ok), branch_already_gone: branch && branch.status === 404, cleared: !!cleared.ok, reply: "已丢弃：临时分支已删除，待处理记录已清空。" };
+}
+
+// v108：cron 扫 KV 里遗留的待处理记录（比如浏览器关了、confirm 没送到），过期的删临时分支 + 清 KV
+async function codePendingSweep(env) {
+  const names = [];
+  try {
+    let cursor;
+    do {
+      const page = await env.KV.list({ prefix: "code:pend:", cursor });
+      for (const k of (page.keys || [])) names.push(k.name);
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+  } catch (e) { return { count: 0, checked: 0, msg: "KV list 失败：" + (e && e.message || e) }; }
+  let count = 0;
+  for (const name of names) {
+    const p = await env.KV.get(name, "json").catch(() => null);
+    if (!p) { await env.KV.delete(name).catch(() => {}); count++; continue; }
+    if (p.created_at && Date.now() - p.created_at > CODE_PENDING_TTL_MS) {
+      if (p.repo && p.branch) await codeDeleteBranch(env, p.repo, p.branch).catch(() => {});
+      await env.KV.delete(name).catch(() => {});
+      count++;
+    }
+  }
+  return { count, checked: names.length };
+}
+
 function codePendingView(p) {
   if (!p || !Array.isArray(p.edits) || !p.edits.length || !["awaiting_approval", "applying", "partial", "conflict", "failed"].includes(p.status || "awaiting_approval")) return null;
   return { id: p.id || "", pending_id: p.id || "", version: Number(p.version) || 1, project: p.project || "", status: p.status || "awaiting_approval", repo: p.repo, branch: p.branch, baseBranch: p.baseBranch || "main", preview_url: p.preview_url || codeTempPreview(p.branch), summary: p.summary, at: p.at, updatedAt: p.updatedAt || p.at, warn: p.warn || [], edits: p.edits.map((e) => ({ path: e.path, line: e.line || 0, old: codeCut(e.old, 4000), new: codeCut(e.new, 4000) })) };
@@ -870,7 +912,9 @@ async function codeProject(env, user, proj, req, history, ui) {
   if (!env.KV || !env.CODE_CLAIMS) return { ok: false, reply: "❌ 代码推送需要 CODE_CLAIMS Durable Object 绑定，未启用 KV 模拟锁" };
   const previous = await codePendingLoad(env, user);
   if (codePendingActive(previous)) {
-    return { ok: false, pending: true, reply: "上一项代码修改还没有处理完，请先在预览面板选择「推」或「不推」，再开始新的修改。" };
+    // v108 防死循环：新消息进来，上一个预览还没处理就直接自动丢弃（删临时分支 + 清记录），绝不阻塞、不再报「还没处理完」。
+    const discarded = await codePendingDiscard(env, user, previous);
+    console.log("[code] auto-discard on new message", JSON.stringify({ user: String(user).slice(0, 40), branch: previous.branch, branch_deleted: discarded.branch_deleted, branch_already_gone: discarded.branch_already_gone, cleared: discarded.cleared }));
   }
   const bad0 = codePushGuard(env, user, proj.repo, proj.files[0]);
   if (bad0) return { ok: false, reply: "⚠️ 不能改：" + bad0 };
@@ -921,7 +965,7 @@ async function codeProject(env, user, proj, req, history, ui) {
   const temp = await codeCreateTempBranch(env, proj.repo, tag, branch);
   if (!temp.ok) return { ok: false, reply: "❌ 不能为「" + tag + "」创建独立临时分支：" + temp.msg };
   const pendingId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(36).slice(2));
-  const pending = { id: pendingId, project: tag, repo: proj.repo, branch: temp.branch, baseBranch: temp.base, baseCommit: temp.sha, preview_url: codeTempPreview(temp.branch), status: "awaiting_approval", edits: good.map((g, i) => ({ path: final.done[i] ? final.done[i].path : g.path, line: final.done[i] ? final.done[i].line : 0, old: g.old, new: g.new })), baseSha, summary, warn, at: Date.now(), updatedAt: Date.now() };
+  const pending = { id: pendingId, project: tag, repo: proj.repo, branch: temp.branch, baseBranch: temp.base, baseCommit: temp.sha, preview_url: codeTempPreview(temp.branch), status: "awaiting_approval", edits: good.map((g, i) => ({ path: final.done[i] ? final.done[i].path : g.path, line: final.done[i] ? final.done[i].line : 0, old: g.old, new: g.new })), baseSha, summary, warn, at: Date.now(), updatedAt: Date.now(), created_at: Date.now() };
   const created = await codePendingCreate(env, user, pending);
   if (!created.ok) { await codeDeleteBranch(env, proj.repo, temp.branch); return { ok: false, pending: !!created.pending, reply: created.msg || "已有待推送修改，请先处理完成" }; }
   const explain = String(last).replace(new RegExp(CODE_BLOCK_RE.source, "g"), "").replace(/```[^\n]*\n?/g, "").trim();
@@ -946,9 +990,10 @@ async function codeConfirm(env, user, yes, input = {}) {
     return done.ok ? (done.result || result) : { ...result, ok: false, pending: true, reply: result.reply + "（状态写入失败，请刷新确认）" };
   };
   if (!yes) {
+    // v108：丢弃 = 删临时分支（尽力而为，删失败也不把记录留着卡死）→ 一定清掉待处理记录。
     const removed = await codeDeleteBranch(env, pend.repo, pend.branch);
-    if (!removed.ok) return await finish("failed", { ok: false, pending: true, status: "failed", reply: "❌ 修改未丢弃：临时分支删除失败（" + removed.msg + "），请重试。" }, pend.edits);
-    return await finish("discarded", { ok: true, discarded: true, consumed: true, status: "discarded", branch_deleted: true, reply: "好，这次的修改已丢弃，临时分支也已删除，没推到主分支。" }, pend.edits);
+    const note = removed.ok ? "临时分支已删除" : removed.status === 404 ? "临时分支本来就不存在" : "⚠️ 临时分支删除失败（" + removed.msg + "），可稍后在 GitHub 手动删 " + pend.branch;
+    return await finish("discarded", { ok: true, discarded: true, consumed: true, status: "discarded", branch_deleted: !!removed.ok, branch_already_gone: removed.status === 404, reply: "好，这次的修改已丢弃：" + note + "，没推到主分支。" }, pend.edits);
   }
   if (!pend.edits.length) {
     const removed = await codeDeleteBranch(env, claim.pending.repo, claim.pending.branch);
@@ -5037,6 +5082,7 @@ const WORKER_DEFAULT = {
     ctx.waitUntil((async () => {
       try { const r = await agCronReminders(e2); if (r.sent || r.msg) console.log("[cron] reminders", JSON.stringify({ sent: r.sent || 0, pending: r.pending || 0, msg: r.msg || "" })); }
       catch (e) { console.error("[cron] reminders failed", e && e.message || e); }
+      try { const swept = await codePendingSweep(e2); if (swept.count) console.log("[cron] pending-sweep", JSON.stringify(swept)); } catch (e) { console.error("[cron] pending-sweep failed", e && e.message || e); }   // v108：过期待处理改动兜底清理
       try {      // v99k：早报——北京时间（UTC+8）08 点这一小时内每分钟都会尝试，morning:<北京日期> 防重复；没日程 / 没待办也发；成败都写日志
         const bj = agParts(event && event.scheduledTime || Date.now());
         if (bj.h === 8) {
@@ -8703,12 +8749,25 @@ async function handle(request, env, ctx) {
       return json(r, r.ok ? 200 : 400);
     }
 
+    // ---- v108：强制清空（改动预览面板右上角按钮）——清 KV/DO 待处理记录 + 删临时分支，一步到位 ----
+    if (path === "/api/code/force-clear" && request.method === "POST") {
+      const user = await userFromReq(request, env, url, "");
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codePendingDiscard(env, user);
+      return json(r);
+    }
+
     // ---- v105：代码助手的预览面板接口（全部要登录）----
     //   GET  /api/code/pending → 当前待推送的修改（前端预览面板用）    POST /api/code/confirm {yes:true|false} → 推 / 不推（面板按钮用）
     if (path === "/api/code/pending" && request.method === "GET") {
       const user = await userFromReq(request, env, url, "");
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
       const pend = await codePendingLoad(env, user);
+      // v108：分支在 GitHub 上已经不存在（比如被手动删了）→ 读到即自动丢弃，不留死记录卡死下一次改动
+      if (codePendingActive(pend) && pend.repo && pend.branch) {
+        const alive = await codeGhApi(env, codeGitRefUrl(pend.repo, "heads/" + pend.branch));
+        if (!alive.ok && alive.status === 404) { await codePendingDiscard(env, user, pend); return json({ ok: true, pending: null, expired: true }); }
+      }
       return json({ ok: true, pending: codePendingView(pend) });
     }
     if (path === "/api/code/confirm" && request.method === "POST") {
@@ -8985,8 +9044,11 @@ export class CodeClaimDO {
   constructor(state) { this.storage = state.storage; }
   async load() {
     const value = await this.storage.get("claim");
-    if (value && value.expires_at && value.expires_at < Date.now()) { await this.storage.delete("claim"); return null; }
-    return value || null;
+    if (!value) return null;
+    // v108：过期双重保险——创建 10 分钟后记录自动清掉（临时分支由 worker 的 cron / 下一次丢弃兜底删除）
+    const createdAt = (value.pending && value.pending.created_at) || value.created_at || 0;
+    if ((value.expires_at && value.expires_at < Date.now()) || (createdAt && Date.now() - createdAt > CODE_PENDING_TTL_MS)) { await this.storage.delete("claim"); return null; }
+    return value;
   }
   async save(value) { await this.storage.put("claim", value); return value; }
   response(value, status = 200) { return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } }); }
@@ -9002,7 +9064,8 @@ export class CodeClaimDO {
       if (!incoming || !incoming.id || !incoming.project || !Array.isArray(incoming.edits) || !incoming.edits.length) return this.response({ ok: false, msg: "缺少有效 pending" }, 400);
       if (current && current.pending && ["awaiting_approval", "applying", "partial", "conflict", "failed"].includes(current.pending.status || "awaiting_approval")) return this.response({ ok: false, conflict: true, pending: current.pending, msg: "已有待处理修改" }, 409);
       incoming.status = "awaiting_approval"; incoming.version = 1; incoming.updatedAt = now;
-      await this.save({ pending: incoming, version: 1, claims: {}, results: {}, expires_at: now + 3600 * 1000 });
+      if (!incoming.created_at) incoming.created_at = now;   // v108：记录创建时间，10 分钟后自动过期
+      await this.save({ pending: incoming, created_at: now, version: 1, claims: {}, results: {}, expires_at: now + CODE_PENDING_TTL_MS });
       return this.response({ ok: true, pending: incoming, version: 1 });
     }
     if (action === "claim") {
@@ -9028,6 +9091,10 @@ export class CodeClaimDO {
       delete current.claims[operationId];
       await this.save(current);
       return this.response({ ok: true, result, pending: p, version: current.version });
+    }
+    if (action === "clear") {   // v108：丢弃后无条件清记录（防死循环的关键——DO 里绝不能留旧的待处理改动）
+      await this.storage.delete("claim");
+      return this.response({ ok: true, cleared: true });
     }
     return this.response({ ok: false, msg: "未知 Durable Object 操作" }, 404);
   }
