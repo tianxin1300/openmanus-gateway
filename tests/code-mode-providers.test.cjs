@@ -17,3 +17,5 @@ const frontendStudioSource = fs.readFileSync(path.join(root, 'frontend/studio.js
 const blockedProviders = ['肖恩AI', 'Toter', 'Toter2'];
 const messages = [{ role: 'user', content: 'Write a small function.' }];
 const openRouterUrl = 'https://openrouter.ai/api/v1/chat/completions';
+
+// PLACEHOLDER_FULL_CONTENT
