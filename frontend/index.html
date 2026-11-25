@@ -5635,6 +5635,7 @@ const bestPlace = (list, q) => {
     <button id="wb-save" type="button" title="把编辑器里的内容通过 MCP update_file 推到 GitHub main（Ctrl/Cmd+S）">保存到 GitHub</button>
     <button id="wb-run" type="button" title="在浏览器里启动 WebContainer：安装依赖，自动运行 test/build（如果有），再运行 dev 或 start">运行</button>
     <button id="wb-ci" class="sec" type="button" title="触发 GitHub Actions：checkout → npm install → npm test → npm run build，并把结果回传到开发台">运行 / 验证</button>
+    <button id="wb-deploy" class="sec" type="button" title="验证通过后构建并部署到 Cloudflare Pages">部署</button>
     <button id="wb-lint" type="button" title="代码检测：检查脚本语法、重复 id、$() 引用不到的 id、遗留 console.log" onclick="wbLint()">代码检测</button>
     <button id="wb-close" class="sec" type="button" aria-label="关闭开发台">×</button>
   </div>
@@ -6027,11 +6028,15 @@ function verifyLink(label, href) {
   if (!href || !/^https?:\/\//i.test(String(href))) return null;
   const a = document.createElement("a"); a.href = href; a.target = "_blank"; a.rel = "noopener"; a.textContent = label; a.style.cssText = "display:inline-block;margin:8px 10px 0 0;color:#83d6a0;text-decoration:underline"; return a;
 }
+async function loadRunHistory() {
+  try { const r = await authFetch(GATEWAY + "/api/code/runs", {cache:"no-store"}), d = await r.json().catch(() => ({})); if (!r.ok || !d.ok) return; const res = g("wb-res"); if (!res) return; const box = document.createElement("details"); box.style.cssText = "margin-top:12px"; const sum = document.createElement("summary"); sum.textContent = "历史运行日志（" + (d.runs || []).length + "）"; box.appendChild(sum); (d.runs || []).slice(0, 20).forEach(x => { const b = document.createElement("button"); b.type="button"; b.className="sec"; b.style.cssText="margin:6px 6px 0 0;font-size:11px"; b.textContent=(x.kind === "deploy" ? "部署" : "验证")+" · "+(x.state || x.status || "未知")+" · "+String(x.run_id || "").slice(-12); b.onclick=async()=>{ const q=await authFetch(GATEWAY+"/api/code/logs?run_id="+encodeURIComponent(x.run_id),{cache:"no-store"}), j=await q.json().catch(()=>({})); if(j.ok) renderVerifyResult({...j,state:j.state||x.state,fromHistory:true}); else toast(j.msg||"读取日志失败"); }; box.appendChild(b); }); res.appendChild(box); } catch (_) {}
+}
 function renderVerifyResult(d) {
   const res = g("wb-res"); if (!res) return;
   g("wb-runframe").dataset.live = "0"; res.innerHTML = "";
   const state = d.state || (d.status === "completed" ? (d.conclusion === "success" ? "success" : "failure") : "running");
-  const title = state === "success" ? "验证通过" : state === "failure" ? "验证失败" : state === "queued" ? "验证排队中" : "验证运行中";
+  const noun = d.deploy ? "部署" : "验证";
+  const title = state === "success" ? noun + "完成" : state === "failure" ? noun + "失败" : state === "queued" ? noun + "排队中" : noun + "运行中";
   const h = document.createElement("h4"); h.textContent = title; h.style.color = state === "success" ? "#247a43" : state === "failure" ? "#b33b32" : "#8b6b16"; res.appendChild(h);
   const p = document.createElement("pre"); p.textContent = state === "failure" ? ((d.failed_step ? "失败步骤：" + d.failed_step + "\n\n" : "") + ((d.error_lines || []).join("\n") || "GitHub 没有返回可提取的报错行。")) : "checkout ✓\nnpm install ✓\nnpm test " + (state === "success" ? "✓" : "…") + "\nnpm run build " + (state === "success" ? "✓" : "…"); res.appendChild(p);
   const links = document.createElement("div");
@@ -6039,7 +6044,7 @@ function renderVerifyResult(d) {
   const preview = verifyLink("打开项目预览", d.preview_url); if (preview) links.appendChild(preview);
   if (state === "failure") { const retry = document.createElement("button"); retry.type = "button"; retry.textContent = "失败重试"; retry.className = "sec"; retry.style.cssText = "margin-top:8px"; retry.onclick = runRemoteVerify; links.appendChild(retry); }
   if (state === "success" && !d.preview_url) { const tip = document.createElement("div"); tip.textContent = "验证已通过，但当前没有配置真实公网预览部署地址；点击“运行”可查看浏览器内 WebContainer 预览。"; tip.style.cssText = "margin-top:10px;color:#7a887d;font-size:12px"; links.appendChild(tip); }
-  res.appendChild(links); showTab("run");
+  res.appendChild(links); showTab("run"); if (!d.fromHistory) loadRunHistory();
 }
 async function runRemoteVerify() {
   const ciBtn = g("wb-ci");
@@ -6091,8 +6096,21 @@ async function runRemoteVerify() {
     } finally { clearTimeout(timeout); if (verifyAbort === ctl) verifyAbort = null; }
   } catch (e) { renderVerifyResult({state: "failure", error_lines: [e.message || String(e)]}); finish("验证启动失败，已恢复按钮", true); }
 }
+async function runRemoteDeploy() {
+  const btn = g("wb-deploy"); if (!authToken) { toast("请先登录"); return; }
+  if (btn) { btn.disabled = true; btn.textContent = "部署中…"; }
+  let timer = null, started = Date.now();
+  const finish = (bad, text) => { if (timer) clearTimeout(timer); if (btn) { btn.disabled = false; btn.textContent = "部署"; } say(text, bad); };
+  try {
+    const start = await authFetch(GATEWAY+"/api/code/deploy", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ref:REPO.branch})});
+    let d = await start.json().catch(()=>({})); if (!start.ok || d.ok === false) throw new Error(d.msg || "无法启动部署"); renderVerifyResult({...d, state:"queued", deploy:true});
+    const poll = async () => { try { if (Date.now()-started > VERIFY_MAX_MS) { finish(true,"部署超时，已恢复按钮"); return; } const r=await authFetch(GATEWAY+"/api/code/deploy",{cache:"no-store"}), j=await r.json().catch(()=>({})); if(!r.ok||j.ok===false) throw new Error(j.msg||"读取部署状态失败"); renderVerifyResult({...j,deploy:true}); if(j.state==="success"){finish(false,"部署完成，CODE_PREVIEW_URL 已返回");return;} if(j.state==="failure"){finish(true,"部署失败，已显示日志");return;} timer=setTimeout(poll,3500); } catch(e) { renderVerifyResult({state:"failure",error_lines:[e.message||String(e)],deploy:true}); finish(true,"部署状态读取失败，已恢复按钮"); } }; timer=setTimeout(poll,2500);
+  } catch(e) { renderVerifyResult({state:"failure",error_lines:[e.message||String(e)],deploy:true}); finish(true,"部署启动失败，已恢复按钮"); }
+}
 const ciBtn = g("wb-ci");
 if (ciBtn) ciBtn.onclick = runRemoteVerify;
+const deployBtn = g("wb-deploy");
+if (deployBtn) deployBtn.onclick = runRemoteDeploy;
 
 /* ---------------- 运行：WebContainer boot → mount /frontend → npm install ---------------- */
 async function listFrontend(notes) {

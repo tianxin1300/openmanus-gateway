@@ -9,10 +9,16 @@ id = "b7af651ce05a42049c6da51921ccbcd7"
 [[durable_objects.bindings]]
 name = "CODE_CLAIMS"
 class_name = "CodeClaimDO"
+[[durable_objects.bindings]]
+name = "CODE_RUNNER"
+class_name = "CodeRunnerDO"
 
 [[migrations]]
 tag = "code-claims-v1"
 new_sqlite_classes = ["CodeClaimDO"]
+[[migrations]]
+tag = "code-runner-v1"
+new_sqlite_classes = ["CodeRunnerDO"]
 
 [triggers]
 crons = ["0 0 * * *"]

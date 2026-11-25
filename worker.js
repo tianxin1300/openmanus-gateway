@@ -541,6 +541,91 @@ async function codeRollback(env, user, body) {
   await codeHistorySave(env, user, [rec, ...rows]);
   return { ok: true, ...rec, reply: "已回滚到 " + item.previous_sha.slice(0, 12) };
 }
+const CODE_DEPLOY_WORKFLOW = "deploy-project.yml";
+const codeRunLogKey = (runId) => "log:run:" + String(runId || "").replace(/[^A-Za-z0-9._:-]/g, "-").slice(0, 180);
+const codeRunIndexKey = (user) => "code:runs:" + String(user || "").slice(0, 160);
+function codeRunnerNamespace(env) { return env.CODE_RUNNER || env.RUNNER || null; }
+function codeRunnerId(env, user, requestId) {
+  const ns = codeRunnerNamespace(env); if (!ns) return null;
+  return ns.idFromName("runner:" + String(user || "") + ":" + String(requestId || ""));
+}
+async function codeRunnerCall(env, user, requestId, action, payload) {
+  const ns = codeRunnerNamespace(env), id = codeRunnerId(env, user, requestId);
+  if (!ns || !id) return null;
+  const r = await ns.get(id).fetch("https://runner/" + action, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload || {}) });
+  return await r.json().catch(() => null);
+}
+async function codeRunnerUpdate(env, user, record) {
+  if (!record || !record.request_id) return;
+  await codeRunnerCall(env, user, record.request_id, "update", record).catch(() => null);
+}
+async function codeRunIndexLoad(env, user) { return env.KV ? (await env.KV.get(codeRunIndexKey(user), "json").catch(() => null) || []) : []; }
+async function codePersistRun(env, user, record) {
+  if (!record) return record;
+  const runId = String(record.run_id || record.request_id || "");
+  record.run_id = runId; record.log_key = codeRunLogKey(runId); record.updated_at = new Date().toISOString();
+  if (env.KV && runId) {
+    await env.KV.put(record.log_key, JSON.stringify({ ok: true, ...record, logs: Array.isArray(record.logs) ? record.logs : [], error_lines: Array.isArray(record.error_lines) ? record.error_lines : [] }), { expirationTtl: 31536000 });
+    const rows = await codeRunIndexLoad(env, user);
+    const summary = { run_id: runId, request_id: record.request_id, kind: record.kind, workflow: record.workflow, status: record.status, conclusion: record.conclusion, state: record.state, run_url: record.run_url, preview_url: record.preview_url, log_key: record.log_key, started_at: record.started_at, updated_at: record.updated_at };
+    const rest = rows.filter((x) => x.run_id !== runId && x.request_id !== record.request_id);
+    await env.KV.put(codeRunIndexKey(user), JSON.stringify([summary, ...rest].slice(0, 50)), { expirationTtl: 31536000 });
+  }
+  await codeRunnerUpdate(env, user, record);
+  return record;
+}
+async function codeRunLogs(env, user, runId) {
+  const id = String(runId || "").trim(); if (!id || !/^[-A-Za-z0-9._:]+$/.test(id)) return { ok: false, msg: "run_id 不合法" };
+  const owned = (await codeRunIndexLoad(env, user)).some((x) => String(x.run_id) === id || String(x.request_id) === id);
+  if (!owned) return { ok: false, msg: "没有找到属于当前账号的运行日志" };
+  const item = env.KV ? await env.KV.get(codeRunLogKey(id), "json").catch(() => null) : null;
+  return item ? { ok: true, ...item, log_key: codeRunLogKey(id) } : { ok: false, msg: "没有找到持久化运行日志" };
+}
+async function codeRuns(env, user) { return { ok: true, runs: await codeRunIndexLoad(env, user) }; }
+async function codeWorkflowStatus(env, user, keyName, workflow, kind, message) {
+  const old = env.KV ? await env.KV.get(keyName, "json") : null;
+  if (!old) return { ok: false, msg: "没有找到运行任务，请先启动" };
+  const repo = old.repo || codeVerifyRepo(env), base = "https://api.github.com/repos/" + repo;
+  if (!old.run_id) {
+    const listed = await codeGhApi(env, base + "/actions/workflows/" + workflow + "/runs?event=workflow_dispatch&per_page=30");
+    if (listed.ok) {
+      const marker = (kind === "deploy" ? "deploy-project · " : "verify-project · ") + old.request_id;
+      const run = (listed.data && listed.data.workflow_runs || []).find((x) => x.name === marker);
+      if (run) { old.run_id = String(run.id); old.run_url = run.html_url || ""; }
+    }
+  }
+  if (old.run_id && !/^verify-|^deploy-/.test(old.run_id)) {
+    const got = await codeGhApi(env, base + "/actions/runs/" + encodeURIComponent(String(old.run_id)));
+    if (got.ok && got.data) { old.status = got.data.status || old.status; old.conclusion = got.data.conclusion || null; old.run_url = got.data.html_url || old.run_url; old.head_sha = got.data.head_sha || old.head_sha; }
+    if (old.conclusion && old.conclusion !== "success") {
+      const jobs = await codeGhApi(env, base + "/actions/runs/" + encodeURIComponent(String(old.run_id)) + "/jobs?per_page=20");
+      const all = jobs.data && jobs.data.jobs || [], failed = all.find((x) => x.conclusion === "failure") || all[0];
+      if (failed) {
+        const log = await codeGhApi(env, base + "/actions/jobs/" + encodeURIComponent(String(failed.id)) + "/logs", { headers: { Accept: "text/plain" } });
+        old.logs = codeVerifyErrorLines(log.text || log.msg || "任务失败，但 GitHub 没有返回日志");
+        old.error_lines = old.logs; old.failed_step = (failed.steps || []).find((x) => x.conclusion === "failure")?.name || (kind === "deploy" ? "部署步骤" : "验证步骤");
+      }
+    }
+  }
+  old.preview_url = old.preview_url || (kind === "deploy" ? "https://zhineng-et5.pages.dev" : codeVerifyPreview(env, old.run_id));
+  old.state = old.status === "completed" ? (old.conclusion === "success" ? "success" : "failure") : (old.status === "queued" ? "queued" : "running");
+  old.message = message; await codePersistRun(env, user, old);
+  return { ok: true, ...old, actions_url: old.run_url || ("https://github.com/" + repo + "/actions/workflows/" + workflow) };
+}
+async function codeDeployStart(env, user, body) {
+  const repo = codeVerifyRepo(env), ref = codeVerifyRef(body && body.ref), requestId = "deploy-" + Date.now().toString(36) + "-" + rand(6);
+  if (!ref) return { ok: false, msg: "ref 不合法：只允许分支名或 7-64 位 commit SHA" };
+  if (!codeRepoOk(env, repo)) return { ok: false, msg: "部署仓库不在允许名单里" };
+  const api = "https://api.github.com/repos/" + repo + "/actions/workflows/" + CODE_DEPLOY_WORKFLOW + "/dispatches";
+  const dispatched = await codeGhApi(env, api, { method: "POST", body: JSON.stringify({ ref, inputs: { request_id: requestId, ref } }), headers: { "Content-Type": "application/json" } });
+  if (!dispatched.ok) return { ok: false, msg: "无法启动部署：" + dispatched.msg, status: dispatched.status };
+  const job = { request_id: requestId, repo, ref, kind: "deploy", workflow: CODE_DEPLOY_WORKFLOW, started_at: new Date().toISOString(), updated_at: new Date().toISOString(), status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions/workflows/" + CODE_DEPLOY_WORKFLOW, preview_url: "https://zhineng-et5.pages.dev", error_lines: [], logs: [] };
+  if (env.KV) await env.KV.put(codeVerifyKey(user) + ":deploy", JSON.stringify(job), { expirationTtl: 86400 });
+  await codePersistRun(env, user, job);
+  return { ok: true, ...job, state: "queued", message: "部署已排队：验证通过后构建并部署到 Cloudflare Pages" };
+}
+async function codeDeployStatus(env, user) { return codeWorkflowStatus(env, user, codeVerifyKey(user) + ":deploy", CODE_DEPLOY_WORKFLOW, "deploy", "部署到 Cloudflare Pages"); }
+
 async function codeVerifyStart(env, user, body) {
   const repo = codeVerifyRepo(env), ref = codeVerifyRef(body && body.ref), requestId = "verify-" + Date.now().toString(36) + "-" + rand(6);
   if (!ref) return { ok: false, msg: "ref 不合法：只允许分支名或 7-64 位 commit SHA" };
@@ -548,9 +633,10 @@ async function codeVerifyStart(env, user, body) {
   const api = "https://api.github.com/repos/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW + "/dispatches";
   const dispatched = await codeGhApi(env, api, { method: "POST", body: JSON.stringify({ ref, inputs: { request_id: requestId, ref } }), headers: { "Content-Type": "application/json" } });
   if (!dispatched.ok) return { ok: false, msg: "无法启动验证：" + dispatched.msg, status: dispatched.status };
-  const job = { request_id: requestId, repo, ref, workflow: CODE_VERIFY_WORKFLOW, started_at: new Date().toISOString(), status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW, preview_url: codeVerifyPreview(env, ""), error_lines: [] };
+  const job = { request_id: requestId, repo, ref, kind: "verify", workflow: CODE_VERIFY_WORKFLOW, started_at: new Date().toISOString(), status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW, preview_url: codeVerifyPreview(env, ""), error_lines: [] };
   if (env.KV) await env.KV.put(codeVerifyKey(user), JSON.stringify(job), { expirationTtl: 86400 });
-  return { ok: true, ...job, message: "验证已排队：checkout → npm install → npm test → npm run build" };
+  await codePersistRun(env, user, job);
+  return { ok: true, ...job, log_key: codeRunLogKey(requestId), message: "验证已排队：checkout → npm install → npm test → npm run build" };
 }
 function codeVerifyRedact(text) {
   return String(text || "")
@@ -589,10 +675,12 @@ async function codeVerifyStatus(env, user) {
       }
     }
   }
+  old.logs = Array.isArray(old.error_lines) ? old.error_lines : [];
   old.preview_url = codeVerifyPreview(env, old.run_id);
   old.state = old.status === "completed" ? (old.conclusion === "success" ? "success" : "failure") : "running";
   if (env.KV) await env.KV.put(codeVerifyKey(user), JSON.stringify(old), { expirationTtl: 86400 });
-  return { ok: true, ...old, actions_url: old.run_url || ("https://github.com/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW) };
+  await codePersistRun(env, user, old);
+  return { ok: true, ...old, log_key: codeRunLogKey(old.run_id || old.request_id), actions_url: old.run_url || ("https://github.com/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW) };
 }
 async function codeGetFile(env, repo, path, ref) {   // = MCP get_file
   if (!env.GH_PAT) return { ok: false, msg: "GH_PAT 没有配置" };
@@ -8579,6 +8667,23 @@ async function handle(request, env, ctx) {
       const r = await codeVerifyStatus(env, user);
       return json(r, r.ok ? 200 : 404);
     }
+    if (path === "/api/code/deploy" && request.method === "POST") {
+      const b = await request.json().catch(() => ({})), user = await userFromReq(request, env, url, String(b.token || ""));
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeDeployStart(env, user, b); return json(r, r.ok ? 200 : (r.status || 502));
+    }
+    if (path === "/api/code/deploy" && request.method === "GET") {
+      const user = await userFromReq(request, env, url, ""); if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeDeployStatus(env, user); return json(r, r.ok ? 200 : 404);
+    }
+    if (path === "/api/code/logs" && request.method === "GET") {
+      const user = await userFromReq(request, env, url, ""); if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeRunLogs(env, user, url.searchParams.get("run_id")); return json(r, r.ok ? 200 : 404);
+    }
+    if (path === "/api/code/runs" && request.method === "GET") {
+      const user = await userFromReq(request, env, url, ""); if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      return json(await codeRuns(env, user));
+    }
     if (path === "/api/code/history" && request.method === "GET") {
       const user = await userFromReq(request, env, url, "");
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
@@ -8918,6 +9023,20 @@ export class CodeClaimDO {
       return this.response({ ok: true, result, pending: p, version: current.version });
     }
     return this.response({ ok: false, msg: "未知 Durable Object 操作" }, 404);
+  }
+}
+
+export class CodeRunnerDO {
+  constructor(state) { this.storage = state.storage; }
+  async load() { return (await this.storage.get("runner")) || null; }
+  response(value, status = 200) { return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } }); }
+  async fetch(request) {
+    const action = new URL(request.url).pathname.replace(/^\//, "") || "state";
+    if (request.method === "GET" || action === "state") return this.response({ ok: true, runner: await this.load() });
+    const body = await request.json().catch(() => ({}));
+    if (action === "update") { const current = { ...(await this.load() || {}), ...body, updated_at: new Date().toISOString() }; await this.storage.put("runner", current); return this.response({ ok: true, runner: current }); }
+    if (action === "clear") { await this.storage.delete("runner"); return this.response({ ok: true }); }
+    return this.response({ ok: false, msg: "未知 runner 操作" }, 404);
   }
 }
 

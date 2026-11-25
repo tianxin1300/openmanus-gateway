@@ -183,6 +183,29 @@ test('Trae batch 1: isolated branches, history/rollback/preview, and file-level 
   assert.equal(studioSource, fs.readFileSync(path.join(root, 'studio.js'), 'utf8'));
 });
 
+test('persistent runner, KV logs and Pages deployment are wired end to end', () => {
+  const deploy = fs.readFileSync(path.join(root, '.github/workflows/deploy-project.yml'), 'utf8');
+  const wrangler = fs.readFileSync(path.join(root, 'wrangler.toml'), 'utf8');
+  assert.match(wrangler, /name = "CODE_RUNNER"/);
+  assert.match(wrangler, /class_name = "CodeRunnerDO"/);
+  assert.match(workerSource, /export class CodeRunnerDO/);
+  assert.match(workerSource, /log:run:/);
+  assert.match(workerSource, /async function codePersistRun/);
+  assert.match(workerSource, /path === "\/api\/code\/logs"/);
+  assert.match(workerSource, /path === "\/api\/code\/runs"/);
+  assert.match(workerSource, /CODE_DEPLOY_WORKFLOW = "deploy-project\.yml"/);
+  assert.match(workerSource, /path === "\/api\/code\/deploy"/);
+  assert.match(deploy, /name: deploy-project/);
+  assert.match(deploy, /actions\/checkout@v4/);
+  assert.match(deploy, /run: npm test/);
+  assert.match(deploy, /run: npm run build/);
+  assert.match(deploy, /wrangler pages deploy frontend --project-name zhineng-et5/);
+  assert.match(deploy, /CODE_PREVIEW_URL: https:\/\/zhineng-et5\.pages\.dev/);
+  assert.match(frontendSource, /部署/);
+  assert.match(frontendSource, /\/api\/code\/logs/);
+  assert.match(frontendSource, /\/api\/code\/runs/);
+});
+
 function extract(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
   assert.notEqual(start, -1, `Source marker missing: ${startMarker}`);

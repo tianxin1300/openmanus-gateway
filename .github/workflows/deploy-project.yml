@@ -1,0 +1,72 @@
+name: deploy-project
+run-name: deploy-project · ${{ github.event.inputs.request_id || 'manual' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: "OpenManus deployment request id"
+        required: false
+        type: string
+      ref:
+        description: "Branch or commit to deploy"
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_REF: ${{ github.event.inputs.ref || github.ref_name }}
+  DEPLOY_REQUEST_ID: ${{ github.event.inputs.request_id || 'manual' }}
+  CODE_PREVIEW_URL: https://zhineng-et5.pages.dev
+
+jobs:
+  deploy:
+    name: verify, build and deploy Pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Validate deployment inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re
+          ref = os.environ["DEPLOY_REF"]
+          request_id = os.environ["DEPLOY_REQUEST_ID"]
+          if not 1 <= len(ref) <= 120 or ref != ref.strip() or re.search(r"[\r\n'"`;]|\$\(|&&", ref):
+              raise SystemExit("Invalid ref")
+          if not re.fullmatch(r"(?:[0-9a-fA-F]{7,64}|[A-Za-z0-9._/-]+)", ref) or any(p in ("", ".", "..") for p in ref.split("/")):
+              raise SystemExit("Ref must be a branch name or commit SHA")
+          if len(request_id) > 160 or "\r" in request_id or "\n" in request_id:
+              raise SystemExit("Invalid request id")
+          PY
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_REF }}
+          fetch-depth: 0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: npm install
+        run: npm install --no-audit --no-fund
+      - name: npm test
+        run: npm test
+      - name: npm run build
+        run: npm run build
+      - name: Deploy frontend to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler pages deploy frontend --project-name zhineng-et5 --branch main
+      - name: Return CODE_PREVIEW_URL
+        if: always()
+        run: |
+          echo "CODE_PREVIEW_URL=$CODE_PREVIEW_URL" >> "$GITHUB_OUTPUT"
+          { echo "## OpenManus deployment"; echo; echo "- Ref: $DEPLOY_REF"; echo "- Request: $DEPLOY_REQUEST_ID"; echo "- CODE_PREVIEW_URL: $CODE_PREVIEW_URL"; echo "- Result: ${{ job.status }}"; } >> "$GITHUB_STEP_SUMMARY"
