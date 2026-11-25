@@ -5475,6 +5475,99 @@ const bestPlace = (list, q) => {
   };
 })();
 </script>
+<script>
+/* 开发台 · 代码检测：脚本语法 + 重复 id + $("id") 引用不到的元素 + 遗留 console.log */
+(function () {
+  function wbLintCode() {
+    const cands = [window.wbEditor, window.__wbEditor, window.wbMonacoEditor, window.editor];
+    for (const c of cands) if (c && typeof c.getValue === "function") return c.getValue();
+    try {
+      const mons = (window.monaco && monaco.editor && monaco.editor.getModels) ? monaco.editor.getModels() : [];
+      if (mons.length) {
+        const f = document.getElementById("wb-file");
+        const name = f ? String(f.textContent || "").trim() : "";
+        const tail = name ? name.split("/").pop() : "";
+        const hit = tail ? mons.find(m => String((m.uri && m.uri.path) || "").indexOf(tail) >= 0) : null;
+        return (hit || mons[0]).getValue();
+      }
+    } catch (e) {}
+    const ta = document.querySelector("#wb-editor textarea");
+    return ta ? ta.value : "";
+  }
+  function blocks(src) {
+    const out = []; let i = 0;
+    for (;;) {
+      const s = src.indexOf("<script", i); if (s < 0) break;
+      const gt = src.indexOf(">", s); if (gt < 0) break;
+      let e = gt + 1, end = -1;
+      for (;;) {
+        const c = src.indexOf("<\/script", e); if (c < 0) break;
+        if (src.charAt(c - 1) !== "\\") { end = c; break; }
+        e = c + 8;
+      }
+      if (end < 0) break;
+      out.push({ attrs: src.slice(s + 7, gt), start: gt + 1, body: src.slice(gt + 1, end) });
+      i = end + 8;
+    }
+    return out;
+  }
+  const lineOf = (src, idx) => src.slice(0, idx).split("\n").length;
+  function show(rows) {
+    let p = document.getElementById("wb-lint-panel");
+    if (!p) {
+      p = document.createElement("div");
+      p.id = "wb-lint-panel";
+      p.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483000;width:min(560px,92vw);max-height:62vh;overflow:auto;background:#14161a;color:#e8eaed;border:1px solid #2c3038;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.45);font:13px/1.65 ui-monospace,Menlo,Consolas,monospace;padding:12px 14px";
+      document.body.appendChild(p);
+    }
+    const errs = rows.filter(r => r[0] === "err").length, warns = rows.filter(r => r[0] === "warn").length;
+    const color = { err: "#ff6b6b", warn: "#ffc857", ok: "#5ad19a" };
+    p.innerHTML = "";
+    const h = document.createElement("div");
+    h.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:8px;font-weight:600";
+    h.appendChild(document.createTextNode("代码检测 · " + errs + " 个错误 / " + warns + " 个警告"));
+    const x = document.createElement("button");
+    x.type = "button"; x.textContent = "×";
+    x.style.cssText = "margin-left:auto;background:none;border:0;color:#9aa0a6;font-size:18px;line-height:1;cursor:pointer";
+    x.onclick = () => p.remove();
+    h.appendChild(x); p.appendChild(h);
+    rows.forEach(r => {
+      const d = document.createElement("div");
+      d.style.cssText = "padding:5px 0;border-top:1px solid #23262d;color:" + (color[r[0]] || "#e8eaed");
+      d.textContent = (r[0] === "err" ? "✕ " : r[0] === "warn" ? "! " : "✓ ") + r[1];
+      p.appendChild(d);
+    });
+  }
+  function run() {
+    const code = String(wbLintCode() || "");
+    const rows = [];
+    if (!code.trim()) { rows.push(["err", "编辑器里没有内容：先打开开发台并读取文件。"]); return show(rows); }
+    const bs = blocks(code);
+    let checked = 0;
+    bs.forEach(b => {
+      if (/\bsrc\s*=/i.test(b.attrs)) return;
+      checked++;
+      try { new Function(b.body); }
+      catch (e) { rows.push(["err", "第 " + lineOf(code, b.start) + " 行起的 <script> 语法错误：" + String((e && e.message) || e)]); }
+    });
+    if (!checked) rows.push(["warn", "没找到内联 <script>，跳过语法检查。"]);
+    if (/<html|<body|<div|<button|<span/i.test(code)) {
+      const ids = {}, dup = {};
+      const idRe = /\sid\s*=\s*["']([^"']+)["']/g; let m;
+      while ((m = idRe.exec(code))) { const k = m[1]; if (ids[k]) dup[k] = (dup[k] || 1) + 1; else ids[k] = lineOf(code, m.index); }
+      Object.keys(dup).forEach(k => rows.push(["warn", "id 重复：" + k + "（共 " + dup[k] + " 处，$(\"" + k + "\") 只会拿到第一个）"]));
+      const miss = {}, refRe = /(?:\$|getElementById)\(\s*["']([A-Za-z][\w-]*)["']\s*\)/g;
+      while ((m = refRe.exec(code))) { const k = m[1]; if (!ids[k] && !miss[k]) miss[k] = lineOf(code, m.index); }
+      Object.keys(miss).forEach(k => rows.push(["err", "第 " + miss[k] + " 行 · $(\"" + k + "\") 找不到这个 id，运行时会 null 报错（若是 JS 动态创建的 id 可忽略）"]));
+    }
+    const dbg = (code.match(/console\.(log|debug)\(/g) || []).length;
+    if (dbg) rows.push(["warn", "还有 " + dbg + " 处 console.log / debug，上线前建议清掉。"]);
+    if (!rows.length) rows.push(["ok", "没发现问题：脚本语法通过，id 无重复，$() 引用都能对上。"]);
+    show(rows);
+  }
+  window.wbLint = run;
+})();
+</script>
 <!-- 开发台：左 Monaco 编辑器 / 右 实时预览（含运行结果）/ 下 终端（WebContainer + xterm），库全部按需从 CDN 加载 -->
 <div id="wb" role="dialog" aria-hidden="true" aria-label="开发台">
   <div id="wb-bar">
@@ -5484,6 +5577,7 @@ const bestPlace = (list, q) => {
     <button id="wb-save" type="button" title="把编辑器里的内容通过 MCP update_file 推到 GitHub main（Ctrl/Cmd+S）">保存到 GitHub</button>
     <button id="wb-run" type="button" title="在浏览器里启动 WebContainer：mount /frontend → npm install → 结果显示在右侧">运行</button>
     <button id="wb-ci" class="sec" type="button" title="打开 GitHub Actions：推上去后会自动跑 node --check，绿了就是语法过了，红了点开看报错行">语法检查</button>
+    <button id="wb-lint" class="sec" type="button" title="代码检测：检查脚本语法、重复 id、$() 引用不到的 id、遗留 console.log" onclick="wbLint()">代码检测</button>
     <button id="wb-close" class="sec" type="button" aria-label="关闭开发台">×</button>
   </div>
   <div id="wb-main">
