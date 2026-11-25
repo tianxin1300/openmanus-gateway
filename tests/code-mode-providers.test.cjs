@@ -101,6 +101,36 @@ test('remote verification UI: green success, red failures, and no invented previ
   assert.doesNotMatch(frontendSource, /window\.open\("https:\/\/github\.com\/" \+ REPO\.owner \+ "\/" \+ REPO\.repo \+ "\/actions"/);
 });
 
+test('BUG-01: protected media and files never put the login token in URLs or media bodies', () => {
+  assert.doesNotMatch(frontendSource, /\?token=/);
+  assert.doesNotMatch(frontendSource, /JSON\.stringify\(\{token/);
+  assert.match(frontendSource, /authFetch\(GATEWAY \+ "\/api\/generate\/image"/);
+  assert.match(frontendSource, /authFetch\(GATEWAY \+ "\/api\/generate\/audio"/);
+  assert.match(frontendSource, /URL\.createObjectURL\(await media\.blob\(\)\)/);
+  assert.match(frontendSource, /authFetch\(GATEWAY \+ "\/api\/files\/"/);
+  assert.match(frontendSource, /window\.open\(url, "_blank", "noopener"\)/);
+});
+
+test('BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang', () => {
+  const workflow = fs.readFileSync(path.join(root, '.github/workflows/verify-project.yml'), 'utf8');
+  assert.match(workflow, /VERIFY_REF: \$\{\{ github\.event\.inputs\.ref/);
+  assert.match(workflow, /python3 - <<'PY'/);
+  assert.match(workflow, /re\.search\(r"\[\\r\\n'\\"`;\]\|\\\$\\\(|&&"/);
+  assert.match(workflow, /timeout-minutes: 12/);
+  assert.doesNotMatch(workflow, /echo "- Ref: \$\{\{ github\.event\.inputs\.ref/);
+  assert.match(workerSource, /const codeVerifyRef = \(ref\) =>/);
+  assert.match(workerSource, /request_id: requestId/);
+  assert.match(workerSource, /x\.name === marker/);
+  assert.match(workerSource, /function codeVerifyRedact\(text\)/);
+  assert.match(workerSource, /github_pat/);
+  assert.match(workerSource, /API_KEY\|TOKEN/);
+  assert.match(frontendSource, /VERIFY_MAX_MS = 10 \* 60 \* 1000/);
+  assert.match(frontendSource, /VERIFY_MAX_POLLS/);
+  assert.match(frontendSource, /new AbortController\(\)/);
+  assert.match(frontendSource, /finally \{ clearTimeout\(timeout\)/);
+  assert.match(frontendSource, /验证超时：10 分钟内未完成/);
+});
+
 function extract(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
   assert.notEqual(start, -1, `Source marker missing: ${startMarker}`);

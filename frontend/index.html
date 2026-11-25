@@ -2456,12 +2456,11 @@ async function shareChat() {
   if (!c || !c.msgs.length) return toast("没有可分享的对话");
   if (!confirm("分享链接会把这段对话的文字内容发送给分享服务，拿到链接的人都能看到。继续吗？(上传的文件原文和图片不会包含)")) return;
   let link = "";
-  const token = authToken;
-  if (token) {
+  if (authToken) {
     try {
-      const r = await fetch(GATEWAY + "/api/shares", {
+      const r = await authFetch(GATEWAY + "/api/shares", {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({token, title: c.title || "OpenManus 对话", content: chatAsText(c)})
+        body: JSON.stringify({title: c.title || "OpenManus 对话", content: chatAsText(c)})
       });
       const j = await r.json().catch(() => ({}));
       const sh = j.share || j; const raw = sh.url || sh.link || sh.share_url || sh.shareUrl || (sh.id ? "/s/" + sh.id : (sh.share_id ? "/s/" + sh.share_id : ""));
@@ -2719,14 +2718,16 @@ async function workGenImage() {
   if (!promptText || !promptText.trim()) return;
   try {
     toast("正在生成图片…");
-    const r = await fetch(GATEWAY + "/api/generate/image", {
+    const r = await authFetch(GATEWAY + "/api/generate/image", {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({token, prompt: promptText.trim(), width: 1024, height: 1024})
+      body: JSON.stringify({prompt: promptText.trim(), width: 1024, height: 1024})
     });
     const j = await r.json().catch(() => ({}));
     if (j.ok === false) return toast(j.msg || j.message || "生图失败，免费额度可能用完了");
     if (!r.ok || !j.url) throw new Error(j.message || j.msg || ("服务返回 " + r.status));
-    const imageUrl = GATEWAY + j.url + "?token=" + encodeURIComponent(token);
+    const media = await authFetch(GATEWAY + j.url);
+    if (!media.ok) throw new Error("图片读取失败（" + media.status + "）");
+    const imageUrl = URL.createObjectURL(await media.blob());
     recordTask({type: "image", title: promptText.trim().slice(0, 30), path: j.url});
     const mask = document.createElement("div");
     mask.style.cssText = "position:fixed;inset:0;z-index:100;background:#0008;display:flex;align-items:center;justify-content:center;padding:20px";
@@ -2741,7 +2742,7 @@ async function workGenImage() {
     dl.href = imageUrl; dl.download = "openmanus-generated-image.png"; dl.textContent = "下载图片";
     dl.style.cssText = "display:inline-block;padding:9px 14px;border-radius:10px;background:#287447;color:#fff;text-decoration:none;font-weight:650;font-size:14px";
     const close = document.createElement("button");
-    close.className = "sec"; close.textContent = "关闭"; close.onclick = () => mask.remove();
+    close.className = "sec"; close.textContent = "关闭"; close.onclick = () => { URL.revokeObjectURL(imageUrl); mask.remove(); };
     actions.append(dl, close); card.append(img, actions); mask.appendChild(card);
     mask.onclick = e => { if (e.target === mask) mask.remove(); };
     document.body.appendChild(mask);
@@ -2756,14 +2757,16 @@ async function workGenAudio() {
   if (!text || !text.trim()) return;
   try {
     toast("正在生成音频…");
-    const r = await fetch(GATEWAY + "/api/generate/audio", {
+    const r = await authFetch(GATEWAY + "/api/generate/audio", {
       method: "POST", headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({token: authToken, text: text.trim()})
+      body: JSON.stringify({text: text.trim()})
     });
     const j = await r.json().catch(() => ({}));
     if (j.ok === false) return toast(j.msg || "生成音频失败");
     if (j.ok !== true || !j.url) return toast(j.msg || "生成音频失败");
-    const audioUrl = GATEWAY + j.url + "?token=" + encodeURIComponent(token);
+    const media = await authFetch(GATEWAY + j.url);
+    if (!media.ok) throw new Error("音频读取失败（" + media.status + "）");
+    const audioUrl = URL.createObjectURL(await media.blob());
     recordTask({type: "audio", title: text.trim().slice(0, 30), path: j.url});
     const mask = document.createElement("div");
     mask.style.cssText = "position:fixed;inset:0;z-index:100;background:#0008;display:flex;align-items:center;justify-content:center;padding:20px";
@@ -2777,7 +2780,7 @@ async function workGenAudio() {
     dl.href = audioUrl; dl.download = "openmanus-generated-audio.mp3"; dl.textContent = "下载音频";
     dl.style.cssText = "display:inline-block;padding:9px 14px;border-radius:10px;background:#287447;color:#fff;text-decoration:none;font-weight:650;font-size:14px";
     const close = document.createElement("button");
-    close.className = "sec"; close.textContent = "关闭"; close.onclick = () => mask.remove();
+    close.className = "sec"; close.textContent = "关闭"; close.onclick = () => { URL.revokeObjectURL(audioUrl); mask.remove(); };
     actions.append(dl, close); card.append(audio, actions); mask.appendChild(card);
     mask.onclick = e => { if (e.target === mask) mask.remove(); };
     document.body.appendChild(mask);
@@ -3072,13 +3075,13 @@ window.omVoiceSettings = (() => { try { const v = JSON.parse(localStorage.getIte
 window.omVoiceSettings.language = "zh-CN";
 window.omVoiceSettings.rate = Number(window.omVoiceSettings.rate || 1);
 function setPreview(open) { document.body.classList.toggle("preview-open", open); if (!open) document.body.classList.remove("art-full"); const tg = $("art-toggle"); if (tg) tg.classList.toggle("on", open); }
-function previewUrl(f) { if (f.url && /^(https?:|data:|blob:)/i.test(f.url)) return f.url; if (f.thumb && /^(https?:|data:|blob:)/i.test(f.thumb)) return f.thumb; return f.serverId ? GATEWAY + "/api/files/" + encodeURIComponent(f.serverId) + "?token=" + encodeURIComponent(authToken) : ""; }
+function previewUrl(f) { if (f.url && /^(https?:|data:|blob:)/i.test(f.url)) return f.url; if (f.thumb && /^(https?:|data:|blob:)/i.test(f.thumb)) return f.thumb; return ""; }
 let PV_SEQ = 0; const PV_BLOBS = new Map();
 async function previewUrlAsync(f) {   // 服务器文件：用 Authorization 头取回再转 blob，避免登录 token 出现在地址栏/日志里；取不到再退回旧链接
   if ((f.url && /^(https?:|data:|blob:)/i.test(f.url)) || (f.thumb && /^(https?:|data:|blob:)/i.test(f.thumb)) || !f.serverId) return previewUrl(f);
   if (PV_BLOBS.has(f.serverId)) return PV_BLOBS.get(f.serverId);
   try { const r = await authFetch(GATEWAY + "/api/files/" + encodeURIComponent(f.serverId)); if (r.ok) { const u = URL.createObjectURL(await r.blob()); PV_BLOBS.set(f.serverId, u); return u; } } catch (e) {}
-  return previewUrl(f);
+  return "";
 }
 function previewExt(f) { return (f.name || "").split(".").pop().toLowerCase(); }
 function addPreviewDownload(parent, url, name) { if (!url) return; const row = document.createElement("div"); row.className = "preview-actions"; const a = document.createElement("a"); a.className = "preview-download"; a.href = url; a.download = name || "下载文件"; a.textContent = "下载" + (name && /\.(mp3|wav|m4a|ogg)$/i.test(name) ? "音频" : "文件"); row.appendChild(a); parent.appendChild(row); }
@@ -3203,7 +3206,15 @@ function showSettings(view = "main") {
     if (!l.length) note("还没有任务记录。生成图片、生成音频、创建定时任务后会显示在这里。");
     l.forEach(t => {
       const r = setRow((lab[t.type] || "任务") + " · " + (t.title || "") + " · " + new Date(t.at).toLocaleString("zh-CN", {month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit"}));
-      if (t.path) r.appendChild(setBtn("打开", () => window.open(GATEWAY + t.path + "?token=" + encodeURIComponent(authToken), "_blank", "noopener")));
+      if (t.path) r.appendChild(setBtn("打开", async () => {
+        try {
+          const res = await authFetch(GATEWAY + t.path);
+          if (!res.ok) throw new Error("文件读取失败（" + res.status + "）");
+          const url = URL.createObjectURL(await res.blob());
+          const tab = window.open(url, "_blank", "noopener");
+          if (!tab) URL.revokeObjectURL(url); else setTimeout(() => URL.revokeObjectURL(url), 60000);
+        } catch (e) { toast("打开任务失败：" + (e.message || "请求失败")); }
+      }));
       box.appendChild(r);
     });
     box.appendChild(setRow("服务端定时任务", setBtn("管理", () => { closeSettings(); workTask(); })));
@@ -6008,6 +6019,10 @@ async function save() {
   finally { saving = false; g("wb-save").disabled = false; }
 }
 let verifyTimer = null;
+let verifyAbort = null;
+const VERIFY_MAX_MS = 10 * 60 * 1000;
+const VERIFY_MAX_POLLS = 175;
+const VERIFY_REQUEST_MS = 15000;
 function verifyLink(label, href) {
   if (!href || !/^https?:\/\//i.test(String(href))) return null;
   const a = document.createElement("a"); a.href = href; a.target = "_blank"; a.rel = "noopener"; a.textContent = label; a.style.cssText = "display:inline-block;margin:8px 10px 0 0;color:#83d6a0;text-decoration:underline"; return a;
@@ -6029,21 +6044,51 @@ async function runRemoteVerify() {
   const ciBtn = g("wb-ci");
   if (!authToken) { toast("请先登录"); return; }
   if (verifyTimer) { clearTimeout(verifyTimer); verifyTimer = null; }
+  if (verifyAbort) { verifyAbort.abort(); verifyAbort = null; }
   if (ciBtn) { ciBtn.disabled = true; ciBtn.textContent = "验证中…"; }
-  try {
-    const start = await authFetch(GATEWAY + "/api/code/verify", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ref: REPO.branch})});
-    const first = await start.json().catch(() => ({})); if (!start.ok || first.ok === false) throw new Error(first.msg || "无法启动验证");
-    renderVerifyResult(first); say("验证已排队，正在等待 GitHub Actions …");
-    const poll = async () => {
-      const r = await authFetch(GATEWAY + "/api/code/verify", {cache: "no-store"}), d = await r.json().catch(() => ({}));
+  const started = Date.now(); let polls = 0; let stopped = false;
+  const finish = (text, bad = false, label = "运行 / 验证") => {
+    stopped = true; if (verifyTimer) { clearTimeout(verifyTimer); verifyTimer = null; }
+    if (verifyAbort) { verifyAbort.abort(); verifyAbort = null; }
+    say(text, bad); if (ciBtn) { ciBtn.disabled = false; ciBtn.textContent = label; }
+  };
+  const poll = async () => {
+    if (stopped) return;
+    if (Date.now() - started >= VERIFY_MAX_MS || polls >= VERIFY_MAX_POLLS) {
+      renderVerifyResult({state: "failure", error_lines: ["验证超时：10 分钟内未完成，请打开 Actions 查看运行记录。"]});
+      finish("验证超时，已恢复按钮", true, "重新验证"); return;
+    }
+    polls++;
+    const ctl = new AbortController(); verifyAbort = ctl;
+    const timeout = setTimeout(() => ctl.abort(), VERIFY_REQUEST_MS);
+    try {
+      const r = await authFetch(GATEWAY + "/api/code/verify", {cache: "no-store", signal: ctl.signal}), d = await r.json().catch(() => ({}));
       if (!r.ok || d.ok === false) throw new Error(d.msg || "读取验证状态失败");
       renderVerifyResult(d);
-      if (d.state === "success") { say("验证通过", false); if (ciBtn) { ciBtn.disabled = false; ciBtn.textContent = "运行 / 验证"; } return; }
-      if (d.state === "failure") { say("验证失败，已显示报错行", true); if (ciBtn) { ciBtn.disabled = false; ciBtn.textContent = "重新验证"; } return; }
+      if (d.state === "success") { finish("验证通过", false, "运行 / 验证"); return; }
+      if (d.state === "failure") { finish("验证失败，已显示报错行", true, "重新验证"); return; }
+      if (Date.now() - started >= VERIFY_MAX_MS || polls >= VERIFY_MAX_POLLS) {
+        renderVerifyResult({...d, state: "failure", error_lines: ["验证超时：10 分钟内未完成，请打开 Actions 查看运行记录。"]});
+        finish("验证超时，已恢复按钮", true, "重新验证"); return;
+      }
       verifyTimer = setTimeout(poll, 3500);
-    };
-    verifyTimer = setTimeout(poll, 2500);
-  } catch (e) { renderVerifyResult({state: "failure", error_lines: [e.message || String(e)]}); say("验证启动失败", true); if (ciBtn) { ciBtn.disabled = false; ciBtn.textContent = "运行 / 验证"; } }
+    } catch (e) {
+      if (e.name === "AbortError" && Date.now() - started < VERIFY_MAX_MS && !stopped) {
+        renderVerifyResult({state: "failure", error_lines: ["读取验证状态超时，请稍后重试。"]});
+      } else if (!stopped) {
+        renderVerifyResult({state: "failure", error_lines: [e.message || String(e)]});
+      }
+      if (!stopped) finish(e.name === "AbortError" ? "读取验证状态超时，已恢复按钮" : "验证状态读取失败，已恢复按钮", true, "重新验证");
+    } finally { clearTimeout(timeout); if (verifyAbort === ctl) verifyAbort = null; }
+  };
+  try {
+    const ctl = new AbortController(); verifyAbort = ctl; const timeout = setTimeout(() => ctl.abort(), VERIFY_REQUEST_MS);
+    try {
+      const start = await authFetch(GATEWAY + "/api/code/verify", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ref: REPO.branch}), signal: ctl.signal});
+      const first = await start.json().catch(() => ({})); if (!start.ok || first.ok === false) throw new Error(first.msg || "无法启动验证");
+      renderVerifyResult(first); say("验证已排队，正在等待 GitHub Actions …"); verifyTimer = setTimeout(poll, 2500);
+    } finally { clearTimeout(timeout); if (verifyAbort === ctl) verifyAbort = null; }
+  } catch (e) { renderVerifyResult({state: "failure", error_lines: [e.message || String(e)]}); finish("验证启动失败，已恢复按钮", true); }
 }
 const ciBtn = g("wb-ci");
 if (ciBtn) ciBtn.onclick = runRemoteVerify;

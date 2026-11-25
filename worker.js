@@ -475,7 +475,13 @@ const codeRepoOk = (env, repo) => /^[A-Za-z0-9_.\-]+\/[A-Za-z0-9_.\-]+$/.test(St
 const codePathOk = (p) => /^[A-Za-z0-9._\-\/]{1,200}$/.test(String(p)) && !String(p).split("/").some((s) => s === "" || s === "." || s === "..");
 const CODE_VERIFY_WORKFLOW = "verify-project.yml";
 const codeVerifyRepo = (env) => String(env.CODE_REPO || "tianxin1300/openmanus-gateway").trim();
-const codeVerifyRef = (ref) => /^[A-Za-z0-9._\-/]{1,120}$/.test(String(ref || "main")) && !String(ref || "main").split("/").some((x) => x === "..") ? String(ref || "main") : "main";
+const codeVerifyRef = (ref) => {
+  const value = ref === undefined || ref === null ? "main" : String(ref);
+  if (value.length < 1 || value.length > 120 || value !== value.trim() || /[\r\n'"`;$]|\$\(|&&/.test(value)) return null;
+  if (/^[0-9a-fA-F]{7,64}$/.test(value)) return value;
+  if (!/^[A-Za-z0-9._/-]+$/.test(value) || value.split("/").some((part) => !part || part === "." || part === "..")) return null;
+  return value;
+};
 const codeVerifyKey = (user) => "code:verify:" + String(user || "").slice(0, 160);
 function codeVerifyPreview(env, runId) {
   const raw = String(env.CODE_PREVIEW_URL || env.PREVIEW_URL || "").trim();
@@ -491,6 +497,7 @@ async function codeGhApi(env, api, options = {}) {
 }
 async function codeVerifyStart(env, user, body) {
   const repo = codeVerifyRepo(env), ref = codeVerifyRef(body && body.ref), requestId = "verify-" + Date.now().toString(36) + "-" + rand(6);
+  if (!ref) return { ok: false, msg: "ref 不合法：只允许分支名或 7-64 位 commit SHA" };
   if (!codeRepoOk(env, repo)) return { ok: false, msg: "验证仓库不在允许名单里" };
   const api = "https://api.github.com/repos/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW + "/dispatches";
   const dispatched = await codeGhApi(env, api, { method: "POST", body: JSON.stringify({ ref, inputs: { request_id: requestId, ref } }), headers: { "Content-Type": "application/json" } });
@@ -499,10 +506,17 @@ async function codeVerifyStart(env, user, body) {
   if (env.KV) await env.KV.put(codeVerifyKey(user), JSON.stringify(job), { expirationTtl: 86400 });
   return { ok: true, ...job, message: "验证已排队：checkout → npm install → npm test → npm run build" };
 }
+function codeVerifyRedact(text) {
+  return String(text || "")
+    .replace(/Authorization\s*:\s*Bearer\s+[^\s"'`]+/gi, "Authorization: Bearer ***")
+    .replace(/\b(?:ghp|github_pat)_[A-Za-z0-9_\-]+/g, "***")
+    .replace(/\b(?:API_KEY|TOKEN)\s*=\s*[^\s"'`;&]+/gi, (m) => m.slice(0, m.indexOf("=") + 1) + "***")
+    .replace(/Bearer\s+[A-Za-z0-9._\-]{8,}/gi, "Bearer ***");
+}
 function codeVerifyErrorLines(text) {
   const lines = String(text || "").split(/\r?\n/).map((x) => x.trimEnd()).filter(Boolean);
   const hit = lines.filter((x) => /(npm ERR!|error|failed|failure|exception|syntaxerror|exit code|✖|✗)/i.test(x));
-  return (hit.length ? hit : lines).slice(-30).map((x) => x.slice(0, 1000));
+  return (hit.length ? hit : lines).slice(-30).map((x) => codeVerifyRedact(x).slice(0, 1000));
 }
 async function codeVerifyStatus(env, user) {
   const old = env.KV ? await env.KV.get(codeVerifyKey(user), "json") : null;
@@ -511,8 +525,8 @@ async function codeVerifyStatus(env, user) {
   if (!old.run_id) {
     const listed = await codeGhApi(env, base + "/actions/workflows/" + CODE_VERIFY_WORKFLOW + "/runs?event=workflow_dispatch&per_page=20");
     if (listed.ok) {
-      const after = Date.parse(old.started_at || 0) - 30000;
-      const run = (listed.data && listed.data.workflow_runs || []).find((x) => Date.parse(x.created_at || 0) >= after && x.head_branch === old.ref);
+      const marker = "verify-project · " + old.request_id;
+      const run = (listed.data && listed.data.workflow_runs || []).find((x) => x.name === marker);
       if (run) { old.run_id = run.id; old.run_url = run.html_url || ""; }
     }
   }

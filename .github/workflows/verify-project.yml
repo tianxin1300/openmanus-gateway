@@ -1,4 +1,5 @@
 name: verify-project
+run-name: verify-project · ${{ github.event.inputs.request_id || 'manual' }}
 
 on:
   workflow_dispatch:
@@ -20,15 +21,40 @@ concurrency:
   group: verify-project-${{ github.event.inputs.ref || github.ref }}
   cancel-in-progress: false
 
+env:
+  VERIFY_REF: ${{ github.event.inputs.ref || github.ref_name }}
+  VERIFY_REQUEST_ID: ${{ github.event.inputs.request_id || 'manual' }}
+
 jobs:
   verify:
     name: install, test and build
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
+      - name: Validate verification inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re, sys
+          ref = os.environ["VERIFY_REF"]
+          request_id = os.environ["VERIFY_REQUEST_ID"]
+          if not 1 <= len(ref) <= 120 or ref != ref.strip():
+              raise SystemExit("Invalid ref length or whitespace")
+          if re.search(r"[\r\n'\"`;]|\$\(|&&", ref):
+              raise SystemExit("Invalid characters in ref")
+          if not re.fullmatch(r"(?:[0-9a-fA-F]{7,64}|[A-Za-z0-9._/-]+)", ref):
+              raise SystemExit("Ref must be a branch name or commit SHA")
+          if any(part in ("", ".", "..") for part in ref.split("/")):
+              raise SystemExit("Invalid ref path segment")
+          if len(request_id) > 160 or "\r" in request_id or "\n" in request_id:
+              raise SystemExit("Invalid request id")
+          PY
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.ref || github.ref }}
+          ref: ${{ env.VERIFY_REF }}
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -49,11 +75,12 @@ jobs:
 
       - name: Write verification summary
         if: always()
+        shell: bash
         run: |
           {
             echo "## OpenManus project verification"
             echo
-            echo "- Ref: ${{ github.event.inputs.ref || github.ref }}"
-            echo "- Request: ${{ github.event.inputs.request_id || 'manual' }}"
+            echo "- Ref: $VERIFY_REF"
+            echo "- Request: $VERIFY_REQUEST_ID"
             echo "- Result: ${{ job.status }}"
           } >> "$GITHUB_STEP_SUMMARY"
