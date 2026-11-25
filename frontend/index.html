@@ -3246,9 +3246,9 @@ const MODEL_HINT = {
   "gemini-3-flash": "肖恩AI · Gemini",
   "gemini-2.5-pro": "肖恩AI · Gemini Pro",
   "gemini-3.1-pro": "肖恩AI · Gemini Pro",
-  "claude-sonnet-4-5": "肖恩AI · Claude Sonnet",
+  "claude-sonnet-4-5": "代码主力 · Claude Sonnet（肖恩AI）",
   "claude-opus-4-5": "肖恩AI · Claude Opus",
-  "particle-ai/particle-1:free": "代码主力 · Particle-1",
+  "particle-ai/particle-1:free": "代码备用 · Particle-1",
   "baidu/ernie-5.5-flash-preview:free": "代码备用 · ERNIE 5.5",
   "nvidia/nemotron-3.5-super-vl:free": "代码备用 · Nemotron Super VL",
   "inclusionai/ling-3.2-flash:free": "聊天主力 · Ling 3.2 Flash",
@@ -3260,7 +3260,7 @@ const MODEL_HINT = {
 };
 let MODEL_MAP = null, modelMenuOpen = true, selModels = lsJSON("openmanus_selected_models", {});
 if (!selModels || typeof selModels !== "object") selModels = {};
-function modelField() { return selModels[selectedProvider] || ({Groq: "openai/gpt-oss-120b", Gemini: "gemini-3.5-flash-lite", "肖恩AI": "gemini-3.8-flash", OpenRouter: "inclusionai/ling-3.2-flash:free"}[selectedProvider] || "openai/gpt-oss-120b"); }
+function modelField() { return selModels[selectedProvider] || ({Groq: "openai/gpt-oss-120b", Gemini: "gemini-3.5-flash-lite", "肖恩AI": "claude-sonnet-4-5", OpenRouter: "inclusionai/ling-3.2-flash:free"}[selectedProvider] || "openai/gpt-oss-120b"); }
 function providerField() { return selectedProvider !== "OpenManus" ? {provider: selectedProvider} : {}; }
 const shortModel = m => String(m).split("/").pop().replace(/:free$/, "");
 function updateModelLabel() { const m = selModels[selectedProvider]; $("current-model").textContent = selectedProvider + (m ? " · " + shortModel(m) : ""); }
