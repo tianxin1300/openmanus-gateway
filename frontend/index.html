@@ -5483,6 +5483,7 @@ const bestPlace = (list, q) => {
     <button id="wb-reload" class="sec" type="button" title="重新从 GitHub 读取 index.html（会丢掉未保存的修改）">重新读取</button>
     <button id="wb-save" type="button" title="把编辑器里的内容通过 MCP update_file 推到 GitHub main（Ctrl/Cmd+S）">保存到 GitHub</button>
     <button id="wb-run" type="button" title="在浏览器里启动 WebContainer：mount /frontend → npm install → 结果显示在右侧">运行</button>
+    <button id="wb-ci" class="sec" type="button" title="打开 GitHub Actions：推上去后会自动跑 node --check，绿了就是语法过了，红了点开看报错行">语法检查</button>
     <button id="wb-close" class="sec" type="button" aria-label="关闭开发台">×</button>
   </div>
   <div id="wb-main">
@@ -5787,6 +5788,8 @@ async function save() {
   } catch (e) { say("保存失败：" + e.message, true); }
   finally { saving = false; g("wb-save").disabled = false; }
 }
+const ciBtn = g("wb-ci");
+if (ciBtn) ciBtn.onclick = () => window.open("https://github.com/" + REPO.owner + "/" + REPO.repo + "/actions", "_blank", "noopener");
 
 /* ---------------- 运行：WebContainer boot → mount /frontend → npm install ---------------- */
 async function listFrontend(notes) {
