@@ -3,15 +3,18 @@
  * 用法：在 index.html 里 </body> 前面加一行（只需加这一行，其余都在这个文件里）：
  *     <script src="studio.js"></script>
  *
- * 做三件事：
+ * 做四件事：
  *  1. 输入框上面加一个「代码模式」小药丸开关（颜色和旁边的「定位」药丸一致，手机上也在）。打开后，发给后端的每条聊天请求都带
  *     code_mode:true 和 code_project（聚合体 / 就医伴侣）。后端看到 code_mode 就一定进代码模式，不再猜你说了什么。
  *  2. 后端改完、生成了待推送的修改，就弹出「改动预览」面板：每处改动按 文件 + 行号 + 删除/新增 显示。
  *  3. 面板底下两个按钮：「推」→ 推到 GitHub；「不推」→ 丢弃。点一下就行，不用再打字回「推」。
+ *  4. v108 防死循环：面板右上角「强制清空」一键清掉服务器里暂存的改动；发新消息时上一个没处理的预览自动收掉；
+ *     10 分钟没点「推 / 不推」自动过期收掉。
  *
  * 后端接口（都要登录，沿用页面里的 authFetch / 登录 token）：
- *     GET  /api/code/pending          读取待推送的修改
+ *     GET  /api/code/pending          读取待推送的修改（带 left = 还剩多少毫秒过期）
  *     POST /api/code/confirm {yes}    yes:true = 推，yes:false = 不推
+ *     POST /api/code/clear            强制清空（旧后端没有这个接口时，退回「不推」，效果一样）
  */
 (function () {
   "use strict";
@@ -69,17 +72,13 @@
     ".om-ph{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line,#dfe9df)}",
     ".om-ph strong{font-size:14px;white-space:nowrap}",
     ".om-meta{flex:1;min-width:0;color:var(--muted,#71867a);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+    ".om-fc{flex:none;height:28px;padding:0 10px;border:1px solid #e3b4b4;border-radius:8px;background:#fff;color:#a12b2b;font-size:12px;font-weight:650;cursor:pointer;white-space:nowrap}",
+    ".om-fc:disabled{opacity:.5;cursor:default}",
     ".om-x{width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:var(--muted,#71867a);font-size:20px;line-height:1;cursor:pointer}",
     ".om-x:hover{background:#eef3ec}",
     ".om-pb{overflow:auto;padding:10px 14px;flex:1;min-height:56px}",
     ".om-edit{border:1px solid var(--line,#dfe9df);border-radius:10px;margin-bottom:10px;overflow:hidden}",
     ".om-file{padding:6px 10px;background:var(--canvas,#f4f8f2);font-size:12px;font-weight:650}",
-    ".om-file-actions{display:flex;gap:5px;padding:6px 10px;border-top:1px solid var(--line,#dfe9df);background:#fff}",
-    ".om-file-actions button,.om-history button{height:28px;padding:0 9px;border:1px solid var(--line,#dfe9df);border-radius:7px;background:#fff;color:#58725e;font-size:11px;cursor:pointer}",
-    ".om-file-actions button.om-picked{background:#e3f3e5;color:#1f6b33;border-color:#9fd0a6}",
-    ".om-file-actions button.om-rejected{background:#fbeeee;color:#8a1f1f;border-color:#e5b5b5}",
-    ".om-layout{display:flex;min-height:0;flex:1}.om-tree{width:185px;flex:none;border-right:1px solid var(--line,#dfe9df);overflow:auto;padding:8px;background:#fbfdf9}.om-tree input{width:100%;height:29px;border:1px solid var(--line,#dfe9df);border-radius:7px;padding:0 7px;font-size:11px}.om-tree button{display:block;width:100%;padding:6px 5px;text-align:left;border:0;background:transparent;color:#4d6653;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}.om-tree button:hover{background:#edf5e8}.om-history{border-top:1px solid var(--line,#dfe9df);padding:7px 10px;max-height:120px;overflow:auto;font-size:11px}.om-history-row{display:flex;gap:7px;align-items:center;padding:4px 0}.om-history-row span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-    ".om-preview-link{color:#287447;font-size:11px;text-decoration:underline;cursor:pointer;margin-right:8px}",
     ".om-diff{margin:0;overflow-x:auto;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}",
     ".om-diff div{padding:0 10px;white-space:pre;min-width:100%;width:max-content}",
     ".om-del{background:#fdecec;color:#8a1f1f}.om-add{background:#e6f5ea;color:#17592f}",
@@ -114,7 +113,6 @@
     if (hintEl) hintEl.hidden = !state.on;
     var inp = document.getElementById("inp");
     if (inp) { if (hint0 === null) hint0 = inp.getAttribute("placeholder") || ""; inp.setAttribute("placeholder", state.on ? "代码模式：说想改什么…" : hint0); }
-    if (typeof renderModelMenu === "function") renderModelMenu();
   }
   function mountToggle() {
     if (document.getElementById("om-code-toggle")) return;
@@ -146,6 +144,7 @@
       if (state.on && /\/v1\/chat\/completions(?:[?#]|$)/.test(url) && init && typeof init.body === "string") {
         var b = JSON.parse(init.body);
         b.code_mode = true; b.code_project = state.project;
+        if (panelState === "pending") hide();   // v108：新消息一发出，上一个没处理的预览就收掉（后端同时把它从 KV 里丢掉）
         var p = realFetch(input, Object.assign({}, init, { body: JSON.stringify(b) }));
         var after = function () { setTimeout(check, 300); };
         p.then(function (r) { try { r.clone().text().then(after, after); } catch (e) { after(); } }, function () {});
@@ -156,7 +155,7 @@
   };
 
   /* ---------- 改动预览面板 ---------- */
-  var panel = null, stEl = null, yesBtn = null, noBtn = null, footer = null, closeTimer = 0, currentPending = null, fileDecision = {}, conflictChoices = {};
+  var panel = null, stEl = null, yesBtn = null, noBtn = null, fcBtn = null, footer = null, closeTimer = 0, expTimer = 0;
   function ensurePanel() {
     if (panel) return panel;
     panel = el("div"); panel.id = "om-code-panel"; panel.hidden = true;
@@ -165,7 +164,7 @@
     return panel;
   }
   function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
-  function hide() { clearTimeout(closeTimer); if (panel) panel.hidden = true; panelState = ""; }
+  function hide() { clearTimeout(closeTimer); clearTimeout(expTimer); if (panel) panel.hidden = true; panelState = ""; }
   function linkify(node, text) {   // 文字里的网址变成可点的链接（只处理 http / https）
     clear(node);
     String(text).split(/(https?:\/\/[^\s]+)/).forEach(function (part) {
@@ -179,91 +178,75 @@
     String(nw).split("\n").forEach(function (l) { pre.appendChild(el("div", "om-add", "+ " + l)); });
     return pre;
   }
-  function selectedPaths() { return Object.keys(fileDecision).filter(function (p) { return fileDecision[p] !== false; }); }
-  function loadHistory(host) {
-    api("/api/code/history").then(function (r) { return r.json(); }).then(function (j) {
-      clear(host); (j.history || []).slice(0, 12).forEach(function (h, i) {
-        var row = el("div", "om-history-row"), label = (h.commit_sha || "无 hash").slice(0, 12) + " · " + (h.summary || "代码修改") + " · " + (h.at || "");
-        row.appendChild(el("span", "", label));
-        var b = el("button", "", "回滚"); b.type = "button"; b.addEventListener("click", function () {
-          if (!window.confirm("确定回滚到这个版本吗？main 会回到该版本记录的上一版本。")) return;
-          api("/api/code/rollback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: h.id }) }).then(function (x) { return x.json(); }).then(function (d) { toast(d.reply || d.msg || (d.ok ? "已回滚" : "回滚失败")); if (d.ok) loadHistory(host); });
-        }); row.appendChild(b); host.appendChild(row);
-      });
-    }).catch(function () {});
-  }
-  function loadTree(host, p) {
-    var search = el("input", "", ""); search.placeholder = "搜索文件…"; host.appendChild(search);
-    var list = el("div"); host.appendChild(list); var files = [];
-    api("/api/code/tree?repo=" + encodeURIComponent(p.repo || "") + "&ref=" + encodeURIComponent(p.baseBranch || "main")).then(function (r) { return r.json(); }).then(function (j) { files = j.files || []; paint(); }).catch(function () { list.appendChild(el("div", "om-meta", "文件树读取失败")); });
-    function paint() { clear(list); var q = search.value.trim().toLowerCase(); files.filter(function (x) { return !q || x.toLowerCase().indexOf(q) >= 0; }).slice(0, 300).forEach(function (f) { var b = el("button", "", "▸ " + f); b.type = "button"; b.addEventListener("click", function () { var card = host.parentNode.querySelector('[data-file="' + CSS.escape(f) + '"]'); if (card) card.scrollIntoView({ behavior: "smooth", block: "center" }); }); list.appendChild(b); }); }
-    search.addEventListener("input", paint);
-  }
   function render(p) {
-    clearTimeout(closeTimer); currentPending = { pending_id: p.pending_id || p.id || "", version: Number(p.version), project: p.project || state.project, repo: p.repo, branch: p.branch }; fileDecision = {}; (p.edits || []).forEach(function (e) { fileDecision[e.path] = true; });
-
+    clearTimeout(closeTimer); clearTimeout(expTimer);
     var root = ensurePanel(); clear(root); panelState = "pending";
     var head = el("div", "om-ph");
     head.appendChild(el("strong", "", "改动预览"));
-    head.appendChild(el("span", "om-meta", (p.project || state.project) + " · 共 " + p.edits.length + " 处 · 临时分支 " + p.branch + (p.status && p.status !== "awaiting_approval" ? " · " + p.status : "")));
-    if (p.preview_url) { var pl = el("a", "om-preview-link", "打开临时预览"); pl.href = p.preview_url; pl.target = "_blank"; pl.rel = "noopener"; head.appendChild(pl); }
-    var x = el("button", "om-x", "×"); x.type = "button"; x.setAttribute("aria-label", "关闭预览（修改仍保留 1 小时）");
+    head.appendChild(el("span", "om-meta", state.project + " · 共 " + p.edits.length + " 处 · 推到 " + p.repo + "@" + p.branch));
+    fcBtn = el("button", "om-fc", "强制清空"); fcBtn.type = "button"; fcBtn.title = "清掉待处理的改动（服务器里的暂存），面板消失；不用去 GitHub 删";
+    fcBtn.addEventListener("click", forceClear); head.appendChild(fcBtn);
+    var x = el("button", "om-x", "×"); x.type = "button"; x.setAttribute("aria-label", "关闭预览（修改仍保留，10 分钟后自动丢弃）");
     x.addEventListener("click", hide); head.appendChild(x); root.appendChild(head);
-    var layout = el("div", "om-layout"), tree = el("aside", "om-tree"); loadTree(tree, p); layout.appendChild(tree); var body = el("div", "om-pb");
+    var body = el("div", "om-pb");
     if (p.summary) { var s = el("div", "om-meta", "需求：" + p.summary); s.style.marginBottom = "8px"; s.style.whiteSpace = "normal"; body.appendChild(s); }
     (p.warn || []).forEach(function (w) { body.appendChild(el("div", "om-warn", "⚠️ " + w + "（可能是括号写漏了，推之前请留意）")); });
     p.edits.forEach(function (e) {
       var card = el("div", "om-edit");
-      card.dataset.file = e.path; card.appendChild(el("div", "om-file", e.path + (e.line ? " · 第 " + e.line + " 行" : "")));
+      card.appendChild(el("div", "om-file", e.path + (e.line ? " · 第 " + e.line + " 行" : "")));
       card.appendChild(diffBox(e.old, e.new)); body.appendChild(card);
-      var actions = el("div", "om-file-actions"), accept = el("button", fileDecision[e.path] ? "om-picked" : "", "接受"), reject = el("button", fileDecision[e.path] ? "" : "om-rejected", "拒绝");
-      accept.type = reject.type = "button"; accept.addEventListener("click", function () { fileDecision[e.path] = true; accept.className = "om-picked"; reject.className = ""; }); reject.addEventListener("click", function () { fileDecision[e.path] = false; reject.className = "om-rejected"; accept.className = ""; }); actions.appendChild(accept); actions.appendChild(reject); card.appendChild(actions);
     });
-    layout.appendChild(body); root.appendChild(layout);
-    var hist = el("div", "om-history"); hist.appendChild(el("strong", "", "历史版本")); root.appendChild(hist); loadHistory(hist);
-    footer = el("div", "om-pf"); stEl = el("div", "om-st", "确认后写入 GitHub；线上部署状态需要单独确认。");
-    noBtn = el("button", "om-btn om-no", "丢弃全部"); noBtn.type = "button";
-    yesBtn = el("button", "om-btn om-yes", "推送已接受文件"); yesBtn.type = "button";
+    root.appendChild(body);
+    footer = el("div", "om-pf"); stEl = el("div", "om-st", "10 分钟内点「推」或「不推」，超时自动丢弃。推到 " + p.branch + " 后，Cloudflare 会自动重新部署。");
+    noBtn = el("button", "om-btn om-no", "不推"); noBtn.type = "button";
+    yesBtn = el("button", "om-btn om-yes", "推"); yesBtn.type = "button";
     noBtn.addEventListener("click", function () { decide(false); });
     yesBtn.addEventListener("click", function () { decide(true); });
     footer.appendChild(stEl); footer.appendChild(noBtn); footer.appendChild(yesBtn); root.appendChild(footer);
     root.hidden = false; body.scrollTop = 0;
+    var left = typeof p.left === "number" ? p.left : 10 * 60 * 1000;   // v108：到点自动收面板 + 清掉服务器里的暂存
+    expTimer = setTimeout(function () {
+      if (panelState !== "pending") return;
+      hide(); toast("预览超过 10 分钟没处理，已自动丢弃");
+      clearOnServer().catch(function () {});
+    }, Math.max(1000, left));
   }
-  function renderConflicts(items) {
-    var root = ensurePanel(), box = el("div", "om-history"); box.appendChild(el("strong", "", "冲突合并"));
-    (items || []).forEach(function (c) {
-      var row = el("div", "om-history-row"), label = el("span", "", c.path); row.appendChild(label);
-      ["mine", "theirs", "merge"].forEach(function (choice) { var b = el("button", conflictChoices[c.path] && conflictChoices[c.path].choice === choice ? "om-picked" : "", choice === "mine" ? "我的" : choice === "theirs" ? "他的" : "合并"); b.type = "button"; b.addEventListener("click", function () { var content = choice === "merge" ? window.prompt("请输入该文件完整的合并内容", c.merge || c.mine || c.theirs || "") : ""; if (choice === "merge" && content === null) return; conflictChoices[c.path] = { choice: choice, content: content || "" }; renderConflicts(items); }); row.appendChild(b); }); box.appendChild(row);
-    }); root.appendChild(box);
-  }
-  function busy(b) { if (yesBtn) yesBtn.disabled = b; if (noBtn) noBtn.disabled = b; }
+  function busy(b) { if (yesBtn) yesBtn.disabled = b; if (noBtn) noBtn.disabled = b; if (fcBtn) fcBtn.disabled = b; }
   function say(text, cls) { if (!stEl) return; stEl.className = "om-st" + (cls ? " " + cls : ""); linkify(stEl, text); }
   function showResult(text, ok, still, wasNo) {
     say(text, ok ? "om-okc" : "om-errc");
     if (still) { busy(false); panelState = "pending"; return; }   // 修改还在（比如被拦下没推成），按钮留着
-    panelState = "result";
-    if (yesBtn) yesBtn.remove(); if (noBtn) noBtn.remove();
+    clearTimeout(expTimer); panelState = "result";
+    if (yesBtn) yesBtn.remove(); if (noBtn) noBtn.remove(); if (fcBtn) fcBtn.remove();
     var c = el("button", "om-btn", "关闭"); c.type = "button"; c.addEventListener("click", hide); footer.appendChild(c);
     if (wasNo && ok) closeTimer = setTimeout(hide, 1500);
   }
-  function operationId() { try { return "ui-" + crypto.randomUUID(); } catch (e) { return "ui-" + Date.now() + "-" + Math.random().toString(36).slice(2); } }
   function decide(yes) {
-    if (yes && !selectedPaths().length) { toast("请至少接受一个文件，或点击丢弃全部"); return; }
     busy(true); say(yes ? "正在推送…" : "正在丢弃…");
-    var op = currentPending || {};
-    api("/api/code/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ yes: yes, pending_id: op.pending_id, version: op.version, project: op.project, operation_id: operationId(), accepted_paths: yes ? selectedPaths() : null, conflict_resolutions: conflictChoices }) })
+    api("/api/code/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ yes: yes }) })
       .then(function (r) { return r.json().catch(function () { return { ok: false, reply: "服务器返回的不是 JSON（HTTP " + r.status + "）" }; }); })
       .then(function (j) {
         var text = j.reply || j.msg || (j.ok ? "完成" : "失败");
-        if (j.conflicts && j.conflicts.length) { conflictChoices = {}; renderConflicts(j.conflicts); text += "\n冲突文件：" + j.conflicts.map(function (c) { return c.path + "（我的/他的/合并）"; }).join("、"); }
-        return api("/api/code/pending").then(function (r) { return r.json(); }).then(function (pj) {
-          var known = !!(pj && pj.ok), still = known ? !!(pj.pending && pj.pending.edits && pj.pending.edits.length) : true;
-          showResult(known ? text : text + "\n状态暂时无法确认，修改仍保留，请稍后重试。", !!j.ok && known, still, !yes);
-        }).catch(function () {
-          showResult(text + "\n状态暂时无法确认，修改仍保留，请稍后重试。", false, true, !yes);
+        return api("/api/code/pending").then(function (r) { return r.json(); }).catch(function () { return null; }).then(function (pj) {
+          var still = !!(pj && pj.ok && pj.pending && pj.pending.edits && pj.pending.edits.length);
+          showResult(text, !!j.ok, still, !yes);
         });
       })
       .catch(function (e) { showResult("请求失败：" + (e && e.message || e), false, true, !yes); });
+  }
+
+  /* ---------- v108：强制清空 / 自动过期时清服务器里的暂存 ---------- */
+  function clearOnServer() {   // 旧后端没有 /api/code/clear（404）时退回「不推」——同样是把暂存清掉
+    var post = function (p, body) { return api(p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); };
+    return post("/api/code/clear", {}).then(function (r) { return r.status === 404 ? post("/api/code/confirm", { yes: false }) : r; })
+      .then(function (r) { return r.json().catch(function () { return { ok: false, msg: "服务器返回的不是 JSON（HTTP " + r.status + "）" }; }); });
+  }
+  function forceClear() {
+    busy(true); say("正在清空…");
+    clearOnServer().then(function (j) {
+      if (j && (j.ok || /没有待推送/.test(String(j.reply || "")))) { hide(); toast("已强制清空，面板已关闭"); }
+      else { busy(false); say((j && (j.reply || j.msg)) || "清空失败", "om-errc"); }
+    }).catch(function (e) { busy(false); say("清空失败：" + (e && e.message || e), "om-errc"); });
   }
 
   /* ---------- 读取待推送的修改 ---------- */
@@ -276,6 +259,7 @@
   }
 
   function init() { mountToggle(); if (state.on) setTimeout(check, 800); }
-  window.omStudio = { state: state, check: check, hide: hide, enable: function () { if (!state.on && box) box.click(); }, disable: function () { if (state.on && box) box.click(); } };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
+
+  window.omStudio = { state: state, check: check, hide: hide, enable: function () { if (!state.on && box) box.click(); }, disable: function () { if (state.on && box) box.click(); } };
 })();
