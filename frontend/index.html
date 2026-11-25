@@ -5517,7 +5517,7 @@ const bestPlace = (list, q) => {
     if (!p) {
       p = document.createElement("div");
       p.id = "wb-lint-panel";
-      p.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483000;width:min(560px,92vw);max-height:62vh;overflow:auto;background:#14161a;color:#e8eaed;border:1px solid #2c3038;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.45);font:13px/1.65 ui-monospace,Menlo,Consolas,monospace;padding:12px 14px";
+      p.style.cssText = "position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:2147483000;width:min(560px,92vw);max-height:62vh;overflow:auto;background:#14161a;color:#e8eaed;border:1px solid #2c3038;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.45);font:13px/1.65 ui-monospace,Menlo,Consolas,monospace;padding:12px 14px";
       document.body.appendChild(p);
     }
     const errs = rows.filter(r => r[0] === "err").length, warns = rows.filter(r => r[0] === "warn").length;
@@ -5528,7 +5528,7 @@ const bestPlace = (list, q) => {
     h.appendChild(document.createTextNode("代码检测 · " + errs + " 个错误 / " + warns + " 个警告"));
     const x = document.createElement("button");
     x.type = "button"; x.textContent = "×";
-    x.style.cssText = "margin-left:auto;background:none;border:0;color:#9aa0a6;font-size:18px;line-height:1;cursor:pointer";
+    x.style.cssText = "margin-left:auto;background:none;border:0;color:#9aa0a6;font-size:20px;line-height:1;cursor:pointer;padding:0 6px;min-width:36px;min-height:36px";
     x.onclick = () => p.remove();
     h.appendChild(x); p.appendChild(h);
     rows.forEach(r => {
@@ -5568,6 +5568,16 @@ const bestPlace = (list, q) => {
   window.wbLint = run;
 })();
 </script>
+<style>
+/* 开发台顶栏在手机上换行显示，避免「代码检测」等按钮被挤出屏幕 */
+@media (max-width: 760px) {
+  #wb-bar { flex-wrap: wrap; overflow-x: auto; -webkit-overflow-scrolling: touch; row-gap: 6px; }
+  #wb-bar > * { flex: 0 0 auto; }
+  #wb-bar .sp { display: none; }
+  #wb-bar button { min-height: 34px; padding: 0 10px; font-size: 13px; }
+  #wb-lint-panel { left: 8px !important; right: 8px !important; width: auto !important; max-height: 55vh !important; bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important; }
+}
+</style>
 <!-- 开发台：左 Monaco 编辑器 / 右 实时预览（含运行结果）/ 下 终端（WebContainer + xterm），库全部按需从 CDN 加载 -->
 <div id="wb" role="dialog" aria-hidden="true" aria-label="开发台">
   <div id="wb-bar">
