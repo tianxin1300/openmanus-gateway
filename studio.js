@@ -150,7 +150,7 @@
   };
 
   /* ---------- 改动预览面板 ---------- */
-  var panel = null, stEl = null, yesBtn = null, noBtn = null, footer = null, closeTimer = 0;
+  var panel = null, stEl = null, yesBtn = null, noBtn = null, footer = null, closeTimer = 0, currentPending = null;
   function ensurePanel() {
     if (panel) return panel;
     panel = el("div"); panel.id = "om-code-panel"; panel.hidden = true;
@@ -174,7 +174,8 @@
     return pre;
   }
   function render(p) {
-    clearTimeout(closeTimer);
+    clearTimeout(closeTimer); currentPending = { pending_id: p.pending_id || p.id || "", version: Number(p.version), project: p.project || state.project };
+
     var root = ensurePanel(); clear(root); panelState = "pending";
     var head = el("div", "om-ph");
     head.appendChild(el("strong", "", "改动预览"));
@@ -208,9 +209,11 @@
     var c = el("button", "om-btn", "关闭"); c.type = "button"; c.addEventListener("click", hide); footer.appendChild(c);
     if (wasNo && ok) closeTimer = setTimeout(hide, 1500);
   }
+  function operationId() { try { return "ui-" + crypto.randomUUID(); } catch (e) { return "ui-" + Date.now() + "-" + Math.random().toString(36).slice(2); } }
   function decide(yes) {
     busy(true); say(yes ? "正在推送…" : "正在丢弃…");
-    api("/api/code/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ yes: yes }) })
+    var op = currentPending || {};
+    api("/api/code/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ yes: yes, pending_id: op.pending_id, version: op.version, project: op.project, operation_id: operationId() }) })
       .then(function (r) { return r.json().catch(function () { return { ok: false, reply: "服务器返回的不是 JSON（HTTP " + r.status + "）" }; }); })
       .then(function (j) {
         var text = j.reply || j.msg || (j.ok ? "完成" : "失败");

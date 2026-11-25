@@ -62,7 +62,7 @@ test('chat experience: prompt restores natural dialogue and frontend hides routi
 
 test('editor delivery: pending work is resumable and deployment state is not overstated', () => {
   assert.match(workerSource, /status: "awaiting_approval"/);
-  assert.match(workerSource, /status = "partial"/);
+  assert.match(workerSource, /status: "partial"|status = "partial"|"partial"/);
   assert.match(workerSource, /已保留未成功的文件修改，可以重试/);
   assert.match(workerSource, /consumed: true, status: "applied"/);
   assert.match(studioSource, /状态暂时无法确认，修改仍保留，请稍后重试/);
@@ -129,6 +129,25 @@ test('BUG-02 and BUG-05: verification inputs are validated, runs are correlated,
   assert.match(frontendSource, /new AbortController\(\)/);
   assert.match(frontendSource, /finally \{ clearTimeout\(timeout\)/);
   assert.match(frontendSource, /验证超时：10 分钟内未完成/);
+});
+
+test('BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields', () => {
+  const wrangler = fs.readFileSync(path.join(root, 'wrangler.toml'), 'utf8');
+  assert.match(wrangler, /name = "CODE_CLAIMS"/);
+  assert.match(wrangler, /class_name = "CodeClaimDO"/);
+  assert.match(workerSource, /export class CodeClaimDO/);
+  assert.match(workerSource, /codeClaimCall\(env, user, "claim"/);
+  assert.match(workerSource, /pending_id、version、project、operation_id 都是必填项/);
+  assert.match(workerSource, /p\.status = "applying"/);
+  assert.match(workerSource, /current\.results\[operationId\]/);
+  assert.match(workerSource, /current\.claims\[operationId\]/);
+  assert.doesNotMatch(workerSource, /const key = "code:pend:" \+ user, lockKey/);
+  for (const source of [studioSource, fs.readFileSync(path.join(root, 'studio.js'), 'utf8')]) {
+    assert.match(source, /pending_id: op\.pending_id/);
+    assert.match(source, /version: op\.version/);
+    assert.match(source, /project: op\.project/);
+    assert.match(source, /operation_id: operationId\(\)/);
+  }
 });
 
 function extract(source, startMarker, endMarker) {

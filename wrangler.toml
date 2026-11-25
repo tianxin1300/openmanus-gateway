@@ -5,5 +5,14 @@ keep_vars = true
 [[kv_namespaces]]
 binding = "KV"
 id = "b7af651ce05a42049c6da51921ccbcd7"
+
+[[durable_objects.bindings]]
+name = "CODE_CLAIMS"
+class_name = "CodeClaimDO"
+
+[[migrations]]
+tag = "code-claims-v1"
+new_sqlite_classes = ["CodeClaimDO"]
+
 [triggers]
 crons = ["0 0 * * *"]
