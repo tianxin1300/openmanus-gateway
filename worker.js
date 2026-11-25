@@ -645,7 +645,7 @@ async function codeProject(env, user, proj, req, history, ui) {
   const tail = (warn.length ? "\n\n⚠️ " + warn.join("；") + "（可能是括号写漏了，推之前请留意）" : "") + (res.errs.length ? "\n\n⚠️ 另有 " + res.errs.length + " 处没能应用，已跳过。" : "");
   const where = "（推到 " + proj.repo + "@" + branch + "，推上去 Cloudflare 会自动重新部署）\n（" + model + "）";
   const head = explain ? codeCut(explain, 300) + "\n\n" : "";
-  if (ui) return { ok: true, pending: true, model, reply: head + "已生成 " + final.done.length + " 处改动（" + tag + "）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行").join("\n") + tail + "\n\n预览在面板里，点「推」或「不推」。" + where };
+  if (ui) return { ok: true, pending: true, model, reply: head + "已生成 " + final.done.length + " 处改动（" + tag + "）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行").join("\n") + tail };
   return { ok: true, pending: true, model, reply: head + "改动预览（" + tag + "，共 " + final.done.length + " 处）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行\n- " + codeCut(d.old, 400).replace(/\n/g, "\n- ") + "\n+ " + codeCut(d.new, 400).replace(/\n/g, "\n+ ")).join("\n\n") + tail + "\n\n要推上去吗？回「推」或「不推」。" + where };
 }
 async function codeConfirm(env, user, yes) {
