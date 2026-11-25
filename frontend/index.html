@@ -5782,6 +5782,83 @@ async function mcpPut(path, content, message, sha) {
   return callTool(t, mkArgs(t, {owner: REPO.owner, repo: REPO.repo, path, branch: REPO.branch, content, message, sha}));
 }
 
+/* ---------------- 任务拆解（Goblin Tools Magic ToDo 风格）：拆 10 个小任务 → 追加写进仓库根目录 TODO.md ---------------- */
+const TODO_FILE = "TODO.md", TODO_STEPS = 10;
+const TODO_SYS = "你是 Goblin Tools Magic ToDo 那样的任务拆解器。把主人给的大任务拆成 " + TODO_STEPS + " 个具体、能立刻动手的小步骤。硬规则：每步以动词开头；每步不超过 20 个字；按真实执行顺序排；第一步必须是现在就能做的动作（查资料 / 打开某个文件 / 写下目标），不许写“思考 / 考虑 / 评估 / 优化”这类没法验收的模糊步骤；每步只写一件事；不要解释、不要前言、不要总结。只输出 " + TODO_STEPS + " 行，每行严格是“- [ ] 步骤内容”。";
+function todoParse(text) {
+  const out = [];
+  for (const ln of String(text || "").split("\n")) {
+    const m = ln.match(/^\s*(?:[-*•]|\d+[.)、]|\(\d+\))?\s*(?:\[[ xX]\]|☐|□)?\s*(.+?)\s*$/);
+    if (!m) continue;
+    const s = m[1].replace(/^\*\*(.+)\*\*$/, "$1").replace(/^["“]|["”]$/g, "").trim();
+    if (!s || s.length > 60) continue;
+    if (/^(好的|当然|以下是|这是|希望|需要我|主人|大任务)/.test(s)) continue;
+    out.push(s);
+  }
+  return out.slice(0, TODO_STEPS);
+}
+async function todoAsk(prompt) {
+  let raw = "";
+  try {
+    const r = await fetch("/api/chat", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({message: prompt, stream: false})});
+    raw = await r.text();
+  } catch (_) { raw = ""; }
+  let t = String(raw || "").trim();
+  if (t.startsWith("data:")) t = t.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).filter((l) => l && l !== "[DONE]").join("\n");
+  if (!(t.startsWith("{") || t.startsWith("["))) return t;
+  try {
+    const j = JSON.parse(t), c = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+    return String(j.reply || j.text || j.content || (typeof j.message === "string" ? j.message : "") || c || "");
+  } catch (_) { return t; }
+}
+async function todoAskUI(prompt) {      // 兜底：走页面自己的发送通道（和 #send 同一条链路）
+  const ta = document.querySelector("textarea"), btn = g("send");
+  if (!ta || !btn) return "";
+  const old = ta.value, n0 = document.querySelectorAll("#msgs .row").length;
+  ta.value = prompt; ta.dispatchEvent(new Event("input", {bubbles: true})); btn.click();
+  const t0 = Date.now();
+  while (Date.now() - t0 < 120000) {
+    await new Promise((r) => setTimeout(r, 700));
+    const rows = document.querySelectorAll("#msgs .row");
+    if (rows.length > n0 && !document.querySelector("#msgs .bub.streaming")) return (rows[rows.length - 1].textContent || "").trim();
+  }
+  ta.value = old; return "";
+}
+function todoMd(existing, steps, title) {
+  const date = new Date().toLocaleString("zh-CN", {hour12: false});
+  const block = "## " + title + "（" + date + "）\n" + steps.map((s) => "- [ ] " + s).join("\n") + "\n";
+  const base = String(existing || "").trim();
+  return (base ? base.replace(/\s+$/, "") + "\n\n" : "# TODO\n\n") + block;
+}
+async function magicTodo() {
+  const ta = document.querySelector("textarea");
+  let text = ((ta && ta.value) || "").trim();
+  if (!text) { const us = [...document.querySelectorAll("#msgs .row.user .bub")]; text = (us.length ? us[us.length - 1].textContent : "").trim(); }
+  if (!text) { card("任务拆解", "先在输入框里写清楚要拆的大任务，再点「任务拆解」。", true); return; }
+  const b0 = g("todo-magic"); if (b0) { b0.disabled = true; b0.textContent = "拆解中…"; }
+  try {
+    let steps = todoParse(await todoAsk(TODO_SYS + "\n\n大任务：" + text));
+    if (steps.length < 3) steps = todoParse(await todoAskUI(TODO_SYS + "\n\n大任务：" + text));
+    if (steps.length < 3) { card("任务拆解", "这次没拆出步骤（模型没接上或没按格式回），稍后再点一次。", true); return; }
+    let cur = null; try { cur = await mcpGet(TODO_FILE); } catch (_) {}
+    const md = todoMd(cur && cur.text, steps, text.replace(/\s+/g, " ").slice(0, 40));
+    await mcpPut(TODO_FILE, md, "AI: 任务拆解 " + text.replace(/\s+/g, " ").slice(0, 40), cur && cur.sha);
+    card("任务拆解（已写入 " + TODO_FILE + "）", steps.map((s, i) => (i + 1) + ". " + s).join("\n"));
+  } catch (e) { card("任务拆解失败", String((e && e.message) || e).slice(0, 300), true); }
+  finally { const b2 = g("todo-magic"); if (b2) { b2.disabled = false; b2.textContent = "任务拆解"; } }
+}
+function mountTodoBtn() {
+  const box = document.querySelector("#comp .tools") || document.querySelector(".tools");
+  if (!box || g("todo-magic")) return;
+  const b = document.createElement("button");
+  b.id = "todo-magic"; b.type = "button"; b.textContent = "任务拆解";
+  b.title = "把输入的大任务拆成 " + TODO_STEPS + " 个小任务，写进 " + TODO_FILE;
+  b.addEventListener("click", magicTodo);
+  box.appendChild(b);
+}
+new MutationObserver(() => mountTodoBtn()).observe(document.documentElement, {childList: true, subtree: true});
+mountTodoBtn();
+
 /* ---------------- 编辑器（Monaco，失败时退回文本框） ---------------- */
 async function loadMonaco() {
   let last;
