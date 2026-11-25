@@ -7626,6 +7626,13 @@ async function handle(request, env, ctx) {
     if (path === "/api/debug/llmprobe" && request.method === "GET") return await llmProbeReport(env, url);      // v99z 模型探针：逐源试“在线?”，要 ?token=REG_TOKEN
     if ((path === "/openmanus_tools.yaml" || path === "/openmanus_tools.yml") && (request.method === "GET" || request.method === "HEAD")) return new Response(request.method === "HEAD" ? null : OPENMANUS_TOOLS_YAML, { headers: { "Content-Type": "text/yaml; charset=utf-8", "Content-Disposition": "inline; filename=\"openmanus_tools.yaml\"", "Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*" } });
 
+    if (path === "/api/code/deploy" && request.method === "POST") {
+      const acc = request.headers.get("Accept") || "";
+      if (acc.includes("text/plain") && !acc.includes("application/json")) {
+        const h = new Headers(request.headers); h.set("Accept", "application/json");
+        request = new Request(request, { headers: h });
+      }
+    }
     const stored = env.KV ? await env.KV.get("agg") : null;
     const AGG = (stored || env.AGG_URL || "").replace(/\/$/, "");
     const source = stored ? "kv" : (env.AGG_URL ? "env" : "none");
