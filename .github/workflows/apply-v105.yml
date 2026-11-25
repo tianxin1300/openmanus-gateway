@@ -26,14 +26,7 @@ jobs:
       - name: Patch worker.js
         run: |
           set -e
-          test -f worker-v105.patch || { echo "找不到 worker-v105.patch"; exit 1; }
-          if grep -qF 'code:pend:' worker.js && grep -qF '/api/code/confirm' worker.js; then
-            echo "worker.js 已经带有 v105，跳过打补丁"
-          else
-            git apply --check worker-v105.patch || git apply --check --ignore-whitespace worker-v105.patch
-            git apply worker-v105.patch || git apply --ignore-whitespace worker-v105.patch
-            echo "worker.js 补丁已应用"
-          fi
+          python3 apply_v106.py
           grep -qF 'code_mode' worker.js
           grep -qF '/api/code/pending' worker.js
           grep -qF '/api/code/confirm' worker.js
@@ -75,7 +68,7 @@ jobs:
             echo "没有需要提交的改动"
             exit 0
           fi
-          git commit -m "apply v105: worker.js 补丁 + index.html 加载 studio.js"
+          git commit -m "apply v106: worker.js 代码模式 + index.html 加载 studio.js"
           git pull --rebase origin main
           git push origin HEAD:main
           echo "commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
