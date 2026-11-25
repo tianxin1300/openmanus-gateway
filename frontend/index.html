@@ -3231,13 +3231,16 @@ if (previewDownloadCurrent) previewDownloadCurrent.onclick = e => { if (previewD
 
 /* ---------- 1. 点供应商 → 下面出下拉列表，点哪个用哪个 ---------- */
 const FALLBACK_MODELS = {
-  "Groq": ["openai/gpt-oss-120b"],
+  "Groq": ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"],
   "Gemini": ["gemini-3.5-flash-lite"],
   "肖恩AI": ["gemini-3.8-flash", "gemini-3.5-flash", "deepseek-v4.1-flash", "入梦 Flash", "gemini-3-flash", "gemini-2.5-pro", "gemini-3.1-pro", "claude-sonnet-4-5", "claude-opus-4-5"],
-  "OpenRouter": ["particle-ai/particle-1:free", "baidu/ernie-5.5-flash-preview:free", "nvidia/nemotron-3.5-super-vl:free", "inclusionai/ling-3.2-flash:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "google/gemma-4-26b-a4b-it:free", "google/gemma-4-31b-it:free", "liquid/lfm-3-1.7b:free", "recursive/flint-v1.0:free"]
+  "OpenRouter": ["inclusionai/ling-3.2-flash:free", "particle-ai/particle-1:free", "baidu/ernie-5.5-flash-preview:free", "nvidia/nemotron-3-ultra:free", "google/gemma-4-26b-a4b:free", "nvidia/nemotron-3.5-super-vl:free"],
+  "英伟达": ["nemotron-3-super-550b-a55b", "nemotron-3.5-super-vl-120b-a12b", "nemotron-3.5-flash-30b-a3b", "minimax-m3.1-flash", "nemotron-3-nano-omni-30b-a3b", "glm-5-3-flash", "nemotron-3.5-bolt-e4b", "laguna-xs-2.1", "stepfun-step-5-preview", "mistral-large-4", "kimi-k3.1-pro"]
 };
 const MODEL_HINT = {
   "openai/gpt-oss-120b": "Groq 主力 · 聊天/代码",
+  "openai/gpt-oss-20b": "Groq 备用",
+  "qwen/qwen3.8-27b": "Groq 备用",
   "gemini-3.5-flash-lite": "Gemini 备用",
   "gemini-3.8-flash": "肖恩AI 主接口",
   "gemini-3.5-flash": "肖恩AI 备用模型",
@@ -3252,15 +3255,23 @@ const MODEL_HINT = {
   "baidu/ernie-5.5-flash-preview:free": "代码备用 · ERNIE 5.5",
   "nvidia/nemotron-3.5-super-vl:free": "代码备用 · Nemotron Super VL",
   "inclusionai/ling-3.2-flash:free": "聊天主力 · Ling 3.2 Flash",
-  "nvidia/nemotron-3-ultra-550b-a55b:free": "聊天备用 · Nemotron Ultra",
-  "google/gemma-4-26b-a4b-it:free": "聊天备用 · Gemma 4 26B",
-  "google/gemma-4-31b-it:free": "聊天备用 · Gemma 4 31B",
-  "liquid/lfm-3-1.7b:free": "聊天备用 · LFM3-1.7B",
-  "recursive/flint-v1.0:free": "聊天备用 · Flint"
+  "nvidia/nemotron-3-ultra:free": "聊天备用 · Nemotron Ultra",
+  "google/gemma-4-26b-a4b:free": "聊天备用 · Gemma 4 26B",
+  "nemotron-3-super-550b-a55b": "NVIDIA 官方",
+  "nemotron-3.5-super-vl-120b-a12b": "NVIDIA 官方",
+  "nemotron-3.5-flash-30b-a3b": "NVIDIA 官方",
+  "minimax-m3.1-flash": "NVIDIA 官方",
+  "nemotron-3-nano-omni-30b-a3b": "NVIDIA 官方",
+  "glm-5-3-flash": "NVIDIA 官方",
+  "nemotron-3.5-bolt-e4b": "NVIDIA 官方",
+  "laguna-xs-2.1": "NVIDIA 官方",
+  "stepfun-step-5-preview": "NVIDIA 官方",
+  "mistral-large-4": "NVIDIA 官方",
+  "kimi-k3.1-pro": "NVIDIA 官方"
 };
 let MODEL_MAP = null, modelMenuOpen = true, selModels = lsJSON("openmanus_selected_models", {});
 if (!selModels || typeof selModels !== "object") selModels = {};
-function modelField() { return selModels[selectedProvider] || ({Groq: "openai/gpt-oss-120b", Gemini: "gemini-3.5-flash-lite", "肖恩AI": "claude-sonnet-4-5", OpenRouter: "inclusionai/ling-3.2-flash:free"}[selectedProvider] || "openai/gpt-oss-120b"); }
+function modelField() { return selModels[selectedProvider] || ({Groq: "openai/gpt-oss-120b", Gemini: "gemini-3.5-flash-lite", "肖恩AI": "claude-sonnet-4-5", OpenRouter: "inclusionai/ling-3.2-flash:free", "英伟达": "nemotron-3-super-550b-a55b"}[selectedProvider] || "openai/gpt-oss-120b"); }
 function providerField() { return selectedProvider !== "OpenManus" ? {provider: selectedProvider} : {}; }
 const shortModel = m => String(m).split("/").pop().replace(/:free$/, "");
 function codeProviderBlocked(p) { return !!(window.omStudio && window.omStudio.state.on && ["肖恩AI", "Toter", "Toter2"].includes(p)); }

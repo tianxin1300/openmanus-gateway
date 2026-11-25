@@ -16,6 +16,37 @@ const blockedProviders = ['肖恩AI', 'Toter', 'Toter2'];
 const messages = [{ role: 'user', content: 'Write a small function.' }];
 const openRouterUrl = 'https://openrouter.ai/api/v1/chat/completions';
 
+test('worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists', () => {
+  const expectedGroq = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
+  const expectedOpenRouter = [
+    'inclusionai/ling-3.2-flash:free', 'particle-ai/particle-1:free',
+    'baidu/ernie-5.5-flash-preview:free', 'nvidia/nemotron-3-ultra:free',
+    'google/gemma-4-26b-a4b:free', 'nvidia/nemotron-3.5-super-vl:free'
+  ];
+  const expectedNvidia = [
+    'nemotron-3-super-550b-a55b', 'nemotron-3.5-super-vl-120b-a12b',
+    'nemotron-3.5-flash-30b-a3b', 'minimax-m3.1-flash',
+    'nemotron-3-nano-omni-30b-a3b', 'glm-5-3-flash', 'nemotron-3.5-bolt-e4b',
+    'laguna-xs-2.1', 'stepfun-step-5-preview', 'mistral-large-4', 'kimi-k3.1-pro'
+  ];
+  const list = (source, key) => {
+    const match = source.match(new RegExp(`${key}: \\[([\\s\\S]*?)\\]`));
+    assert.ok(match, `${key} list exists`);
+    return [...match[1].matchAll(/"([^"]+)"/g)].map(m => m[1]);
+  };
+  assert.deepEqual(list(workerSource, 'groq'), expectedGroq);
+  assert.deepEqual(list(workerSource, 'openrouter'), expectedOpenRouter);
+  const nvidiaBlock = workerSource.match(/name: "NVIDIA"[\s\S]*?models: \[([\s\S]*?)\n\s*\], max:/);
+  assert.ok(nvidiaBlock, 'NVIDIA list exists');
+  assert.deepEqual([...nvidiaBlock[1].matchAll(/"([^"]+)"/g)].map(m => m[1]), expectedNvidia);
+  assert.ok(frontendSource.includes('"Groq": ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]'));
+  assert.ok(frontendSource.includes('"OpenRouter": ["inclusionai/ling-3.2-flash:free", "particle-ai/particle-1:free", "baidu/ernie-5.5-flash-preview:free", "nvidia/nemotron-3-ultra:free", "google/gemma-4-26b-a4b:free", "nvidia/nemotron-3.5-super-vl:free"]'));
+  assert.ok(frontendSource.includes('"英伟达": ["nemotron-3-super-550b-a55b", "nemotron-3.5-super-vl-120b-a12b", "nemotron-3.5-flash-30b-a3b", "minimax-m3.1-flash", "nemotron-3-nano-omni-30b-a3b", "glm-5-3-flash", "nemotron-3.5-bolt-e4b", "laguna-xs-2.1", "stepfun-step-5-preview", "mistral-large-4", "kimi-k3.1-pro"]'));
+  for (const old of ['nvidia/nemotron-3-ultra-550b-a55b:free', 'google/gemma-4-26b-a4b-it:free', 'liquid/lfm-3-1.7b:free', 'nvidia/nemotron-3.5-parse']) {
+    assert.doesNotMatch(workerSource.match(/const WORK_MODELS = \{[\s\S]*?\n\};/)[0], new RegExp(old.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});
+
 function extract(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
   assert.notEqual(start, -1, `Source marker missing: ${startMarker}`);

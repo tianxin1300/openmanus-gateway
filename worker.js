@@ -394,18 +394,15 @@ function workRuntime() {
   try { now = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false }) + "（Asia/Shanghai）"; } catch { now = new Date().toISOString(); }
   return "\n\n<runtime>\n<current_datetime>" + now + "</current_datetime>\n<locale>zh-CN</locale>\n</runtime>";
 }
-// 工作用模型：Groq 主力，OpenRouter 免费模型与 Gemini 作为聊天/代码备用。
+// 工作用模型：仅保留用户指定的 Groq 官方与 OpenRouter 免费文本模型。
 const WORK_MODELS = {
-  groq: ["openai/gpt-oss-120b"],
+  groq: ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"],
   openrouter: [
     "inclusionai/ling-3.2-flash:free",
-    "nvidia/nemotron-3-ultra-550b-a55b:free",
-    "google/gemma-4-26b-a4b-it:free",
-    "google/gemma-4-31b-it:free",
-    "liquid/lfm-3-1.7b:free",
-    "recursive/flint-v1.0:free",
     "particle-ai/particle-1:free",
     "baidu/ernie-5.5-flash-preview:free",
+    "nvidia/nemotron-3-ultra:free",
+    "google/gemma-4-26b-a4b:free",
     "nvidia/nemotron-3.5-super-vl:free"
   ],
   gemini: ["gemini-3.5-flash-lite"]
@@ -1110,7 +1107,7 @@ async function getGroqModel(key) {
     try {
       const r = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: "Bearer " + key }, signal: T(8000) });
       const ids = ((await r.json()).data || []).map((x) => x.id);
-      return pickGood(ids, ["gpt-oss-120b", "llama-3.3", "gpt-oss-20b"]) || "openai/gpt-oss-120b";
+      return pickGood(ids, WORK_MODELS.groq) || WORK_MODELS.groq[0];
     } catch { return "openai/gpt-oss-120b"; }
   });
 }
@@ -1119,8 +1116,8 @@ async function getOpenRouterModel(key) {
     try {
       const r = await fetch("https://openrouter.ai/api/v1/models", { headers: { Authorization: "Bearer " + key }, signal: T(8000) });
       const ids = ((await r.json()).data || []).filter((m) => m.pricing && Number(m.pricing.prompt) === 0 && m.id.endsWith(":free")).map((m) => m.id);
-      return pickGood(ids, ["inclusionai/ling-3.2-flash:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "google/gemma-4-26b-a4b-it:free", "google/gemma-4-31b-it:free", "liquid/lfm-3-1.7b:free", "recursive/flint-v1.0:free"]) || "inclusionai/ling-3.2-flash:free";
-    } catch { return "inclusionai/ling-3.2-flash:free"; }
+      return pickGood(ids, WORK_MODELS.openrouter) || WORK_MODELS.openrouter[0];
+    } catch { return WORK_MODELS.openrouter[0]; }
   });
 }
 async function getGeminiModel(key) {
@@ -1320,22 +1317,18 @@ const EXTRA = [
     { name: "DeepSeek", url: "https://api.deepseek.com/chat/completions", keys: "DEEPSEEK_KEYS", models: ["deepseek-chat"], max: 8192 },
     { name: "Zhipu", url: "https://open.bigmodel.cn/api/paas/v4/chat/completions", keys: "ZHIPU_KEYS", models: ["glm-4.7-flash", "glm-4.6v-flash"], max: 16384 }, // v17: 你拍的图里 AskZ 说免费就这 2 个，4.5-flash 已是旧的
     { name: "NVIDIA", url: "https://integrate.api.nvidia.com/v1/chat/completions", keys: "NVIDIA_KEYS", models: [
-      "nvidia/nemotron-3-ultra-550b-a55b", // v18 第1张第1名：最强 Agent，1M上下文，写代码/做计划
-      "nvidia/nemotron-3.5-super-vl-120b-a12b", // 第1张第2名：多模态，能看图，Agent/代码/工具调用
-      "nvidia/nemotron-3.5-lightning-30b-a3b", // 第1张第3名：最快，30B，专门做 Agent 小任务
-      "z-ai/glm-5-3-flash", // 第2张：智谱 GLM-5.3-Flash，多模态，320B
-      "minimaxai/minimax-m3.1-flash", // 第2张：MiniMax M3.1，写代码/Agent/电脑任务
-      "deepseek-ai/deepseek-v4.1-flash", // 第3张：DeepSeek V4.1，多模态，552B
-      "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", // 第2张：Omni 全能，能懂图片/视频/语音/文字
-      "stepfun-ai/step-5-preview", // v19 新加：你刚拍的 Step 5 Preview，~600B 多模态，1M上下文，文字+图片进，文字出
-      "openai/gpt-oss-20b", // v19 新加：你刚拍的 gpt-oss-20b，推理+数学强，小但快
-      "mistralai/mistral-large-4", // v19 新加：你刚拍的 Mistral Large 4，1T-total，能看文字+图片，带推理
-      "meta/muse-glimmer-30b", // v20 新加：你刚拍的 Muse Glimmer 30B，多模态推理，能看文字+图片，带工具调用
-      "google/gemma-4-31b-it", // v20 新加：你刚拍的 Gemma 4 31B，推理+写代码+Agent
-      "nvidia/nemotron-3.5-parse", // v20 新加：你刚拍的 Nemotron Parse，专门抠图里文字/表格/文档排版，你拍表格、拍文件就用它
-      "meta/llama-3.2-90b-vision-instruct", // v20 新加：你刚拍的 Llama 3.2 90B Vision，看图推理强的
-      "meta/llama-3.3-70b-instruct" // 备用：老的，保底
-    ], max: 32768 }, // v18: 英伟达 6 个功能免费模型 + 1 备用，嵌入那 2 个 nemotron-embed 不加，那是做搜索的
+      "nemotron-3-super-550b-a55b",
+      "nemotron-3.5-super-vl-120b-a12b",
+      "nemotron-3.5-flash-30b-a3b",
+      "minimax-m3.1-flash",
+      "nemotron-3-nano-omni-30b-a3b",
+      "glm-5-3-flash",
+      "nemotron-3.5-bolt-e4b",
+      "laguna-xs-2.1",
+      "stepfun-step-5-preview",
+      "mistral-large-4",
+      "kimi-k3.1-pro"
+    ], max: 32768 },
     // GitHubModels 已移除：models.github.ai 对所有请求（含 /catalog/models、无鉴权、假 token）一律回 200 + text/plain "OK"，
     // models.inference.ai.azure.com 无 DNS 记录（Cloudflare 530 / error 1016）——两个入口都不可用，等官方修好再加回
     { name: "Poe", url: "https://api.poe.com/v1/chat/completions", keys: "POE_API_KEY", models: POE_DEFAULT_MODELS, max: 8192, ms: 10000 },   // v93 备用：只放环境变量 POE_API_KEY
@@ -7341,7 +7334,7 @@ async function handle(request, env, ctx) {
       });
       const nvidia = probe("nvidia", async () => {
         const keys = getKeys(env.NVIDIA_KEYS); if (!keys.length) return { hasKey: false };
-        return await chatProbe("https://integrate.api.nvidia.com/v1/chat/completions", keys[0], "nvidia/nemotron-3-ultra-550b-a55b");
+        return await chatProbe("https://integrate.api.nvidia.com/v1/chat/completions", keys[0], "nemotron-3-super-550b-a55b");
       });
       // v99s：Poe / Coze / 火山豆包 / Dify 的探针（和其它 agent 同一个结构；Dify 只读应用信息，不消耗对话额度）
       const poe = probe("poe", async () => { const keys = getKeys(env.POE_API_KEY); if (!keys.length) return { hasKey: false }; return await chatProbe("https://api.poe.com/v1/chat/completions", keys[0], poeModels(env)[0]); });
