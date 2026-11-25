@@ -36,7 +36,9 @@ test('worker and frontend expose only the requested Groq, OpenRouter and NVIDIA 
   };
   assert.deepEqual(list(workerSource, 'groq'), expectedGroq);
   assert.deepEqual(list(workerSource, 'openrouter'), expectedOpenRouter);
-  const nvidiaBlock = workerSource.match(/name: "NVIDIA"[\s\S]*?models: \[([\s\S]*?)\n\s*\], max:/);
+  const nvidiaStart = workerSource.indexOf('name: "NVIDIA", url: "https://integrate.api.nvidia.com/v1/chat/completions", keys: "NVIDIA_KEYS", models: [');
+  const nvidiaTail = workerSource.slice(nvidiaStart);
+  const nvidiaBlock = nvidiaTail.match(/models: \[([\s\S]*?)\n\s*\], max:/);
   assert.ok(nvidiaBlock, 'NVIDIA list exists');
   assert.deepEqual([...nvidiaBlock[1].matchAll(/"([^"]+)"/g)].map(m => m[1]), expectedNvidia);
   assert.ok(frontendSource.includes('"Groq": ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]'));
@@ -129,7 +131,7 @@ test('codeLLM: only Toter keys produce no fetch calls and no usable reply', asyn
   assert.equal(result.tried.length, 0);
 });
 
-test('codeLLM: configured fallback order is Particle, ERNIE, Nemotron with no Groq fallback', async () => {
+test('codeLLM: OpenRouter code models remain first and Groq models are available as fallback', async () => {
   const { subject, calls } = loadCodeLLM(() => failure());
   const expected = [
     'particle-ai/particle-1:free',
@@ -137,9 +139,9 @@ test('codeLLM: configured fallback order is Particle, ERNIE, Nemotron with no Gr
     'nvidia/nemotron-3.5-super-vl:free'
   ];
   assert.deepEqual(Array.from(subject.CODE_OR_MODELS), expected);
-  assert.equal(subject.CODE_GROQ_MODELS.length, 0);
+  assert.deepEqual(Array.from(subject.CODE_GROQ_MODELS), ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b']);
   const result = await subject.codeLLM({
-    ...toterEnv, OPENROUTER_KEYS: 'or-key', GROQ_KEYS: 'groq-key'
+    ...toterEnv, OPENROUTER_KEYS: 'or-key'
   }, messages);
   assertOpenRouterCalls(calls);
   assert.deepEqual(calls.map(call => call.body.model), expected);
@@ -345,15 +347,14 @@ test('frontend: without studio initialization, ordinary-chat providers remain av
   assert.ok(menu.list.querySelectorAll('.om-model-sub')[0].children.some(option => option.title === 'claude-sonnet-4-5'));
 });
 
-test('frontend: code mode hides/disables all Toter aliases and ignores their clicks', () => {
+test('frontend: code mode shows provider-specific code models and hides Toter aliases', () => {
   const menu = loadMenu({ on: true, selected: 'Groq' });
-  assert.equal(menu.selected(), 'OpenRouter');
-  assert.equal(menu.storage.get('openmanus_selected_provider'), 'OpenRouter');
+  assert.equal(menu.selected(), 'Groq');
   assert.deepEqual(menu.list.querySelectorAll('.om-model-sub')[0].children.map(option => option.title), [
     '按默认顺序自动选',
-    'particle-ai/particle-1:free',
-    'baidu/ernie-5.5-flash-preview:free',
-    'nvidia/nemotron-3.5-super-vl:free'
+    'openai/gpt-oss-120b',
+    'openai/gpt-oss-20b',
+    'qwen/qwen3.8-27b'
   ]);
   for (const provider of blockedProviders) {
     const button = menu.buttons.get(provider);
@@ -363,7 +364,7 @@ test('frontend: code mode hides/disables all Toter aliases and ignores their cli
     assert.equal(button.style.display, 'none');
     assert.equal(button.classList.contains('on'), false);
     button.onclick(); // Even a programmatic click must not change the provider.
-    assert.equal(menu.selected(), 'OpenRouter');
+    assert.equal(menu.selected(), 'Groq');
   }
   for (const provider of ['Groq', 'OpenRouter', 'Gemini']) {
     assert.equal(menu.blocked(provider), false);

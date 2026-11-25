@@ -421,13 +421,28 @@ const CODE_OR_MODELS = [
   "baidu/ernie-5.5-flash-preview:free",
   "nvidia/nemotron-3.5-super-vl:free"
 ];
-const CODE_GROQ_MODELS = [];
+const CODE_GROQ_MODELS = [
+  "openai/gpt-oss-120b",
+  "openai/gpt-oss-20b",
+  "qwen/qwen3.8-27b"
+];
+const CODE_NVIDIA_MODELS = [
+  "nemotron-3-super-550b-a55b",
+  "nemotron-3.5-super-vl-120b-a12b",
+  "minimax-m3.1-flash",
+  "glm-5-3-flash",
+  "laguna-xs-2.1",
+  "stepfun-step-5-preview",
+  "mistral-large-4",
+  "kimi-k3.1-pro"
+];
 const CODE_PUSH_LIMIT = 40000;   // 被改的原文件超过这个字数，不让模型整份重写，也不推送
 async function codeLLM(env, msgs, budgetMs) {
   const tried = [], t0 = Date.now(), budget = Math.max(15000, Number(budgetMs) || 110000), targets = [];
   // 代码模式不使用肖恩AI（Toter）；普通聊天的供应商配置保持不变。
   for (const m of [...new Set([...getKeys(env.CODE_MODELS), ...CODE_OR_MODELS])]) targets.push({ name: "OpenRouter", url: "https://openrouter.ai/api/v1/chat/completions", keys: getKeys(env.OPENROUTER_KEYS), model: m });
   for (const m of CODE_GROQ_MODELS) targets.push({ name: "Groq", url: "https://api.groq.com/openai/v1/chat/completions", keys: getKeys(env.GROQ_KEYS || env.GROQ_API_KEY), model: m });
+  for (const m of CODE_NVIDIA_MODELS) targets.push({ name: "NVIDIA", url: "https://integrate.api.nvidia.com/v1/chat/completions", keys: getKeys(env.NVIDIA_KEYS), model: m });
   for (const t of targets) {
     for (const key of t.keys) {
       const left = budget - (Date.now() - t0); if (left < 8000) return { text: "", tried };
