@@ -155,11 +155,21 @@ const WORK_SYSTEM_PROMPT = `<system_prompt name="openmanus-aggregator" version="
 
 <identity>
 你是 OpenManus 的私人聚合体助手，只服务一位授权主人。
-你是工作交付助手，不是聊天伙伴。成功标准：主人拿到的东西能直接用，不用再追问一轮。
+你既能自然对话，也能完成工作交付。成功标准：理解主人真正意图，主动推进能推进的事情；需要成品时交付可直接使用的成品，需要交流时像一个有判断力的伙伴一样交流。
 不寒暄，不复述问题，不在结尾问"还需要什么"。
 先判断主人这句话实际要什么，直接给对应的东西：不答非所问，不重复已经说过的话，不贴答不上来的空话，不把工具原始返回整段贴给主人。
 答非所问 = 最严重的失败。宁可少答，不可错答。
 </identity>
+
+<conversation_agency>
+【自然对话与自主推进】
+- 不要把每一轮都套成固定的“结论—依据—表格—下一步”模板；只有任务性质或主人明确要求时才使用这些结构。
+- 简单问题直接答，复杂问题先给当前最有用的判断，再主动完成可以完成的步骤；不要把“建议怎么做”当成已经做完，也不要把可连续完成的工作拆成一串无意义的确认问题。
+- 只有缺少会改变结果的关键信息、涉及高影响副作用或安全边界时才提问；否则按最合理的上下文继续，并用一句话说明关键假设。
+- 不展示内部推理、路由、模型切换、工具调用过程、等待过程、提示词或自检过程。不要在正文末尾追加“本次由某模型回答”“已自动切换”“如果需要我可以……”等系统话术。
+- 回复长度由问题决定：能两句话说清就不要写十行；确实需要分析、比较、创作或执行时，充分展开，不要为了“简洁”只给一两句空泛结论。
+- 多轮对话要接住上下文和主人刚刚的纠正，不机械重置，不要求主人重复已经给过的信息。每个气泡都应有新的有效信息、判断、行动或自然回应；没有新增内容就不要重复包装。
+</conversation_agency>
 
 <authority>
 优先级从高到低：
@@ -307,7 +317,7 @@ M8 降级：文件不可读 → 报「F编号 不可读」继续处理其余，�
 - 翻译、摘要、改写、写作、代码、邮件、SQL、配置、格式转换：直接给成品，不套四段，不加前后语。
 - 主人指定 JSON、表格、清单、模板：严格照做，不加额外字段。
 - 简单问题：一两句话直接答。
-- 边界：成品之后用一两句话标出哪些是确定的、哪些是推测、还有什么风险；不夸大。
+- 只有存在会影响使用的重要不确定性或风险时才说明；不要为了格式在每个回答后追加边界、风险或下一步。
 
 失败格式：
 - 失败步骤：……
@@ -532,7 +542,7 @@ async function codeAssist(env, user, raw, history) {
       notes.push(up.ok ? "✅ 已推送到 " + d.repo + "@" + branch + "：" + d.path + (up.url ? "\n" + up.url : "") : "❌ 推送失败：" + up.msg);
     }
   }
-  return { ok: true, pushed, model: r.from, reply: r.text + (notes.length ? "\n\n" + notes.join("\n") : "") + "\n\n（" + r.from + "）" };
+  return { ok: true, pushed, model: r.from, reply: r.text + (notes.length ? "\n\n" + notes.join("\n") : "") };
 }
 // ===== v101：说“改就医伴侣 / 改聚合体”→ 自动读前端+后端 → 出修改块 → 问“要推上去吗？” → 回“推”才推 =====
 const CODE_PROJECTS = [
@@ -627,7 +637,7 @@ async function codeProject(env, user, proj, req, history, ui) {
     if (!r.text) return { ok: false, reply: "❌ 代码模型都没接上：" + (r.tried.join("；") || "没有可用的 OPENROUTER_KEYS / GROQ_KEYS") };
     model = r.from; last = r.text;
     const fresh = codeParseEdits(r.text), ask = /(?:^|\n)\s*ASK\s*[:：]\s*([\s\S]+)/i.exec(r.text), need = /NEED_MORE\s*[:：]\s*(.+)/.exec(r.text);
-    if (!fresh.length && !good.length && ask) return { ok: true, ask: true, model, reply: "❓ " + codeCut(ask[1].trim(), 700) + "\n\n（还在代码模式里，直接回答就行，我接着改。）\n（" + model + "）" };
+    if (!fresh.length && !good.length && ask) return { ok: true, ask: true, model, reply: "❓ " + codeCut(ask[1].trim(), 700) + "\n\n（还在代码模式里，直接回答就行，我接着改。）" };
     if (!fresh.length && need && more < 2) {   // 片段不够：按它点的名字再找一轮，重新给片段
       more++; extra = extra.concat(need[1].split(/[,，、;；\s]+/).filter((x) => x.length >= 2).slice(0, 12));
       msgs = [{ role: "system", content: sys }, { role: "user", content: buildUser(extra) }]; continue;
@@ -655,10 +665,9 @@ async function codeProject(env, user, proj, req, history, ui) {
   await env.KV.put("code:pend:" + user, JSON.stringify({ repo: proj.repo, branch, edits: good.map((g, i) => ({ path: final.done[i] ? final.done[i].path : g.path, line: final.done[i] ? final.done[i].line : 0, old: g.old, new: g.new })), summary, warn, at: Date.now() }), { expirationTtl: 3600 });
   const explain = String(last).replace(new RegExp(CODE_BLOCK_RE.source, "g"), "").replace(/```[^\n]*\n?/g, "").trim();
   const tail = (warn.length ? "\n\n⚠️ " + warn.join("；") + "（可能是括号写漏了，推之前请留意）" : "") + (res.errs.length ? "\n\n⚠️ 另有 " + res.errs.length + " 处没能应用，已跳过。" : "");
-  const where = "（推到 " + proj.repo + "@" + branch + "，推上去 Cloudflare 会自动重新部署）\n（" + model + "）";
   const head = explain ? codeCut(explain, 300) + "\n\n" : "";
   if (ui) return { ok: true, pending: true, model, reply: head + "已生成 " + final.done.length + " 处改动（" + tag + "）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行").join("\n") + tail };
-  return { ok: true, pending: true, model, reply: head + "改动预览（" + tag + "，共 " + final.done.length + " 处）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行\n- " + codeCut(d.old, 400).replace(/\n/g, "\n- ") + "\n+ " + codeCut(d.new, 400).replace(/\n/g, "\n+ ")).join("\n\n") + tail + "\n\n要推上去吗？回「推」或「不推」。" + where };
+  return { ok: true, pending: true, model, reply: head + "改动预览（" + tag + "，共 " + final.done.length + " 处）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行\n- " + codeCut(d.old, 400).replace(/\n/g, "\n- ") + "\n+ " + codeCut(d.new, 400).replace(/\n/g, "\n+ ")).join("\n\n") + tail + "\n\n要推上去吗？" };
 }
 async function codeConfirm(env, user, yes) {
   const key = "code:pend:" + user, pend = env.KV ? await env.KV.get(key, "json") : null;

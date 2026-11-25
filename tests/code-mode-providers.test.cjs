@@ -49,6 +49,16 @@ test('worker and frontend expose only the requested Groq, OpenRouter and NVIDIA 
   }
 });
 
+test('chat experience: prompt restores natural dialogue and frontend hides routine notes', () => {
+  assert.match(workerSource, /<conversation_agency>[\s\S]*自然对话与自主推进/);
+  assert.match(workerSource, /不要把每一轮都套成固定/);
+  assert.match(workerSource, /只有存在会影响使用的重要不确定性或风险时才说明/);
+  assert.match(workerSource, /reply: r\.text \+ \(notes\.length \? "\\n\\n" \+ notes\.join\("\\n"\) : ""\) \};/);
+  assert.doesNotMatch(workerSource, /直接回答就行，我接着改。\\n\\n（" \+ model \+ "）/);
+  assert.match(frontendSource, /\(m\.notes \|\| \[\]\)\.filter\(n =>/);
+  assert.match(frontendSource, /模型切换、联网成功、来源统计等内部状态不混进正文/);
+});
+
 function extract(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
   assert.notEqual(start, -1, `Source marker missing: ${startMarker}`);

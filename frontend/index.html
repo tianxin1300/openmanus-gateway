@@ -1680,7 +1680,8 @@ function bubble(m) {
     im.onerror = () => { im.remove(); cap.textContent = "截图加载失败（地址可能已过期）：" + sh.src; };
     fig.append(im, cap); b.appendChild(fig);
   });
-  (m.notes || []).forEach(n => { const d = document.createElement("div"); d.className = "note"; d.textContent = n; b.appendChild(d); });
+  // 气泡只展示会影响用户下一步的异常；模型切换、联网成功、来源统计等内部状态不混进正文。
+  (m.notes || []).filter(n => /^(?:⚠|❌|⏹)/.test(String(n).trim()) || /失败|错误|超时|没取到|没找到|无法/.test(String(n))).forEach(n => { const d = document.createElement("div"); d.className = "note"; d.textContent = n; b.appendChild(d); });
   if (m.role === "assistant" && (m.failed || m.stopped) && !busy) {
     const tl = document.createElement("div"); tl.className = "tools";
     const x = document.createElement("button"); x.className = "retry"; x.textContent = "🔄 重试"; x.title = "重新生成这条回复";
