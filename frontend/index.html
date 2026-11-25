@@ -3233,14 +3233,21 @@ if (previewDownloadCurrent) previewDownloadCurrent.onclick = e => { if (previewD
 const FALLBACK_MODELS = {
   "Groq": ["openai/gpt-oss-120b"],
   "Gemini": ["gemini-3.5-flash-lite"],
-  "肖恩AI": ["gemini-3.8-flash", "gemini-3.5-flash"],
+  "肖恩AI": ["gemini-3.8-flash", "gemini-3.5-flash", "deepseek-v4.1-flash", "入梦 Flash", "gemini-3-flash", "gemini-2.5-pro", "gemini-3.1-pro", "claude-sonnet-4-5", "claude-opus-4-5"],
   "OpenRouter": []
 };
 const MODEL_HINT = {
   "openai/gpt-oss-120b": "Groq 主力 · 聊天/代码",
   "gemini-3.5-flash-lite": "Gemini 备用",
   "gemini-3.8-flash": "肖恩AI 主接口",
-  "gemini-3.5-flash": "肖恩AI 备用模型"
+  "gemini-3.5-flash": "肖恩AI 备用模型",
+  "deepseek-v4.1-flash": "肖恩AI · DeepSeek",
+  "入梦 Flash": "肖恩AI · 入梦",
+  "gemini-3-flash": "肖恩AI · Gemini",
+  "gemini-2.5-pro": "肖恩AI · Gemini Pro",
+  "gemini-3.1-pro": "肖恩AI · Gemini Pro",
+  "claude-sonnet-4-5": "肖恩AI · Claude Sonnet",
+  "claude-opus-4-5": "肖恩AI · Claude Opus"
 };
 let MODEL_MAP = null, modelMenuOpen = true, selModels = lsJSON("openmanus_selected_models", {});
 if (!selModels || typeof selModels !== "object") selModels = {};
@@ -3254,7 +3261,7 @@ function renderModelMenu() {
   list.querySelectorAll("button[data-model]").forEach(btn => {
     const p = btn.dataset.model; btn.classList.toggle("on", p === selectedProvider);
     if (p !== selectedProvider || !modelMenuOpen) return;
-    const models = (MODEL_MAP && MODEL_MAP[p]) || FALLBACK_MODELS[p] || []; if (!models.length) return;
+    const models = Array.from(new Set([...(MODEL_MAP && Array.isArray(MODEL_MAP[p]) ? MODEL_MAP[p] : []), ...(FALLBACK_MODELS[p] || [])])); if (!models.length) return;
     if (selModels[p] && !models.includes(selModels[p])) delete selModels[p];
     const sub = document.createElement("div"); sub.className = "om-model-sub"; sub.setAttribute("role", "listbox");
     const add = (label, val, hint) => {
