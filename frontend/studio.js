@@ -108,6 +108,7 @@
     if (hintEl) hintEl.hidden = !state.on;
     var inp = document.getElementById("inp");
     if (inp) { if (hint0 === null) hint0 = inp.getAttribute("placeholder") || ""; inp.setAttribute("placeholder", state.on ? "代码模式：说想改什么…" : hint0); }
+    if (typeof renderModelMenu === "function") renderModelMenu();
   }
   function mountToggle() {
     if (document.getElementById("om-code-toggle")) return;
@@ -231,7 +232,6 @@
   }
 
   function init() { mountToggle(); if (state.on) setTimeout(check, 800); }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
-
   window.omStudio = { state: state, check: check, hide: hide, enable: function () { if (!state.on && box) box.click(); }, disable: function () { if (state.on && box) box.click(); } };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })();

@@ -3246,9 +3246,9 @@ const MODEL_HINT = {
   "gemini-3-flash": "肖恩AI · Gemini",
   "gemini-2.5-pro": "肖恩AI · Gemini Pro",
   "gemini-3.1-pro": "肖恩AI · Gemini Pro",
-  "claude-sonnet-4-5": "代码主力 · Claude Sonnet（肖恩AI）",
+  "claude-sonnet-4-5": "肖恩AI · Claude Sonnet",
   "claude-opus-4-5": "肖恩AI · Claude Opus",
-  "particle-ai/particle-1:free": "代码备用 · Particle-1",
+  "particle-ai/particle-1:free": "代码主力 · Particle-1",
   "baidu/ernie-5.5-flash-preview:free": "代码备用 · ERNIE 5.5",
   "nvidia/nemotron-3.5-super-vl:free": "代码备用 · Nemotron Super VL",
   "inclusionai/ling-3.2-flash:free": "聊天主力 · Ling 3.2 Flash",
@@ -3263,12 +3263,20 @@ if (!selModels || typeof selModels !== "object") selModels = {};
 function modelField() { return selModels[selectedProvider] || ({Groq: "openai/gpt-oss-120b", Gemini: "gemini-3.5-flash-lite", "肖恩AI": "claude-sonnet-4-5", OpenRouter: "inclusionai/ling-3.2-flash:free"}[selectedProvider] || "openai/gpt-oss-120b"); }
 function providerField() { return selectedProvider !== "OpenManus" ? {provider: selectedProvider} : {}; }
 const shortModel = m => String(m).split("/").pop().replace(/:free$/, "");
+function codeProviderBlocked(p) { return !!(window.omStudio && window.omStudio.state.on && ["肖恩AI", "Toter", "Toter2"].includes(p)); }
 function updateModelLabel() { const m = selModels[selectedProvider]; $("current-model").textContent = selectedProvider + (m ? " · " + shortModel(m) : ""); }
 function renderModelMenu() {
   const list = $("model-list"); if (!list) return;
+  if (codeProviderBlocked(selectedProvider)) {
+    selectedProvider = "OpenRouter"; modelMenuOpen = true;
+    lsSet("openmanus_selected_provider", selectedProvider);
+  }
   list.querySelectorAll(".om-model-sub").forEach(x => x.remove());
   list.querySelectorAll("button[data-model]").forEach(btn => {
-    const p = btn.dataset.model; btn.classList.toggle("on", p === selectedProvider);
+    const p = btn.dataset.model, blocked = codeProviderBlocked(p);
+    btn.hidden = blocked; btn.disabled = blocked; btn.style.display = blocked ? "none" : "";
+    btn.classList.toggle("on", !blocked && p === selectedProvider);
+    if (blocked) return;
     if (p !== selectedProvider || !modelMenuOpen) return;
     const models = Array.from(new Set([...(MODEL_MAP && Array.isArray(MODEL_MAP[p]) ? MODEL_MAP[p] : []), ...(FALLBACK_MODELS[p] || [])])); if (!models.length) return;
     if (selModels[p] && !models.includes(selModels[p])) delete selModels[p];
@@ -3285,6 +3293,7 @@ function renderModelMenu() {
   updateModelLabel();
 }
 document.querySelectorAll("#model-list button[data-model]").forEach(b => b.onclick = () => {
+  if (codeProviderBlocked(b.dataset.model)) return;
   const same = selectedProvider === b.dataset.model;
   selectedProvider = b.dataset.model; lsSet("openmanus_selected_provider", selectedProvider);
   modelMenuOpen = same ? !modelMenuOpen : true; renderModelMenu();

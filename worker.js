@@ -428,7 +428,7 @@ const CODE_GROQ_MODELS = [];
 const CODE_PUSH_LIMIT = 40000;   // 被改的原文件超过这个字数，不让模型整份重写，也不推送
 async function codeLLM(env, msgs, budgetMs) {
   const tried = [], t0 = Date.now(), budget = Math.max(15000, Number(budgetMs) || 110000), targets = [];
-  for (const m of [...new Set([CODE_MODEL_ID, ...getKeys(env.TOTER_MODELS || [])])]) targets.push({ name: "肖恩AI", url: toterUrl(env), keys: getKeys(env.TOTER_API_KEY), model: m });
+  // 代码模式不使用肖恩AI（Toter）；普通聊天的供应商配置保持不变。
   for (const m of [...new Set([...getKeys(env.CODE_MODELS), ...CODE_OR_MODELS])]) targets.push({ name: "OpenRouter", url: "https://openrouter.ai/api/v1/chat/completions", keys: getKeys(env.OPENROUTER_KEYS), model: m });
   for (const m of CODE_GROQ_MODELS) targets.push({ name: "Groq", url: "https://api.groq.com/openai/v1/chat/completions", keys: getKeys(env.GROQ_KEYS || env.GROQ_API_KEY), model: m });
   for (const t of targets) {
