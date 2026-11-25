@@ -8745,7 +8745,13 @@ async function handle(request, env, ctx) {
       return json(r, r.ok ? 200 : 404);
     }
     if (path === "/api/code/deploy" && request.method === "POST") {
-      const b = await request.json().catch(() => ({})), user = await userFromReq(request, env, url, String(b.token || ""));
+      // 兼容前端可能发来的 text/plain Accept：统一成 application/json，避免 Validate deployment inputs 因 Accept 拒绝
+      let req = request;
+      if (String(req.headers.get("Accept") || "").toLowerCase().includes("text/plain")) {
+        const h = new Headers(req.headers); h.set("Accept", "application/json");
+        req = new Request(req, { headers: h });
+      }
+      const b = await req.json().catch(() => ({})), user = await userFromReq(req, env, url, String(b.token || ""));
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
       const r = await codeDeployStart(env, user, b); return json(r, r.ok ? 200 : (r.status || 502));
     }
