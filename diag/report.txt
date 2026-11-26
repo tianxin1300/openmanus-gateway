@@ -1,6 +1,9 @@
-诊断时间(UTC): 2026-11-26T12:12:48+00:00
+诊断时间(UTC): 2026-11-26T12:17:29+00:00
 
 == 最近 12 个提交 ==
+e6f7647 test: cover compact WebContainer error and iPad layout
+9e54075 fix: collapse WebContainer failure into compact alert
+04ca188 diag: refresh current project report
 b36a0cc diag: refresh current project report
 9849ece test: cover bounded devbench log and preview panels
 a788d78 fix: keep devbench logs collapsed and constrain panels
@@ -10,64 +13,61 @@ fd70565 diag: refresh current project report
 228eacb diag: refresh current project report
 3e0bea0 test: syntax check hidden WebContainer workbench script
 7720bf1 diag: refresh current project report
-a112ff9 diag: refresh current project report
-0124426 test: cover AI supplied local preview files
-427411a fix: normalize hidden preview file paths safely
 
 == 文件 ==
 .:
 total 1060
-drwxr-xr-x 11 runner runner   4096 Nov 26 12:12 .
-drwxr-xr-x  3 runner runner   4096 Nov 26 12:12 ..
-drwxr-xr-x  7 runner runner   4096 Nov 26 12:12 .git
-drwxr-xr-x  3 runner runner   4096 Nov 26 12:12 .github
--rw-r--r--  1 runner runner    724 Nov 26 12:12 apply_v106.py
--rw-r--r--  1 runner runner   2686 Nov 26 12:12 apply_v107.py
--rw-r--r--  1 runner runner   4017 Nov 26 12:12 apply_v108.py
--rw-r--r--  1 runner runner   4249 Nov 26 12:12 apply_v109.py
--rw-r--r--  1 runner runner   2497 Nov 26 12:12 dev-run.yml
-drwxr-xr-x  2 runner runner   4096 Nov 26 12:12 diag
--rw-r--r--  1 runner runner   7037 Nov 26 12:12 diag_v110.py
-drwxr-xr-x  2 runner runner   4096 Nov 26 12:12 frontend
--rw-r--r--  1 runner runner    197 Nov 26 12:12 package-lock.json
--rw-r--r--  1 runner runner    338 Nov 26 12:12 package.json
--rw-r--r--  1 runner runner  23105 Nov 26 12:12 studio.js
-drwxr-xr-x  2 runner runner   4096 Nov 26 12:12 tests
-drwxr-xr-x  2 runner runner   4096 Nov 26 12:12 v106
-drwxr-xr-x  2 runner runner   4096 Nov 26 12:12 v107
-drwxr-xr-x  2 runner runner   4096 Nov 26 12:12 v108
-drwxr-xr-x  2 runner runner   4096 Nov 26 12:12 v109
--rw-r--r--  1 runner runner 969919 Nov 26 12:12 worker.js
--rw-r--r--  1 runner runner    512 Nov 26 12:12 wrangler.toml
+drwxr-xr-x 11 runner runner   4096 Nov 26 12:17 .
+drwxr-xr-x  3 runner runner   4096 Nov 26 12:17 ..
+drwxr-xr-x  7 runner runner   4096 Nov 26 12:17 .git
+drwxr-xr-x  3 runner runner   4096 Nov 26 12:17 .github
+-rw-r--r--  1 runner runner    724 Nov 26 12:17 apply_v106.py
+-rw-r--r--  1 runner runner   2686 Nov 26 12:17 apply_v107.py
+-rw-r--r--  1 runner runner   4017 Nov 26 12:17 apply_v108.py
+-rw-r--r--  1 runner runner   4249 Nov 26 12:17 apply_v109.py
+-rw-r--r--  1 runner runner   2497 Nov 26 12:17 dev-run.yml
+drwxr-xr-x  2 runner runner   4096 Nov 26 12:17 diag
+-rw-r--r--  1 runner runner   7037 Nov 26 12:17 diag_v110.py
+drwxr-xr-x  2 runner runner   4096 Nov 26 12:17 frontend
+-rw-r--r--  1 runner runner    197 Nov 26 12:17 package-lock.json
+-rw-r--r--  1 runner runner    338 Nov 26 12:17 package.json
+-rw-r--r--  1 runner runner  23105 Nov 26 12:17 studio.js
+drwxr-xr-x  2 runner runner   4096 Nov 26 12:17 tests
+drwxr-xr-x  2 runner runner   4096 Nov 26 12:17 v106
+drwxr-xr-x  2 runner runner   4096 Nov 26 12:17 v107
+drwxr-xr-x  2 runner runner   4096 Nov 26 12:17 v108
+drwxr-xr-x  2 runner runner   4096 Nov 26 12:17 v109
+-rw-r--r--  1 runner runner 969919 Nov 26 12:17 worker.js
+-rw-r--r--  1 runner runner    512 Nov 26 12:17 wrangler.toml
 
 .github/workflows:
 total 32
-drwxr-xr-x 2 runner runner 4096 Nov 26 12:12 .
-drwxr-xr-x 3 runner runner 4096 Nov 26 12:12 ..
--rw-r--r-- 1 runner runner 2454 Nov 26 12:12 apply-v105.yml
--rw-r--r-- 1 runner runner 2724 Nov 26 12:12 deploy-project.yml
--rw-r--r-- 1 runner runner 3075 Nov 26 12:12 deploy-worker.yml
--rw-r--r-- 1 runner runner 1295 Nov 26 12:12 diag-report.yml
--rw-r--r-- 1 runner runner  679 Nov 26 12:12 test-project.yml
--rw-r--r-- 1 runner runner 2558 Nov 26 12:12 verify-project.yml
+drwxr-xr-x 2 runner runner 4096 Nov 26 12:17 .
+drwxr-xr-x 3 runner runner 4096 Nov 26 12:17 ..
+-rw-r--r-- 1 runner runner 2454 Nov 26 12:17 apply-v105.yml
+-rw-r--r-- 1 runner runner 2724 Nov 26 12:17 deploy-project.yml
+-rw-r--r-- 1 runner runner 3075 Nov 26 12:17 deploy-worker.yml
+-rw-r--r-- 1 runner runner 1295 Nov 26 12:17 diag-report.yml
+-rw-r--r-- 1 runner runner  679 Nov 26 12:17 test-project.yml
+-rw-r--r-- 1 runner runner 2558 Nov 26 12:17 verify-project.yml
 
 frontend:
 total 828
-drwxr-xr-x  2 runner runner   4096 Nov 26 12:12 .
-drwxr-xr-x 11 runner runner   4096 Nov 26 12:12 ..
--rw-r--r--  1 runner runner     92 Nov 26 12:12 _headers
--rw-r--r--  1 runner runner  20601 Nov 26 12:12 devrun.js
--rw-r--r--  1 runner runner 599129 Nov 26 12:12 index.html
--rw-r--r--  1 runner runner 161913 Nov 26 12:12 openmanus_frontend_file_v99l 2.zip
--rw-r--r--  1 runner runner  21927 Nov 26 12:12 studio.js
--rw-r--r--  1 runner runner  12533 Nov 26 12:12 tasks.js
--rw-r--r--  1 runner runner     80 Nov 26 12:12 wrangler.toml
+drwxr-xr-x  2 runner runner   4096 Nov 26 12:17 .
+drwxr-xr-x 11 runner runner   4096 Nov 26 12:17 ..
+-rw-r--r--  1 runner runner     92 Nov 26 12:17 _headers
+-rw-r--r--  1 runner runner  20601 Nov 26 12:17 devrun.js
+-rw-r--r--  1 runner runner 599990 Nov 26 12:17 index.html
+-rw-r--r--  1 runner runner 161913 Nov 26 12:17 openmanus_frontend_file_v99l 2.zip
+-rw-r--r--  1 runner runner  21927 Nov 26 12:17 studio.js
+-rw-r--r--  1 runner runner  12533 Nov 26 12:17 tasks.js
+-rw-r--r--  1 runner runner     80 Nov 26 12:17 wrangler.toml
 
 tests:
 total 64
-drwxr-xr-x  2 runner runner  4096 Nov 26 12:12 .
-drwxr-xr-x 11 runner runner  4096 Nov 26 12:12 ..
--rw-r--r--  1 runner runner 54216 Nov 26 12:12 code-mode-providers.test.cjs
+drwxr-xr-x  2 runner runner  4096 Nov 26 12:17 .
+drwxr-xr-x 11 runner runner  4096 Nov 26 12:17 ..
+-rw-r--r--  1 runner runner 55045 Nov 26 12:17 code-mode-providers.test.cjs
 
 == worker.js ==
 969919 字节, 9304 行, CRLF=False
@@ -238,7 +238,7 @@ async function codeConfirm(env, user, yes, input = {}) {
 992: const page = await env.KV.list({ prefix: "code:pend:", cursor });
 
 == frontend/index.html ==
-599129 字节, 6441 行, CRLF=False
+599990 字节, 6452 行, CRLF=False
 -- <script src=…> --
 <script src="https://cdn.tailwindcss.com">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js">
@@ -248,22 +248,22 @@ async function codeConfirm(env, user, yes, input = {}) {
 <script src="app.js">
 <script src="studio.js">
 -- id="wb-…"（工作台）--
-wb-back-log wb-bar wb-both wb-chain wb-ci wb-close wb-deploy wb-devbench wb-editor wb-file wb-front-log wb-history wb-left wb-lint wb-local-log wb-local-logbox wb-main wb-open wb-pages-run-link wb-prev-refresh wb-preview wb-reload wb-res wb-right wb-runframe wb-runlogs wb-save wb-state wb-term wb-worker-run-link
-开发台                     14 处，行号 [628, 664, 705, 5549, 5614, 5648, 5661, 5662]
-renderDeliveryChain      2 处，行号 [6208, 6233]
-wb-both                  3 处，行号 [5668, 6343, 6424]
-/api/code/verify         2 处，行号 [6266, 6288]
-/api/code/deploy         2 处，行号 [6300, 6302]
-/api/code/logs           1 处，行号 [6158]
+wb-back-log wb-bar wb-both wb-chain wb-ci wb-close wb-deploy wb-devbench wb-editor wb-file wb-front-log wb-history wb-left wb-lint wb-local-error wb-local-error-detail wb-local-error-summary wb-local-log wb-local-logbox wb-main wb-open wb-pages-run-link wb-prev-refresh wb-preview wb-reload wb-res wb-right wb-runframe wb-runlogs wb-save wb-state wb-term wb-worker-run-link
+开发台                     13 处，行号 [628, 710, 5554, 5619, 5653, 5666, 5667, 5669]
+renderDeliveryChain      2 处，行号 [6219, 6244]
+wb-both                  3 处，行号 [5673, 6354, 6435]
+/api/code/verify         2 处，行号 [6277, 6299]
+/api/code/deploy         2 处，行号 [6311, 6313]
+/api/code/logs           1 处，行号 [6169]
 om-code-bar              0 处，行号 []
-composer-inner           4 处，行号 [108, 428, 738, 4159]
+composer-inner           4 处，行号 [108, 428, 743, 4164]
 -- 含「开发台」的行（前 6 行）--
 628: /* ---- 开发台（Monaco 编辑器 + 实时预览 + GitHub Actions 运行日志）---- */
-664: /* 平板 / 小屏开发台：编辑器限高，结果区与双日志始终保留可见空间 */
-705: <button id="wb-open" class="sec header-action" type="button" title="开发台：在线编辑 index.html / 实时预览 / 终端" aria-label="开发台"><span class="action-icon" aria-hidden="true">⌘</span><span class="action-label">开发台</span></button>
-5549: /* 开发台 · 代码检测：脚本语法 + 重复 id + $("id") 引用不到的元素 + 遗留 console.log */
-5614: if (!code.trim()) { rows.push(["err", "编辑器里没有内容：先打开开发台并读取文件。"]); return show(rows); }
-5648: /* 开发台顶栏在手机上换行显示，避免「代码检测」等按钮被挤出屏幕 */
+710: <button id="wb-open" class="sec header-action" type="button" title="开发台：在线编辑 index.html / 实时预览 / 终端" aria-label="开发台"><span class="action-icon" aria-hidden="true">⌘</span><span class="action-label">开发台</span></button>
+5554: /* 开发台 · 代码检测：脚本语法 + 重复 id + $("id") 引用不到的元素 + 遗留 console.log */
+5619: if (!code.trim()) { rows.push(["err", "编辑器里没有内容：先打开开发台并读取文件。"]); return show(rows); }
+5653: /* 开发台顶栏在手机上换行显示，避免「代码检测」等按钮被挤出屏幕 */
+5666: <!-- 开发台：编辑器、实时预览/运行结果、统一运行日志；代码通过 GitHub Actions 执行 -->
 
 == wrangler.toml ==
 name = "openmanus-gateway"
@@ -304,58 +304,81 @@ crons = ["0 0 * * *"]
 
 == npm test（node --test tests/*.cjs） ==
 node v22.23.5
-退出码 0
-✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (2.379909ms)
-✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.355659ms)
-✔ editor delivery: pending work is resumable and deployment state is not overstated (0.338774ms)
-✔ project isolation: code edits use a temporary branch before merging to the base branch (0.516628ms)
-✔ web workbench: refuses unsafe save and keeps local preview opt-in only (0.863314ms)
-✔ remote verification: reuses a dispatchable workflow and returns status fields (0.400696ms)
-✔ remote verification UI: green success, red failures, and no invented preview URL (0.792008ms)
-✔ BUG-01: protected media and files never put the login token in URLs or media bodies (0.744907ms)
-✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (0.831566ms)
-✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.503205ms)
-✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (0.915932ms)
-✔ workbench simultaneous start triggers GitHub Actions and renders the full delivery chain (1.971452ms)
-✔ P0-01: frontend gateway stays explicit and WebContainer preview requires a hidden opt-in trigger (0.602596ms)
-✔ P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records (1.871163ms)
-✔ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (1.161858ms)
+退出码 1
+✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (1.933331ms)
+✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.303552ms)
+✔ editor delivery: pending work is resumable and deployment state is not overstated (0.269552ms)
+✔ project isolation: code edits use a temporary branch before merging to the base branch (0.412414ms)
+✔ web workbench: refuses unsafe save and keeps local preview opt-in only (0.724339ms)
+✔ remote verification: reuses a dispatchable workflow and returns status fields (0.314599ms)
+✔ remote verification UI: green success, red failures, and no invented preview URL (0.64477ms)
+✔ BUG-01: protected media and files never put the login token in URLs or media bodies (0.59718ms)
+✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (0.663389ms)
+✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.264134ms)
+✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (0.767303ms)
+✔ workbench simultaneous start triggers GitHub Actions and renders the full delivery chain (1.673454ms)
+✔ P0-01: frontend gateway stays explicit and WebContainer preview requires a hidden opt-in trigger (0.48322ms)
+✔ P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records (1.224655ms)
+✔ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (0.890858ms)
 [code] pending expiry branch deletion failed; claim retained simulated GitHub failure
-✔ force-clear: frontend keeps preview panel visible and reports failure (12.318658ms)
-✔ CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim (18.477175ms)
-✔ CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry (1.226014ms)
-✔ CodeClaimDO alarm: GitHub 404 is treated as already deleted (0.938656ms)
-✔ persistent runner, KV logs and Pages deployment are wired end to end (2.026594ms)
-✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (1.408935ms)
-✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (1.16328ms)
-✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (1.939594ms)
-✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (0.950543ms)
-✔ codeLLM: OpenRouter network errors also never fall back to Toter (1.033217ms)
-✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (0.906548ms)
-✔ codeLLM: first usable custom model succeeds without attempting later models (0.859548ms)
-✔ codeLLM: retains the Groq target loop after OpenRouter (0.915492ms)
-✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (0.915441ms)
-✔ frontend: without studio initialization, ordinary-chat providers remain available (2.0308ms)
-✔ frontend: code mode shows provider-specific code models and hides Toter aliases (1.12977ms)
-✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (2.543182ms)
-✔ frontend: switching off code mode restores buttons and preserves chat model choice (1.229097ms)
-✔ studio.js: syncToggle re-renders providers when code mode changes (0.941089ms)
-✔ studio.js: omStudio state is exposed before eager init (0.969912ms)
-✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (0.837305ms)
-✔ frontend/studio.js: omStudio state is exposed before eager init (0.81379ms)
-✔ local HTTP integration: frontend-style API request reaches the real Worker /api/models route (66.365782ms)
-✔ WebContainer local preview is opt-in and hidden behind query or AI trigger (3.38255ms)
-✔ devbench has one Actions launch button and one expandable unified run log (1.736882ms)
-✔ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (3.264013ms)
-✔ delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once (1.403477ms)
+✔ force-clear: frontend keeps preview panel visible and reports failure (7.458814ms)
+✔ CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim (12.925169ms)
+✔ CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry (0.961773ms)
+✔ CodeClaimDO alarm: GitHub 404 is treated as already deleted (0.734595ms)
+✔ persistent runner, KV logs and Pages deployment are wired end to end (1.703719ms)
+✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (1.165797ms)
+✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (0.961242ms)
+✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (1.511191ms)
+✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (0.763678ms)
+✔ codeLLM: OpenRouter network errors also never fall back to Toter (0.821294ms)
+✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (0.699833ms)
+✔ codeLLM: first usable custom model succeeds without attempting later models (0.697379ms)
+✔ codeLLM: retains the Groq target loop after OpenRouter (0.757389ms)
+✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (0.861173ms)
+✔ frontend: without studio initialization, ordinary-chat providers remain available (1.581657ms)
+✔ frontend: code mode shows provider-specific code models and hides Toter aliases (0.912039ms)
+✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (2.185035ms)
+✔ frontend: switching off code mode restores buttons and preserves chat model choice (1.0264ms)
+✔ studio.js: syncToggle re-renders providers when code mode changes (1.030385ms)
+✔ studio.js: omStudio state is exposed before eager init (1.036669ms)
+✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (0.679002ms)
+✔ frontend/studio.js: omStudio state is exposed before eager init (0.672952ms)
+✔ local HTTP integration: frontend-style API request reaches the real Worker /api/models route (58.427766ms)
+✔ WebContainer local preview is opt-in and hidden behind query or AI trigger (2.864388ms)
+✖ devbench has one Actions launch button and one expandable unified run log (4.463561ms)
+✔ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (3.251735ms)
+✔ delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once (1.383962ms)
 ℹ tests 42
 ℹ suites 0
-ℹ pass 42
-ℹ fail 0
+ℹ pass 41
+ℹ fail 1
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 210.223898
+ℹ duration_ms 174.305401
+
+✖ failing tests:
+
+test at tests/code-mode-providers.test.cjs:884:1
+✖ devbench has one Actions launch button and one expandable unified run log (4.463561ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(frontendSource.includes('#wb-runlogs{flex:0 1 auto;min-height:0;max-height:calc(50% - 28px);overflow:auto}'))
+  
+      at TestContext.<anonymous> (/home/runner/work/openmanus-gateway/openmanus-gateway/tests/code-mode-providers.test.cjs:894:10)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+      at Test.postRun (node:internal/test_runner/test:1173:19)
+      at Test.run (node:internal/test_runner/test:1101:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:744:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
 
 == npm run build ==
 退出码 0
