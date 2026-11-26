@@ -213,6 +213,7 @@ test('workbench simultaneous start triggers GitHub Actions and renders the full 
   assert.match(frontendSource, /线上探活超时（15 秒）/);
   assert.match(frontendSource, /health\.state === "ok" && health\.status === 200/);
   assert.match(frontendSource, /front\.conclusion === "success" && back\.conclusion === "success" && front\.run_id/);
+  assert.match(frontendSource, /deploy\.conclusion === "success" && worker\.conclusion === "success"/);
   assert.match(frontendSource, /线上探活失败/);
   assert.doesNotMatch(frontendSource, /const online = !!\(d\.deploy && d\.state === "success"\)/);
   for (const label of ['已生成', '已验证', '已提交', '部署中', '线上健康']) {
