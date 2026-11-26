@@ -209,6 +209,8 @@ test('workbench simultaneous start triggers GitHub Actions and renders the full 
   assert.match(frontendSource, /function renderDeliveryChain\(d\)/);
   assert.match(frontendSource, /fetch\("https:\/\/zhineng-et5\.pages\.dev\/", \{method:"GET", cache:"no-store"/);
   assert.match(frontendSource, /response\.status === 200/);
+  assert.match(frontendSource, /new AbortController\(\)/);
+  assert.match(frontendSource, /线上探活超时（15 秒）/);
   assert.match(frontendSource, /health\.state === "ok" && health\.status === 200/);
   assert.match(frontendSource, /线上探活失败/);
   assert.doesNotMatch(frontendSource, /const online = !!\(d\.deploy && d\.state === "success"\)/);
