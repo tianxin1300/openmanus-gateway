@@ -890,7 +890,7 @@ test('devbench has one Actions launch button and one expandable unified run log'
   assert.ok(frontendSource.includes('id="wb-worker-run-link" href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/45809265485"'));
   assert.ok(frontendSource.includes('(d.runs||[]).slice(0,20)'));
   assert.ok(frontendSource.includes('#wb-right{flex:0 0 25%;max-height:25%'));
-  assert.ok(frontendSource.includes('#wb-runlogs:not([open]){flex:0 0 auto;max-height:none;overflow:visible}'));
+
   assert.match(frontendSource, /#wb-runlogs\\s*\\{[^}]*\\}/);
   assert.match(frontendSource, /#wb-runlogs\\s*\\{[^}]*max-height\\s*:/);
   assert.ok(frontendSource.includes('#wb-res{min-height:0;max-height:100%;overflow:auto'));
@@ -906,11 +906,18 @@ test('devbench has one Actions launch button and one expandable unified run log'
   assert.ok(frontendSource.includes('showTab("prev")'));
   assert.ok(frontendSource.includes('#wb-right{flex:0 0 25%;max-height:25%'));
   assert.ok(frontendSource.includes('#wb-term{flex:0 0 24%;min-height:120px;max-height:32%;overflow:hidden}'));
-  assert.match(frontendSource, /#wb-term\\s*\\{[^}]*flex:0 0 max\\(180px,30vh\\)[^}]*min-height:180px/);
-  assert.match(frontendSource, /#wb-runlogs\\s*\\{[^}]*flex:0 0 34px[^}]*max-height:34px/);
-  assert.match(frontendSource, /#wb-runlogs\\[open\\]\\s*\\{[^}]*max-height:50%[^}]*overflow:auto/);
+
+
+
   assert.match(frontendSource, /#wb-main\\s*\\{[^}]*min-height:0[^}]*overflow:hidden/);
-  assert.match(frontendSource, /@media\\(max-width:1100px\\)[\\s\\S]*?#wb-term\\s*\\{[^}]*min-height:180px/);
+  assert.ok(frontendSource.includes('id="wb-terminal" aria-label="WebContainer 终端输出"'));
+  assert.ok(frontendSource.includes('id="wb-terminal-output" role="log"'));
+  assert.match(frontendSource, /#wb-terminal\\s*\\{[^}]*min-height:180px/);
+  assert.match(frontendSource, /#wb-term\\s*\\{[^}]*min-height:214px[^}]*max-height:65%/);
+  assert.match(frontendSource, /#wb-runlogs\\[open\\]\\s*\\{[^}]*max-height:min\\(50%,calc\\(100% - 180px\\)\\)/);
+  assert.ok(frontendSource.includes('terminal.textContent += line'));
+  assert.ok(frontendSource.includes('g("wb-terminal-output").textContent=""'));
+
   assert.ok(!frontendSource.includes('点右上角「运行」会在浏览器里启动 WebContainer'));
   assert.ok(!frontendSource.includes('g("wb-run").addEventListener'));
   assert.ok(!frontendSource.includes("function initTerm"));
