@@ -6641,6 +6641,8 @@ function closeWb() { document.body.classList.remove("wb-open"); g("wb").setAttri
 g("wb-open").addEventListener("click", openWb);
 async function openLocalTaskPreview(options) {
   await openWb();
+  const previewFrame=g("wb-runframe");
+  if(previewFrame&&previewFrame.dataset.localFallback==="1")return;
   if(!ed)throw new Error("编辑器尚未就绪，无法准备本地预览");
   g("wb").classList.add("wb-local-preview-mode");
   const button=g("wb-local-preview");if(button)button.textContent="返回开发台";
