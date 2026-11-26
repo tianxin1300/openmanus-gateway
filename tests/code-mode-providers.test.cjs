@@ -1497,3 +1497,15 @@ test('iOS Safari voice input uses MediaRecorder and authenticated server transcr
   assert.match(workerSource, /20 \* 1024 \* 1024/);
   assert.match(workerSource, /GROQ_KEYS \|\| env\.GROQ_API_KEY/);
 });
+
+test('mobile composer auto-grows and app plus terminal follow the visual viewport above the soft keyboard', () => {
+  assert.match(frontendSource, /interactive-widget=resizes-content/);
+  assert.match(frontendSource, /--app-visual-height/);
+  assert.match(frontendSource, /--app-visual-top/);
+  assert.match(frontendSource, /height:var\(--app-visual-height,100dvh\)/);
+  assert.match(frontendSource, /function resizeComposerInput\(\)/);
+  assert.match(frontendSource, /Math\.min\(180, Math\.max\(40, inp\.scrollHeight\)\)/);
+  assert.match(frontendSource, /inp\.style\.overflowY = inp\.scrollHeight > 180 \? "auto" : "hidden"/);
+  assert.match(frontendSource, /#wb-term\{flex:0 0 min\(55%,240px\);min-height:160px;max-height:60%\}/);
+  assert.match(frontendSource, /#wb-terminal-command\{font-size:16px\}/);
+});
