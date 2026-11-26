@@ -882,13 +882,13 @@ test('WebContainer local preview is opt-in and hidden behind query or AI trigger
 });
 
 test('devbench has one Actions launch button, one run log and a terminal element', () => {
-  const launchButtons = [...frontendSource.matchAll(/<button\\b(?=[^>]*\\bid="wb-both")[^>]*>\\s*同时启动\\s*<\\/button>/g)];
+  const launchButtons = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-both")[^>]*>\s*同时启动\s*<\/button>/g)];
   assert.equal(launchButtons.length, 1, "there is exactly one 同时启动 button");
 
-  const runLogs = [...frontendSource.matchAll(/<details\\b(?=[^>]*\\bid="wb-runlogs")[^>]*>/g)];
+  const runLogs = [...frontendSource.matchAll(/<details\b(?=[^>]*\bid="wb-runlogs")[^>]*>/g)];
   assert.equal(runLogs.length, 1, "there is exactly one 运行日志 element");
 
-  const terminals = [...frontendSource.matchAll(/<(?:section|div)\\b(?=[^>]*\\bid="wb-terminal")[^>]*>/g)];
+  const terminals = [...frontendSource.matchAll(/<(?:section|div)\b(?=[^>]*\bid="wb-terminal")[^>]*>/g)];
   assert.equal(terminals.length, 1, "the terminal element exists exactly once");
 });
 
