@@ -6288,7 +6288,7 @@ async function runLocalTaskPreview(fileOverrides) {
         if(serverResult.timeout)throw new Error("npm run dev 失败了：60 秒内没有监听端口");
         throw new Error("npm run dev 失败了：进程退出，退出码 "+serverResult.exitCode);
       }
-      say("本地预览服务已启动");
+      if(g("wb-runframe").dataset.localFallback!=="1")say("本地预览服务已启动");
       return serverResult.url;
     }catch(error){
       localLog("本地预览失败："+(error&&error.message||error));
