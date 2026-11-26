@@ -6444,7 +6444,7 @@ async function openWb() {
   document.body.classList.add("wb-open"); g("wb").setAttribute("aria-hidden", "false"); amdOn();
   if (inited) { fit(); return; }
   inited = true; say("正在加载编辑器和终端 …");
-  await Promise.all([initEditor(), initTerm()]); fit();
+  await initEditor(); fit();
   await loadFile();
 }
 function closeWb() { document.body.classList.remove("wb-open"); g("wb").setAttribute("aria-hidden", "true"); amdOff(); }
