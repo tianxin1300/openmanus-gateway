@@ -872,6 +872,9 @@ test('WebContainer local preview is opt-in and hidden behind query or AI trigger
   assert.ok(frontendSource.includes("Object.entries(fileOverrides)"));
   assert.ok(frontendSource.includes("event.detail||{}"));
   assert.ok(frontendSource.includes("String.fromCharCode(92)"));
+  const workbenchScript = [...frontendSource.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi)].map(match => match[1]).find(source => source.includes("const MCP_URL ="));
+  assert.ok(workbenchScript, "workbench inline script must be present");
+  assert.doesNotThrow(() => new vm.Script(workbenchScript, { filename: "workbench-inline.js" }));
   assert.ok(frontendSource.includes('id="wb-local-logbox" hidden'));
   assert.ok(frontendSource.includes('id="wb-runframe"'));
   assert.ok(!frontendSource.includes('id="wb-run"'));
