@@ -159,6 +159,37 @@ test('remote verification: reuses a dispatchable workflow and returns status fie
   assert.match(workerSource, /path === "\/api\/code\/verify"/);
 });
 
+test('BUG-07: verification logs preserve file context and expose exact source-line navigation', () => {
+  const workerBlock = extract(workerSource, 'function codeVerifyRedact(text)', 'async function codeVerifyStatus');
+  const workerContext = vm.createContext({});
+  vm.runInContext(workerBlock, workerContext);
+  const log = [
+    'Run npm test',
+    'AssertionError: expected true',
+    '    at TestContext.<anonymous> (/home/runner/work/repo/repo/tests/code-mode-providers.test.cjs:1148:10)',
+    '    at async Test.run (node:internal/test_runner/test:632:9)',
+    'Error: build failed'
+  ].join('\\n');
+  const kept = vm.runInContext('codeVerifyErrorLines(' + JSON.stringify(log) + ')', workerContext);
+  assert.ok(kept.some(line => line.includes('tests/code-mode-providers.test.cjs:1148:10')));
+  assert.ok(kept.some(line => line.includes('AssertionError')));
+  assert.ok(kept.some(line => line.includes('TestContext.<anonymous>')));
+  assert.match(workerSource, /locationPattern/);
+  assert.match(frontendSource, /function verifyErrorLocation\\(raw\\)/);
+  assert.match(frontendSource, /revealLineInCenter\\(line\\)/);
+  assert.match(frontendSource, /setSelectionRange\\(start/);
+  assert.match(frontendSource, /renderVerifyErrorLocations\\(d\\.error_lines, d\\.head_sha\\)/);
+  const locationBlock = extract(frontendSource, 'function verifyErrorLocation(raw)', 'function renderVerifyResult(d)');
+  const locationContext = vm.createContext({});
+  vm.runInContext(locationBlock, locationContext);
+  const parsed = vm.runInContext('verifyErrorLocation("    at run (tests/code-mode-providers.test.cjs:1148:10)")', locationContext);
+  assert.deepEqual({path: parsed.path, line: parsed.line, column: parsed.column},
+    {path: 'tests/code-mode-providers.test.cjs', line: 1148, column: 10});
+  const python = vm.runInContext('verifyErrorLocation(\'  File "worker.py", line 27\')', locationContext);
+  assert.deepEqual({path: python.path, line: python.line, column: python.column},
+    {path: 'worker.py', line: 27, column: 1});
+});
+
 test('remote verification UI: green success, red failures, and no invented preview URL', () => {
   assert.match(frontendSource, /验证通过/);
   assert.match(frontendSource, /验证失败/);
