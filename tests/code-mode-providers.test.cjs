@@ -1401,6 +1401,15 @@ test('ACCEPTANCE AUTO-04: terminal input echo and Pages/Worker logs occupy separ
   assert.match(frontendSource, /#wb-terminal-command-form\{display:flex;flex:0 0 auto/);
   assert.match(script, /window\.visualViewport\.addEventListener\("resize"/);
   assert.match(script, /window\.visualViewport\.addEventListener\("scroll"/);
+  assert.match(frontendSource, /id="wb-terminal-shortcuts" role="toolbar"/);
+  for (const key of ["escape", "tab", "ctrl", "up", "down", "left", "right", "ctrl-c", "ctrl-d", "clear"]) {
+    assert.match(frontendSource, new RegExp('data-terminal-key="' + key + '"'));
+  }
+  assert.match(frontendSource, /#wb-terminal-shortcuts button\\{[^}]*background:#2a3445/);
+  assert.match(frontendSource, /#wb-term-tabs button\\[aria-selected="true"\\]\\{background:#2a3445/);
+  assert.match(script, /function insertTerminalInput\\(value\\)/);
+  assert.match(script, /terminalShortcuts\\.addEventListener\\("click"/);
+  assert.match(script, /terminalCtrlPending/);
 });
 
 test('ACCEPTANCE CHAIN-01: generated state exists before any downstream delivery state', () => {
