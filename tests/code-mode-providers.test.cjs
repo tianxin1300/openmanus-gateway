@@ -94,7 +94,7 @@ function loadCodeRunnerDO(fetchImpl) {
       } finally { release(); }
     }
   };
-  const sandbox = { URL, Response, Request, Date, structuredClone, fetch: fetchImpl || (async () => { throw new Error("unexpected fetch"); }), codeRunLogKey: id => "log:run:" + id, codeRunIndexKey: user => "code:runs:" + user, codeVerifyKey: user => "code:verify:" + user, codeVerifyErrorLines: value => String(value).split(/\\r?\\n/).filter(Boolean) };
+  const sandbox = { URL, Response, Request, Date, structuredClone, fetch: fetchImpl || (async () => { throw new Error("unexpected fetch"); }), codeRunLogKey: id => "log:run:" + id, codeRunIndexKey: user => "code:runs:" + user, codeVerifyKey: user => "code:verify:" + user, codeVerifyErrorLines: value => String(value).split(/\r?\n/).filter(Boolean) };
   vm.runInNewContext(classSource + '\n' + 'globalThis.TestCodeRunnerDO = CodeRunnerDO;', sandbox);
   return { Runner: sandbox.TestCodeRunnerDO, storage };
 }
