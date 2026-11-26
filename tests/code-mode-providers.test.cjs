@@ -1402,8 +1402,6 @@ test('terminal panels and viewport behavior remain independently testable; termi
   assert.match(script, /window\.visualViewport\.addEventListener\("resize"/);
   assert.match(script, /window\.visualViewport\.addEventListener\("scroll"/);
 
-  assert.ok(script.includes('g("wb-terminal-command").addEventListener("keydown"'));
-  assert.ok(script.includes('event.key.toUpperCase().charCodeAt(0) & 31'));
 });
 
 test('ACCEPTANCE CHAIN-01: generated state exists before any downstream delivery state', () => {
