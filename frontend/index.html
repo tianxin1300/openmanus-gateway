@@ -5817,7 +5817,7 @@ const bestPlace = (list, q) => {
 #wb-terminal[hidden],#wb-runlogs[hidden]{display:none!important}
 #wb-terminal-output{display:block;flex:1 1 0;min-height:0;max-height:none;overflow:auto;margin:0;padding:8px 10px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;color:#d8e0ec;background:#171c25;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 #wb-terminal-command-form{display:flex;flex:0 0 auto;align-items:center;gap:8px;padding:8px;border-top:1px solid #3b4659;background:#202938}
-#wb-terminal-command{flex:1 1 auto;min-width:0;height:40px;padding:8px 11px;border:1px solid #53627a;border-radius:8px;background:#111720;color:#edf2f8;font:13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;outline:0}
+#wb-terminal-command{display:block;flex:1 1 auto;min-width:0;min-height:40px;height:40px;max-height:120px;resize:none;overflow-y:hidden;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;padding:10px 11px;border:1px solid #53627a;border-radius:8px;background:#111720;color:#edf2f8;font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;outline:0}
 #wb-terminal-command::placeholder{color:#9aa8bb}
 #wb-terminal-command:focus{border-color:#8db6f4;box-shadow:0 0 0 2px #8db6f422}
 #wb-terminal-command-send{flex:0 0 auto;min-width:58px;min-height:40px;padding:7px 12px;border:1px solid #53627a;border-radius:8px;background:#354155;color:#edf2f8}
@@ -5878,7 +5878,7 @@ const bestPlace = (list, q) => {
       <pre id="wb-terminal-output" role="log" aria-live="polite">终端已就绪。输入命令后会立即显示在这里。</pre>
       <form id="wb-terminal-command-form" autocomplete="off">
         <label class="wb-terminal-sr-only" for="wb-terminal-command">输入命令</label>
-        <input id="wb-terminal-command" name="command" type="text" placeholder="输入命令…" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="send">
+        <textarea id="wb-terminal-command" name="command" rows="1" placeholder="输入命令…" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="send"></textarea>
         <button id="wb-terminal-command-send" type="submit">发送</button>
       </form>
     </section>
@@ -6627,7 +6627,16 @@ function insertTerminalInput(value) {
   input.setRangeText(value, start, end, "end");
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
-g("wb-terminal-command").addEventListener("keydown", event => {
+const terminalCommandInput = g("wb-terminal-command");
+function resizeTerminalCommandInput() {
+  terminalCommandInput.style.height = "auto";
+  const height = Math.min(120, Math.max(40, terminalCommandInput.scrollHeight));
+  terminalCommandInput.style.height = height + "px";
+  terminalCommandInput.style.overflowY = terminalCommandInput.scrollHeight > 120 ? "auto" : "hidden";
+}
+terminalCommandInput.addEventListener("input", resizeTerminalCommandInput);
+terminalCommandInput.addEventListener("keydown", event => {
+  if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); g("wb-terminal-command-form").requestSubmit(); return; }
   if (!terminalCtrlPending || !/^[a-z]$/i.test(event.key)) return;
   event.preventDefault();
   terminalCtrlPending = false;
@@ -6674,6 +6683,7 @@ g("wb-terminal-command-form").addEventListener("submit", event => {
   if (!command) return;
   appendTerminalCommand(command);
   input.value = "";
+  resizeTerminalCommandInput();
   g("wb-terminal-status").textContent = "命令已回显";
 });
 g("wb-terminal-layout").addEventListener("click",()=>{
