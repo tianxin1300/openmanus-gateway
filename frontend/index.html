@@ -6227,7 +6227,8 @@ async function ensureLocalWebContainer() {
   localLog("启动浏览器本地容器 …");
   localWc=await withTimeout(localWcModule.WebContainer.boot(coep==="credentialless"?{coep:"credentialless"}:{}),60000,"WebContainer boot");
   localWc.on("server-ready",(port,url)=>{
-    const frame=g("wb-runframe");if(frame){frame.dataset.live="1";frame.dataset.localReady="0";frame.dataset.localFallback="0";frame.onload=()=>{if(frame.dataset.localFallback==="1")return;clearTimeout(localPreviewGuard);localPreviewGuard=setTimeout(()=>{if(frame.dataset.localReady!=="1"&&frame.dataset.localFallback!=="1")fallbackToPagesPreview(frame);},5000);};frame.src=url;showTab("run");clearTimeout(localPreviewGuard);localPreviewGuard=setTimeout(()=>{if(frame.dataset.localReady!=="1"&&frame.dataset.localFallback!=="1")fallbackToPagesPreview(frame);},15000);}
+    clearTimeout(localStartupGuard);localStartupGuard=null;
+    const frame=g("wb-runframe");if(frame&&frame.dataset.localFallback!=="1"){frame.dataset.live="1";frame.dataset.localReady="0";frame.dataset.localFallback="0";frame.onload=()=>{if(frame.dataset.localFallback==="1")return;clearTimeout(localPreviewGuard);localPreviewGuard=setTimeout(()=>{if(frame.dataset.localReady!=="1"&&frame.dataset.localFallback!=="1")fallbackToPagesPreview(frame);},5000);};frame.src=url;showTab("run");clearTimeout(localPreviewGuard);localPreviewGuard=setTimeout(()=>{if(frame.dataset.localReady!=="1"&&frame.dataset.localFallback!=="1")fallbackToPagesPreview(frame);},15000);}
     localLog("本地预览服务已就绪：端口 "+port);
     if(localWcReady){localWcReady(url);localWcReady=null;}
   });
@@ -6291,26 +6292,26 @@ async function runLocalTaskPreview(fileOverrides) {
       return serverResult.url;
     }catch(error){
       localLog("本地预览失败："+(error&&error.message||error));
-      say("本地预览启动失败："+(error&&error.message||error),true);
-      const frame=g("wb-runframe");if(frame){frame.dataset.live="0";frame.removeAttribute("src");}
-      const alert=g("wb-local-error"), summary=g("wb-local-error-summary");
-      if(alert&&summary){summary.textContent="npm run dev 失败了";alert.hidden=false;}
-      showTab("run");
+      const frame=g("wb-runframe");
+      if(frame&&frame.dataset.localFallback!=="1"){
+        say("");frame.dataset.live="0";frame.removeAttribute("src");
+        fallbackToPagesPreview(frame);
+      }
       throw error;
     }finally{localWcRunning=false;localWcPromise=null;}
   })();
   return localWcPromise;
 }
-let localPreviewGuard=null;
+let localPreviewGuard=null,localStartupGuard=null;
 const DEPLOYED_PAGES_PREVIEW="https://zhineng-et5.pages.dev";
 function fallbackToPagesPreview(frame){
   if(!frame||frame.dataset.localFallback==="1")return;
-  clearTimeout(localPreviewGuard);
-  frame.dataset.localFallback="1";
-  frame.dataset.live="0";
-  frame.src=DEPLOYED_PAGES_PREVIEW;
-  const alert=g("wb-local-error"),summary=g("wb-local-error-summary");
-  if(alert&&summary){summary.textContent="本地预览被浏览器拦截，已切回已部署预览";alert.hidden=false;}
+  clearTimeout(localPreviewGuard);clearTimeout(localStartupGuard);localStartupGuard=null;
+  frame.dataset.localFallback="1";frame.dataset.live="0";frame.dataset.localReady="0";
+  const wb=g("wb");if(wb)wb.classList.add("wb-local-preview-mode");
+  const button=g("wb-local-preview");if(button)button.textContent="返回开发台";
+  const alert=g("wb-local-error");if(alert)alert.hidden=true;
+  say("");frame.onload=null;frame.src=DEPLOYED_PAGES_PREVIEW;showTab("run");
 }
 window.addEventListener("message",event=>{
   const frame=g("wb-runframe");
@@ -6655,11 +6656,15 @@ g("wb-local-preview").addEventListener("click", async () => {
   }
   button.disabled = true;
   const alert = g("wb-local-error");
-  if (alert) { alert.hidden = true; g("wb-local-error-summary").textContent = ""; }
+  if (alert) alert.hidden = true;
+  say("");clearTimeout(localStartupGuard);
+  const startupFrame=g("wb-runframe");
+  if(startupFrame){startupFrame.dataset.localFallback="0";startupFrame.dataset.localReady="0";}
+  localStartupGuard=setTimeout(()=>fallbackToPagesPreview(g("wb-runframe")),30000);
   try { await openLocalTaskPreview(); }
-  catch (error) {
-    const summary = g("wb-local-error-summary");
-    if (alert && summary) { summary.textContent = "本地预览启动失败：" + String(error && error.message || error); alert.hidden = false; }
+  catch (_) {
+    const frame=g("wb-runframe");
+    if(frame&&frame.dataset.localFallback!=="1")fallbackToPagesPreview(frame);
   }
   finally { button.disabled = false; }
 });
