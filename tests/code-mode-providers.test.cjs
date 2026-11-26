@@ -1405,11 +1405,11 @@ test('ACCEPTANCE AUTO-04: terminal input echo and Pages/Worker logs occupy separ
   for (const key of ["escape", "tab", "ctrl", "up", "down", "left", "right", "ctrl-c", "ctrl-d", "clear"]) {
     assert.match(frontendSource, new RegExp('data-terminal-key="' + key + '"'));
   }
-  assert.match(frontendSource, /#wb-terminal-shortcuts button\\{[^}]*background:#2a3445/);
-  assert.match(frontendSource, /#wb-term-tabs button\\[aria-selected="true"\\]\\{background:#2a3445/);
-  assert.match(script, /function insertTerminalInput\\(value\\)/);
-  assert.match(script, /terminalShortcuts\\.addEventListener\\("click"/);
-  assert.match(script, /terminalCtrlPending/);
+  assert.ok(frontendSource.includes('#wb-terminal-shortcuts button{min-width:36px;min-height:32px;padding:5px 9px;border:1px solid #3b4659;border-radius:7px;background:#2a3445;color:#e7edf7;font-size:11px;font-weight:650;box-shadow:none}'));
+  assert.ok(frontendSource.includes('#wb-term-tabs button[aria-selected="true"]{background:#2a3445;border-color:#58749e;color:#fff}'));
+  assert.ok(script.includes('function insertTerminalInput(value)'));
+  assert.ok(script.includes('terminalShortcuts.addEventListener("click"'));
+  assert.ok(script.includes('terminalCtrlPending'));
 });
 
 test('ACCEPTANCE CHAIN-01: generated state exists before any downstream delivery state', () => {
