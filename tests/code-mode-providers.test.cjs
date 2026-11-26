@@ -139,9 +139,10 @@ test('project isolation: code edits use a temporary branch before merging to the
   assert.doesNotMatch(workerSource, /codeUpdateFile\(env, pend\.repo, path, applied\.out\[path\], [\s\S]{0,160}branch = String\(env\.CODE_PUSH_BRANCH/);
 });
 
-test('web workbench: refuses unsafe save and keeps local preview opt-in only', () => {
+test('web workbench: refuses unsafe save and exposes local preview as a button', () => {
   assert.match(frontendSource, /没有拿到文件基线 SHA，为避免覆盖线上改动/);
-  assert.match(frontendSource, /new URLSearchParams\(location\.search\)\.get\("webcontainer"\)==="1"/);
+  assert.ok(frontendSource.includes('id="wb-local-preview"'));
+  assert.ok(!frontendSource.includes('new URLSearchParams(location.search).get("webcontainer")'));
   assert.doesNotMatch(frontendSource, /function initTerm/);
   assert.ok(!frontendSource.includes('id="wb-run"'));
   assert.ok(!frontendSource.includes("async function run()"));
@@ -268,11 +269,12 @@ test('workbench simultaneous start triggers GitHub Actions and renders the full 
   }
 });
 
-test('P0-01: frontend gateway stays explicit and WebContainer preview requires a hidden opt-in trigger', () => {
+test('P0-01: frontend gateway stays explicit and WebContainer preview has a visible trigger', () => {
   assert.ok(frontendSource.includes('new URLSearchParams(location.search).get("gateway")'));
   assert.ok(frontendSource.includes("location.hostname.replace("));
   assert.ok(frontendSource.includes('authFetch(GATEWAY + "/api/code/both"'));
-  assert.ok(frontendSource.includes('new URLSearchParams(location.search).get("webcontainer")==="1"'));
+  assert.ok(frontendSource.includes('id="wb-local-preview"'));
+  assert.ok(!frontendSource.includes('new URLSearchParams(location.search).get("webcontainer")'));
   assert.ok(frontendSource.includes("window.openLocalTaskPreview=openLocalTaskPreview"));
   assert.ok(!frontendSource.includes('id="wb-run"'));
 });
