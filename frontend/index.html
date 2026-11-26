@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>OpenManus AI 助手</title>
-<link rel="stylesheet" href="./vendor/xterm.css">
-<script src="./vendor/xterm.js"></script>
+
+
 <style>
 :root{color-scheme:light;--ink:#19362a;--muted:#71867a;--line:#dfe9df;--panel:#fff;--canvas:#f4f8f2;--accent:#287447;--accent-dark:#1d6039;--nav:#10291f;--nav-soft:#1d4030}
 *{box-sizing:border-box}
@@ -644,11 +644,6 @@ button.om-ic-only .om-ic{margin:0;width:16px;height:16px}
 #wb-editor{width:100%;height:100%}
 #wb-editor textarea{width:100%;height:100%;box-sizing:border-box;border:0;outline:0;resize:none;padding:10px 12px;background:#1e1e1e;color:#e6e6e6;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre;tab-size:2}
 #wb-right{flex:0 0 25%;max-height:100%;min-width:0;min-height:0;display:flex;flex-direction:column;background:#fff;color:#304936;overflow:hidden}
-.wb-local-error{flex:0 0 auto;min-width:0;background:#fff8e8;border-bottom:1px solid #e8d6a8;color:#805b16;font-size:12px}
-.wb-local-error[hidden]{display:none}
-.wb-local-error>summary{height:28px;line-height:28px;padding:0 10px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700;list-style:none}
-.wb-local-error>summary::-webkit-details-marker{display:none}
-.wb-local-error>pre{max-height:72px;overflow:auto;margin:0;padding:5px 10px;border-top:1px solid #eadfbe;white-space:pre-wrap;word-break:break-word;font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .wb-rhead{flex:0 0 38px;display:flex;align-items:center;gap:6px;padding:0 10px;background:#f3f8f1;border-bottom:1px solid #dfe9df}
 .wb-rhead .sp{flex:1}
 .wb-tab{padding:5px 12px;border-radius:8px;background:transparent;color:#5b7560;font-size:12px;box-shadow:none}
@@ -670,20 +665,9 @@ button.om-ic-only .om-ic{margin:0;width:16px;height:16px}
 #wb-terminal{flex:1 1 0;min-height:180px;display:flex;flex-direction:column;overflow:hidden;border-top:1px solid #3b4352;background:#171b24;color:#e2e6ee}
 .wb-terminal-head{flex:0 0 26px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#252c39;color:#d6deed;font-size:11px;font-weight:700}
 .wb-terminal-hint{font-weight:400;color:#a3adbf}
-#wb-xterm{flex:1 1 0;min-height:80px;overflow:hidden;padding:5px 8px;background:#171b24}
-#wb-xterm .xterm{height:100%;padding:2px}
-.wb-terminal-command{display:flex;gap:7px;padding:7px 8px;background:#252c39}
-#wb-terminal-input{flex:1;min-width:0;height:44px;border:1px solid #58647a;border-radius:9px;padding:0 12px;background:#f7f8fb;color:#202633;font-size:16px}
-.wb-touch-btn{min-width:44px;min-height:44px;padding:7px 10px;border:1px solid #58647a;border-radius:9px;background:#343e50;color:#f0f3f8;font-size:13px;font-weight:650;touch-action:manipulation}
-.wb-send-btn{min-width:64px;background:#426fbd;border-color:#426fbd}
-.wb-terminal-tools{display:flex;gap:5px;overflow-x:auto;padding:6px 8px calc(6px + env(safe-area-inset-bottom));background:#252c39;overscroll-behavior-x:contain}
-.wb-terminal-tools .wb-touch-btn{flex:0 0 auto}
-.wb-terminal-command input:focus-visible,.wb-touch-btn:focus-visible{outline:3px solid #8db4f4;outline-offset:2px}
-.wb-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.wb-touch-btn{min-width:44px;min-height:36px;padding:5px 9px;border:1px solid #58647a;border-radius:8px;background:#343e50;color:#f0f3f8;font-size:12px;font-weight:650}
 #wb-terminal.wb-terminal-fullscreen{position:fixed;inset:env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0;z-index:10050;width:100vw;height:100dvh;max-height:none;min-height:0;background:#171b24}
-#wb-terminal.wb-terminal-fullscreen #wb-xterm{min-height:0}
-#wb-terminal.wb-terminal-fullscreen .wb-terminal-tools{padding-bottom:calc(8px + env(safe-area-inset-bottom))}
-#wb-terminal-output{display:none}#wb-runlogs .wb-logbox{display:flex;flex-direction:column;min-height:90px;margin:7px 0;border:1px solid #3b4352;border-radius:7px;overflow:hidden;background:#1d2330}#wb-runlogs .wb-logtitle{flex:0 0 25px;padding:5px 8px;color:#d6deed;background:#252c39;font-size:11px;font-weight:700}#wb-runlogs .wb-logtitle a{color:#9fc0f5;text-decoration:underline;margin-left:8px}#wb-runlogs pre{max-height:170px;min-height:48px;margin:0;padding:6px 8px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:#e2e6ee;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}#wb-history{display:flex;flex-wrap:wrap;gap:5px;padding:3px 0}#wb-history button{font-size:11px;padding:4px 7px}
+#wb-runlogs .wb-logbox{display:flex;flex-direction:column;min-height:90px;margin:7px 0;border:1px solid #3b4352;border-radius:7px;overflow:hidden;background:#1d2330}#wb-runlogs .wb-logtitle{flex:0 0 25px;padding:5px 8px;color:#d6deed;background:#252c39;font-size:11px;font-weight:700}#wb-runlogs .wb-logtitle a{color:#9fc0f5;text-decoration:underline;margin-left:8px}#wb-runlogs pre{max-height:170px;min-height:48px;margin:0;padding:6px 8px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:#e2e6ee;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}#wb-history{display:flex;flex-wrap:wrap;gap:5px;padding:3px 0}#wb-history button{font-size:11px;padding:4px 7px}
 
 @media(max-width:820px){#wb-main{flex-direction:column}#wb-left{flex:1 1 0;min-height:0;border-right:0;border-bottom:1px solid #1d4030}#wb-right{flex:0 0 25%;max-height:25%;min-height:0;width:100%;overflow:hidden}#wb-term{flex:0 0 max(214px,calc(30vh + 34px));min-height:214px;max-height:65%}#wb-file{display:none}}
 /* iPad / 小屏：底部独立终端输出至少 180px，运行日志展开不挤占终端 */
@@ -701,12 +685,9 @@ button.om-ic-only .om-ic{margin:0;width:16px;height:16px}
   #wb-runlogs{flex:0 0 34px;min-height:34px;max-height:34px;overflow:hidden}
   #wb-runlogs[open]{flex:0 1 auto;max-height:min(50%,calc(100% - 180px));min-height:34px;overflow:auto}
   #wb-terminal{flex:1 1 0;min-height:180px}
-  #wb-xterm{min-height:70px}
-  #wb-terminal-command{flex-shrink:0}
   #wb-terminal.wb-terminal-fullscreen{z-index:10050}
   #wb-runlogs .wb-logbox{min-height:0}
   #wb-runlogs pre{max-height:64px;min-height:28px;overflow:auto}
-  .wb-local-error[open]>pre{max-height:56px}
 }
 </style></head>
 <body>
@@ -5719,8 +5700,6 @@ const bestPlace = (list, q) => {
 #wb-res{background:#f8f9fc!important;color:#283244!important}
 #wb-res h4{color:#315f9e!important}
 #wb-res pre{color:#303b4d!important}
-#wb-local-error{background:#fff5f4!important;color:#8e3434!important;border:1px solid #edc7c7!important;border-radius:8px!important;margin:8px!important;padding:8px 10px!important}
-#wb-local-error pre{color:#7b3030!important}
 #wb-term{border-top:1px solid #354052!important;background:#171c25!important;color:#e5eaf2!important}
 #wb-runlogs{background:#171c25!important;color:#e5eaf2!important}
 #wb-runlogs>summary{background:#252e3d!important;border-color:#3b4659!important;color:#cbd5e4!important}
@@ -5758,28 +5737,13 @@ const bestPlace = (list, q) => {
 }
 
 #wb-bar #wb-local-preview{background:#34465f!important;border-color:#536985!important;color:#f2f6fc!important}
-#wb-bar #wb-local-preview:hover{background:#405777!important}
-#wb-local-error{display:block;flex:0 0 auto;min-width:0;max-width:100%;padding:6px 10px;background:#fff4d8!important;border:0;border-bottom:1px solid #e6cf91!important;color:#785713!important;font-size:12px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#wb-local-error[hidden]{display:none!important}
-#wb-local-error-summary{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-
-/* 本地预览独立工作区：隐藏编辑器、终端和状态链，预览 iframe 独占内容区 */
-#wb.wb-local-preview-mode #wb-chain,
-#wb.wb-local-preview-mode #wb-left,
-#wb.wb-local-preview-mode #wb-term{display:none!important}
-#wb.wb-local-preview-mode #wb-main{display:flex!important;flex:1 1 0!important;height:0!important;min-height:0!important;overflow:hidden!important}
-#wb.wb-local-preview-mode #wb-right{position:relative!important;display:flex!important;flex:1 1 0!important;width:100%!important;height:100%!important;max-height:none!important;max-width:none!important;min-width:0!important;min-height:0!important;overflow:hidden!important}
-#wb.wb-local-preview-mode #wb-right .wb-rhead,
-#wb.wb-local-preview-mode #wb-preview,
-#wb.wb-local-preview-mode #wb-res{display:none!important}
-#wb.wb-local-preview-mode #wb-runframe{position:absolute!important;inset:0!important;display:block!important;flex:none!important;width:100%!important;height:100%!important;min-height:0!important;max-height:none!important;border:0!important}
-#wb.wb-local-preview-mode #wb-local-error{position:absolute!important;z-index:2!important;top:0!important;left:0!important;right:0!important;flex:none!important;max-width:100%!important;overflow:hidden!important}
-/* 默认恢复旧版：编辑器、实时预览、运行结果和运行日志同时可见。
-   只有主动进入 WebContainer 本地预览时，才切换为独立全屏预览。 */
-#wb.wb-local-preview-mode #wb-right{display:flex!important}
-/* 开发台默认只保留全宽编辑器；实时预览与运行结果进入独立全屏工作区 */
-#wb:not(.wb-local-preview-mode) #wb-right{display:none!important}
-#wb:not(.wb-local-preview-mode) #wb-left{flex:1 1 100%!important;width:100%!important;border-right:0!important;border-bottom:0!important}
+#wb-editor textarea{white-space:pre-wrap!important;overflow-wrap:anywhere!important;word-break:break-word!important;overflow-x:hidden!important}
+#wb-terminal-output{display:block;flex:1 1 0;min-height:0;max-height:100%;overflow:auto;margin:0;padding:8px 10px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;color:#d8e0ec;background:#171c25;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#wb{height:var(--wb-visual-height,100dvh)!important;top:var(--wb-visual-top,0px)!important;bottom:auto!important}
+@media(max-width:1100px){
+  #wb-term{flex:0 0 min(34vh,220px);min-height:110px;max-height:55%}
+  #wb-terminal{min-height:90px}
+}
 
 </style>
 <!-- 开发台：全宽编辑器与统一运行日志；本地预览在独立全屏工作区显示 -->
@@ -5790,7 +5754,7 @@ const bestPlace = (list, q) => {
     <button id="wb-reload" class="sec" type="button" title="重新从 GitHub 读取 index.html（会丢掉未保存的修改）">重新读取</button>
     <button id="wb-save" type="button" title="把编辑器里的内容通过 MCP update_file 推到 GitHub main（Ctrl/Cmd+S）">保存到 GitHub</button>
     <button id="wb-both" class="sec" type="button" title="触发 GitHub Actions：前端 build 与 Worker deploy 并行执行，日志收纳在统一运行日志">同时启动</button>
-    <button id="wb-local-preview" class="sec" type="button" title="打开独立本地预览工作区（隐藏编辑器和终端）">本地预览</button>
+    <button id="wb-local-preview" class="sec" type="button" title="在独立页面打开当前编辑器内容">独立预览</button>
     <button id="wb-ci" class="sec" type="button" title="触发 GitHub Actions：checkout → npm install → npm test → npm run build，并把结果回传到开发台">运行 / 验证</button>
     <button id="wb-deploy" class="sec" type="button" title="验证通过后构建并部署到 Cloudflare Pages">部署</button>
     <button id="wb-lint" type="button" title="代码检测：检查脚本语法、重复 id、$() 引用不到的 id、遗留 console.log" onclick="wbLint()">代码检测</button>
@@ -5800,7 +5764,6 @@ const bestPlace = (list, q) => {
   <div id="wb-main">
     <div id="wb-left"><div id="wb-editor"></div></div>
     <div id="wb-right">
-      <div id="wb-local-error" class="wb-local-error" role="status" aria-live="polite" hidden><span id="wb-local-error-summary"></span></div>
     <div class="wb-rhead">
         <button class="wb-tab on" type="button" data-wbtab="prev">实时预览</button>
         <button class="wb-tab" type="button" data-wbtab="run">运行结果</button>
@@ -5809,7 +5772,6 @@ const bestPlace = (list, q) => {
       </div>
       <iframe id="wb-preview" class="wb-pane on" title="实时预览" sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads"></iframe>
       <div id="wb-res" class="wb-pane"></div>
-      <iframe id="wb-runframe" class="wb-pane" title="运行结果"></iframe>
     </div>
   </div>
   <div id="wb-term">
@@ -5817,30 +5779,12 @@ const bestPlace = (list, q) => {
       <div id="wb-history" aria-label="历史运行日志"></div>
       <div class="wb-logbox"><div class="wb-logtitle">Pages 前端日志 · <a id="wb-pages-run-link" href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/45809262138" target="_blank" rel="noopener">打开 Pages Actions Run</a></div><pre id="wb-front-log"></pre></div>
       <div class="wb-logbox"><div class="wb-logtitle">Worker 后端日志 · <a id="wb-worker-run-link" href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/45809265485" target="_blank" rel="noopener">打开 Worker Actions Run</a></div><pre id="wb-back-log"></pre></div>
-      <div class="wb-logbox" id="wb-local-logbox" hidden><div class="wb-logtitle">本地任务预览 · WebContainer</div><pre id="wb-local-log"></pre></div>
     </details>
-    <section id="wb-terminal" aria-label="交互式 WebContainer 终端">
-      <div class="wb-terminal-head"><span>终端</span><span class="wb-terminal-hint" id="wb-terminal-status" role="status" aria-live="polite">等待启动</span><span class="sp"></span>
-        <button type="button" id="wb-terminal-layout" class="wb-touch-btn" aria-label="切换终端全屏" aria-pressed="false">全屏</button>
+    <section id="wb-terminal" aria-label="Pages 与 Worker 运行日志">
+      <div class="wb-terminal-head"><span>运行日志</span><span class="wb-terminal-hint" id="wb-terminal-status" role="status" aria-live="polite">日志面板就绪</span><span class="sp"></span>
+        <button type="button" id="wb-terminal-layout" class="wb-touch-btn" aria-label="切换日志全屏" aria-pressed="false">全屏</button>
       </div>
-      <div id="wb-xterm" role="region" aria-label="终端内容"></div>
-      <div class="wb-terminal-command">
-        <label class="wb-sr-only" for="wb-terminal-input">输入终端命令</label>
-        <input id="wb-terminal-input" type="text" enterkeyhint="send" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="输入命令，例如 npm run dev">
-        <button type="button" id="wb-terminal-send" class="wb-touch-btn wb-send-btn" aria-label="发送命令">发送</button>
-      </div>
-      <div class="wb-terminal-tools" role="toolbar" aria-label="终端特殊按键">
-        <button type="button" class="wb-touch-btn" data-terminal-key="escape">ESC</button>
-        <button type="button" class="wb-touch-btn" data-terminal-key="tab">TAB</button>
-        <button type="button" class="wb-touch-btn" data-terminal-key="ctrl">CTRL</button>
-        <button type="button" class="wb-touch-btn" data-terminal-key="up" aria-label="方向上">↑</button>
-        <button type="button" class="wb-touch-btn" data-terminal-key="down" aria-label="方向下">↓</button>
-        <button type="button" class="wb-touch-btn" data-terminal-key="left" aria-label="方向左">←</button>
-        <button type="button" class="wb-touch-btn" data-terminal-key="right" aria-label="方向右">→</button>
-        <button type="button" class="wb-touch-btn" data-terminal-key="ctrl-c">CTRL+C</button>
-        <button type="button" class="wb-touch-btn" data-terminal-key="ctrl-d">CTRL+D</button>
-        <button type="button" class="wb-touch-btn" data-terminal-key="clear">清屏</button>
-      </div>
+      <pre id="wb-terminal-output" role="log" aria-live="polite">等待 Pages / Worker 运行日志…</pre>
     </section>
   </div>
 </div>
@@ -5856,9 +5800,20 @@ const MONACO_BASES = [
   "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min",
   "https://unpkg.com/monaco-editor@0.52.2/min"
 ];
-const WC_MODULES = ["https://esm.sh/@webcontainer/api@1", "https://cdn.jsdelivr.net/npm/@webcontainer/api@1/+esm"];
-const LOCAL_TEXT_EXT = /\.(html?|css|js|mjs|cjs|json|toml|md|txt|svg|ts|tsx|jsx|yml|yaml|xml|env|gitignore|npmrc)$/i;
 const g = id => document.getElementById(id);
+function syncWorkbenchViewport() {
+  const viewport = window.visualViewport;
+  const height = viewport ? viewport.height : window.innerHeight;
+  const top = viewport ? viewport.offsetTop : 0;
+  document.documentElement.style.setProperty("--wb-visual-height", Math.max(240, height) + "px");
+  document.documentElement.style.setProperty("--wb-visual-top", Math.max(0, top) + "px");
+}
+syncWorkbenchViewport();
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", syncWorkbenchViewport);
+  window.visualViewport.addEventListener("scroll", syncWorkbenchViewport);
+}
+window.addEventListener("resize", syncWorkbenchViewport);
 
 /*wb-pure-start*/
 const ALIAS = {
@@ -5923,8 +5878,6 @@ function parseRpc(ct, txt, id) {
 /*wb-pure-end*/
 /* ---------------- 状态 / 小工具 ---------------- */
 let ed = null, inited = false, dirty = false, curSha = null, prevTimer = null, srcLabel = "";
-let localWc = null, localWcModule = null, localWcRunning = false, localWcProcess = null, localWcReady = null, localWcPromise = null;
-let terminalInstance=null, terminalProcess=null, terminalWriter=null, terminalFit=null, terminalCtrlPending=false, terminalHistory=[], terminalHistoryIndex=0, terminalInitialized=false;
 function say(t, warn) { const el = g("wb-state"); if (!el) return; el.textContent = t || ""; el.className = warn ? "warn" : ""; el.title = t || ""; }
 function note(t) { try { if (typeof toast === "function") toast(t); } catch (_) {} }
 function withTimeout(p, ms, what) { let to; return Promise.race([p, new Promise((_, no) => { to = setTimeout(() => no(new Error(what + " 超时")), ms); })]).finally(() => clearTimeout(to)); }
@@ -6088,12 +6041,12 @@ async function initEditor() {
   const box = g("wb-editor"); let cbs = [];
   try {
     const monaco = await loadMonaco();
-    const m = monaco.editor.create(box, {value: "", language: "html", theme: "vs-dark", automaticLayout: true, minimap: {enabled: false}, fontSize: 12, tabSize: 2, scrollBeyondLastLine: false, wordWrap: "off"});
+    const m = monaco.editor.create(box, {value: "", language: "html", theme: "vs-dark", automaticLayout: true, minimap: {enabled: false}, fontSize: 12, tabSize: 2, scrollBeyondLastLine: false, wordWrap: "on", wrappingStrategy: "advanced", scrollbar: {horizontal: "hidden"}});
     m.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save());
     m.onDidChangeModelContent(() => cbs.forEach(f => f()));
     ed = {get: () => m.getValue(), set: v => m.setValue(v), revealLine: line => { m.revealLineInCenter(line); m.setPosition({lineNumber: line, column: 1}); m.focus(); }, on: f => cbs.push(f), kind: "monaco"};
   } catch (e) {
-    const ta = document.createElement("textarea"); ta.spellcheck = false; box.innerHTML = ""; box.appendChild(ta);
+    const ta = document.createElement("textarea"); ta.spellcheck = false; ta.wrap = "soft"; ta.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;"; box.innerHTML = ""; box.appendChild(ta);
     ta.addEventListener("input", () => cbs.forEach(f => f()));
     ta.addEventListener("keydown", ev => { if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); save(); } });
     ed = {get: () => ta.value, set: v => { ta.value = v; }, revealLine: line => { const rows = ta.value.split("\n"); const start = rows.slice(0, Math.max(0, line - 1)).reduce((n, row) => n + row.length + 1, 0); ta.focus(); ta.setSelectionRange(start, start + (rows[line - 1] || "").length); ta.scrollTop = Math.max(0, (line - 1) * 18); }, on: f => cbs.push(f), kind: "textarea"};
@@ -6113,214 +6066,12 @@ function srcdocOf(code) {   // 复用主页面预览用的 ART_PROBE（报错回
 function renderPreview() { if (!ed) return; g("wb-preview").srcdoc = srcdocOf(ed.get()); }
 function showTab(which) {
   document.querySelectorAll("#wb .wb-tab").forEach(b => b.classList.toggle("on", b.dataset.wbtab === which));
-  const fr = g("wb-runframe"), res = g("wb-res");
+  const res = g("wb-res");
   g("wb-preview").classList.toggle("on", which === "prev");
-  const frameMode = which === "run" && fr.dataset.live === "1";
-  fr.classList.toggle("on", frameMode); res.classList.toggle("on", which === "run" && !frameMode);
+  res.classList.toggle("on", which === "run");
 }
-async function initInteractiveTerminal(container) {
-  if(terminalInitialized&&terminalInstance)return;
-  const status=g("wb-terminal-status"),host=g("wb-xterm");
-  if(!host)throw new Error("终端界面未找到");
-  if(!window.Terminal)throw new Error("本地 xterm.js 未加载：请检查 ./vendor/xterm.js");
-  terminalInstance=new window.Terminal({cursorBlink:true,convertEol:true,scrollback:5000,fontSize:12,lineHeight:1.35,fontFamily:"ui-monospace,SFMono-Regular,Menlo,Consolas,monospace",theme:{background:"#07140d",foreground:"#d8ecd9",cursor:"#a9d6b1",selectionBackground:"#31543d"},allowProposedApi:false});
-  terminalInstance.open(host);
-  const fit=()=>{
-    try{
-      const canvas=document.createElement("canvas"),ctx=canvas.getContext("2d");
-      ctx.font='12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
-      const cellWidth=Math.max(1,ctx.measureText("W").width);
-      const cols=Math.max(2,Math.floor(Math.max(0,host.clientWidth-24)/cellWidth));
-      const rows=Math.max(2,Math.floor(Math.max(0,host.clientHeight-16)/(12*1.35)));
-      if(cols!==terminalInstance.cols||rows!==terminalInstance.rows)terminalInstance.resize(cols,rows);
-      if(terminalProcess&&terminalInstance.cols&&terminalInstance.rows)terminalProcess.resize({cols:terminalInstance.cols,rows:terminalInstance.rows});
-    }catch(_){}
-  };
-  terminalFit={fit};
-  requestAnimationFrame(fit);
-  if(window.visualViewport)window.visualViewport.addEventListener("resize",()=>setTimeout(fit,80));
-  window.addEventListener("resize",fit);
-  const shell=await container.spawn("jsh",[],{terminal:{cols:terminalInstance.cols||80,rows:terminalInstance.rows||24}});
-  terminalProcess=shell;terminalWriter=shell.input.getWriter();
-  shell.output.pipeTo(new WritableStream({write(chunk){terminalInstance.write(chunk);}})).catch(error=>{if(status)status.textContent="终端输出已结束";});
-  terminalInstance.onData(data=>{
-    if(!terminalWriter)return;
-    if(terminalCtrlPending&&data.length===1){terminalWriter.write(String.fromCharCode(data.toUpperCase().charCodeAt(0)&31)).catch(()=>{});terminalCtrlPending=false;const b=document.querySelector('[data-terminal-key="ctrl"]');if(b){b.setAttribute("aria-pressed","false");b.textContent="CTRL";}return;}
-    terminalWriter.write(data).catch(()=>{});
-  });
-  terminalInstance.onResize(({cols,rows})=>{try{terminalProcess&&terminalProcess.resize({cols,rows});}catch(_){}});
-  terminalHistory=[];terminalHistoryIndex=0;terminalInitialized=true;
-  if(status)status.textContent="Shell 已就绪";
-  terminalInstance.focus();
-}
-function terminalWrite(value){if(!terminalWriter){say("交互式终端尚未启动，请先启动本地预览",true);return false;}terminalWriter.write(value).catch(e=>say("终端输入失败："+e.message,true));return true;}
-function sendTerminalCommand(){
-  const input=g("wb-terminal-input"),value=input&&input.value.trim();if(!value)return;
-  if(!terminalWriter){say("终端尚未就绪，请先启动 WebContainer",true);return;}
-  terminalHistory.unshift(value);terminalHistory=terminalHistory.slice(0,100);terminalHistoryIndex=0;
-  terminalWrite(value+"\\r");input.value="";terminalInstance&&terminalInstance.focus();
-}
-function terminalKey(key){
-  const seq={escape:"\\x1b",tab:"\\t",up:"\\x1b[A",down:"\\x1b[B",left:"\\x1b[D",right:"\\x1b[C","ctrl-c":"\\x03","ctrl-d":"\\x04",clear:"\\x0c"}[key];
-  if(key==="ctrl"){terminalCtrlPending=!terminalCtrlPending;const b=document.querySelector('[data-terminal-key="ctrl"]');if(b){b.setAttribute("aria-pressed",String(terminalCtrlPending));b.textContent=terminalCtrlPending?"CTRL ✓":"CTRL";}return;}
-  if(terminalCtrlPending&&seq&&seq.length===1){const code=seq.charCodeAt(0);terminalWrite(String.fromCharCode(code&31));terminalCtrlPending=false;const b=document.querySelector('[data-terminal-key="ctrl"]');if(b){b.setAttribute("aria-pressed","false");b.textContent="CTRL";}return;}
-  if(key==="clear"){terminalInstance&&terminalInstance.clear();terminalWrite(seq);return;}
-  if(seq)terminalWrite(seq);
-}
-function localLog(message) {
-  const line=String(message||"");
-  const box=g("wb-local-logbox"), pre=g("wb-local-log");
-  if(box) box.hidden=false;
-  if(pre){pre.textContent += line + "\\n";pre.scrollTop=pre.scrollHeight;}
-  const terminal=g("wb-terminal-output");
-  if(terminal){if(terminal.textContent==="等待本地任务输出…")terminal.textContent="";terminal.textContent += line + "\\n";terminal.scrollTop=terminal.scrollHeight;}
-  const logs=g("wb-runlogs"); if(logs) logs.open=false;
-}
-function localTree(files) {
-  const root={};
-  Object.keys(files).forEach(path=>{
-    const parts=path.split("/").filter(Boolean);let cur=root;
-    parts.forEach((part,i)=>{
-      if(i===parts.length-1)cur[part]={file:{contents:files[path]}};
-      else cur=(cur[part]=cur[part]||{directory:{}}).directory;
-    });
-  });
-  return root;
-}
-async function localFrontendFiles(notes) {
-  const paths=[],seen=new Set();
-  async function walk(path,depth){
-    let result;try{result=await mcpGet(path);}catch(e){notes.push("目录读取失败 "+path+"："+e.message);return false;}
-    if(!result.list)return false;
-    for(const entry of result.list){
-      const name=entry.name||String(entry.path||"").split("/").pop();if(!name)continue;
-      const full=entry.path||(path+"/"+name),type=String(entry.type||"").toLowerCase();
-      if(/dir|tree/.test(type)){if(depth<2)await walk(full,depth+1);continue;}
-      if(!seen.has(full)){seen.add(full);paths.push({path:full,size:entry.size});}
-    }
-    return true;
-  }
-  if(!(await walk(DIR,0))){notes.push("MCP 未返回 frontend 目录列表，仅加载 index.html");return [{path:FILE}];}
-  return paths;
-}
-async function collectLocalFiles(notes) {
-  const files={};let count=0;
-  for(const entry of await localFrontendFiles(notes)){
-    const rel=entry.path.replace(new RegExp("^"+DIR+"/"),"");
-    if(entry.path===FILE){files[rel]=ed.get();continue;}
-    if(!LOCAL_TEXT_EXT.test(rel)){notes.push("跳过 "+rel+"（非文本文件）");continue;}
-    if(entry.size&&entry.size>600000){notes.push("跳过 "+rel+"（超过 600KB）");continue;}
-    if(++count>40){notes.push("文件超过 40 个，剩余文件未加载");break;}
-    try{const item=await mcpGet(entry.path);if(typeof item.text==="string")files[rel]=item.text;else notes.push("跳过 "+rel+"（无文本内容）");}
-    catch(e){notes.push("跳过 "+rel+"："+e.message);}
-  }
-  if(!files["index.html"])files["index.html"]=ed.get();
-  return files;
-}
-async function ensureLocalWebContainer() {
-  if(localWc)return localWc;
-  if(!window.crossOriginIsolated)throw new Error("当前页面未启用跨源隔离（crossOriginIsolated=false）。WebContainer 需要 COOP: same-origin 与 COEP: credentialless（或 require-corp）响应头。");
-  localLog("加载 WebContainer API …");
-  let last;
-  for(const url of WC_MODULES){try{localWcModule=await withTimeout(import(url),25000,"加载 WebContainer API");break;}catch(e){last=e;}}
-  if(!localWcModule||!localWcModule.WebContainer)throw new Error("WebContainer API 加载失败："+(last&&last.message||"CDN 不可用"));
-  let coep="";
-  try{const response=await fetch(location.href.split("#")[0],{method:"HEAD",cache:"no-store"});coep=(response.headers.get("cross-origin-embedder-policy")||"").split(";")[0].trim();}catch(_){}
-  localLog("启动浏览器本地容器 …");
-  localWc=await withTimeout(localWcModule.WebContainer.boot(coep==="credentialless"?{coep:"credentialless"}:{}),60000,"WebContainer boot");
-  localWc.on("server-ready",(port,url)=>{
-    const frame=g("wb-runframe");if(frame&&frame.dataset.localFallback!=="1"){frame.dataset.live="1";frame.dataset.localReady="0";frame.dataset.localFallback="0";const wb=g("wb");if(wb)wb.classList.add("wb-local-preview-mode");const button=g("wb-local-preview");if(button)button.textContent="返回开发台";frame.onload=()=>{if(frame.dataset.localFallback==="1")return;clearTimeout(localPreviewGuard);localPreviewGuard=setTimeout(()=>{if(frame.dataset.localReady!=="1"&&frame.dataset.localFallback!=="1")fallbackToPagesPreview(frame);},5000);};frame.src=url;showTab("run");clearTimeout(localPreviewGuard);localPreviewGuard=setTimeout(()=>{if(frame.dataset.localReady!=="1"&&frame.dataset.localFallback!=="1")fallbackToPagesPreview(frame);},15000);}
-    localLog("本地预览服务已就绪：端口 "+port);
-    if(localWcReady){localWcReady(url);localWcReady=null;}
-  });
-  localWc.on("error",error=>localLog("WebContainer 错误："+(error&&error.message||error)));
-  return localWc;
-}
-async function runLocalTaskPreview(fileOverrides) {
-  if(localWcPromise)return localWcPromise;
-  if(localWcRunning)return;
-  localWcPromise=(async()=>{
-    localWcRunning=true;showTab("run");g("wb-runlogs").open=false;
-    clearTimeout(localPreviewGuard);const frame=g("wb-runframe");if(frame){frame.dataset.live="0";frame.dataset.localReady="0";frame.dataset.localFallback="0";frame.removeAttribute("src");}
-    g("wb-local-log").textContent="";g("wb-local-logbox").hidden=false;const terminalOutput=g("wb-terminal-output");if(terminalOutput)terminalOutput.replaceChildren();
-    say("");
-    try{
-      localLog("读取任务文件 …");
-      const notes=[],files=await collectLocalFiles(notes);
-      if(fileOverrides&&typeof fileOverrides==="object"){
-        Object.entries(fileOverrides).forEach(([name,content])=>{
-          const path=String(name).split(String.fromCharCode(92)).join("/").split("/").filter(Boolean).join("/");
-          if(!path||path.split("/").some(part=>part===".."||part==="."))throw new Error("本地预览文件路径不安全："+name);
-          if(typeof content!=="string")throw new Error("本地预览文件必须是文本："+name);
-          files[path]=content;
-        });
-      }
-      if(!files["package.json"])files["package.json"]=JSON.stringify({name:"local-task-preview",private:true,scripts:{dev:"vite --host 0.0.0.0"},devDependencies:{vite:"^6.0.0"}},null,2);
-      if(files["index.html"]){
-        const probe='<script>(function(){var sent=false;function check(){if(sent||!document.body)return;var body=document.body,root=body.querySelector("#root,#app,[data-reactroot]");var visible=!!(body.innerText&&body.innerText.trim())||!!body.querySelector("img,svg,canvas,video,iframe")||!!(root&&root.children&&root.children.length);if(visible){sent=true;parent.postMessage({wbLocalPreviewReady:true},"*");}}document.addEventListener("DOMContentLoaded",check);var started=Date.now(),timer=setInterval(function(){check();if(sent||Date.now()-started>4500)clearInterval(timer);},100);})();<\/script>';
-        files["index.html"]=files["index.html"].replace(/<\/body\s*>/i,probe+"</body>");
-        if(!/<script[^>]*>.*wbLocalPreviewReady/s.test(files["index.html"]))files["index.html"]+="\n"+probe;
-      }
-      const container=await ensureLocalWebContainer();
-      await container.mount(localTree(files));
-      await initInteractiveTerminal(container);
-      localLog("已挂载 "+Object.keys(files).length+" 个文件："+Object.keys(files).join("、"));
-      notes.forEach(note=>localLog("提示："+note));
-      localLog("$ npm install");
-      const install=await container.spawn("npm",["install","--no-audit","--no-fund"]);
-      install.output.pipeTo(new WritableStream({write(chunk){localLog(String(chunk).trimEnd());}})).catch(()=>{});
-      const installCode=await withTimeout(install.exit,180000,"npm install");
-      if(installCode!==0)throw new Error("npm install 失败，退出码 "+installCode);
-      let pkg={};try{pkg=JSON.parse(files["package.json"]||"{}");}catch(_){}
-      if(!pkg.scripts||!pkg.scripts.dev)throw new Error("package.json 缺少 dev 脚本");
-      localLog("$ npm run dev -- --host 0.0.0.0");
-      const ready=new Promise(resolve=>{localWcReady=resolve;});
-      localWcProcess=await container.spawn("npm",["run","dev","--","--host","0.0.0.0"]);
-      localWcProcess.output.pipeTo(new WritableStream({write(chunk){localLog(String(chunk).trimEnd());}})).catch(()=>{});
-      let timeoutId;
-      const serverResult=await Promise.race([
-        ready.then(url=>({url})),
-        localWcProcess.exit.then(code=>({exitCode:code})),
-        new Promise(resolve=>{timeoutId=setTimeout(()=>resolve({timeout:true}),30000);})
-      ]);
-      clearTimeout(timeoutId);
-      localWcReady=null;
-      if(!serverResult.url){
-        if(serverResult.timeout)throw new Error("npm run dev 失败了：30 秒内没有监听端口");
-        throw new Error("npm run dev 失败了：进程退出，退出码 "+serverResult.exitCode);
-      }
-      if(g("wb-runframe").dataset.localFallback!=="1")say("本地预览服务已启动");
-      return serverResult.url;
-    }catch(error){
-      localLog("本地预览失败："+(error&&error.message||error));
-      const frame=g("wb-runframe");
-      if(frame&&frame.dataset.localFallback!=="1"){
-        say("");frame.dataset.live="0";frame.removeAttribute("src");
-        fallbackToPagesPreview(frame);
-      }
-      throw error;
-    }finally{localWcRunning=false;localWcPromise=null;}
-  })();
-  return localWcPromise;
-}
-let localPreviewGuard=null;
-function fallbackToPagesPreview(frame){
-  if(frame&&frame.dataset.localFallback==="1")return;
-  clearTimeout(localPreviewGuard);
-  if(frame){frame.dataset.localFallback="1";frame.dataset.live="0";frame.dataset.localReady="0";frame.onload=null;frame.removeAttribute("src");frame.style.display="none";}
-  const wb=g("wb");if(wb){wb.classList.remove("wb-local-preview-mode");wb.classList.add("wb-local-preview-fallback");}
-  const button=g("wb-local-preview");if(button)button.textContent="本地预览";
-  const alert=g("wb-local-error");if(alert)alert.hidden=true;
-  say("");
-}
-window.addEventListener("message",event=>{
-  const frame=g("wb-runframe");
-  if(!frame||event.source!==frame.contentWindow||!event.data||event.data.wbLocalPreviewReady!==true||frame.dataset.localFallback==="1")return;
-  frame.dataset.localReady="1";
-  clearTimeout(localPreviewGuard);
-});
 function card(title, body, bad) {
-  const res = g("wb-res"); g("wb-runframe").dataset.live = "0"; res.innerHTML = "";
+  const res = g("wb-res"); res.innerHTML = "";
   const h = document.createElement("h4"); h.textContent = title; if (bad) h.className = "bad";
   const p = document.createElement("pre"); p.textContent = body || ""; res.append(h, p); showTab("run");
 }
@@ -6505,7 +6256,7 @@ function renderVerifyErrorLocations(lines, headSha) {
 }
 function renderVerifyResult(d) {
   const res = g("wb-res"); if (!res) return;
-  g("wb-runframe").dataset.live = "0"; res.innerHTML = "";
+  res.innerHTML = "";
   const state = d.state || (d.status === "completed" ? (d.conclusion === "success" ? "success" : "failure") : "running");
   const noun = d.deploy ? "部署" : "验证";
   const title = state === "success" ? noun + "完成" : state === "failure" ? noun + "失败" : state === "queued" ? noun + "排队中" : noun + "运行中";
@@ -6513,6 +6264,7 @@ function renderVerifyResult(d) {
   renderChain(d);
   const h = document.createElement("h4"); h.textContent = title; h.style.color = state === "success" ? "#247a43" : state === "failure" ? "#b33b32" : "#8b6b16"; res.appendChild(h);
   if (state === "failure") { const locations = renderVerifyErrorLocations(d.error_lines, d.head_sha); if (locations) res.appendChild(locations); }
+  const terminalOutput = g("wb-terminal-output"); if (terminalOutput && Array.isArray(d.error_lines) && d.error_lines.length) terminalOutput.textContent = d.error_lines.join("\n");
   const p = document.createElement("pre"); p.textContent = state === "failure" ? ((d.failed_step ? "失败步骤：" + d.failed_step + "\n\n" : "") + ((d.error_lines || []).join("\n") || "GitHub 没有返回可提取的报错行。")) : "checkout ✓\nnpm install ✓\nnpm test " + (state === "success" ? "✓" : "…") + "\nnpm run build " + (state === "success" ? "✓" : "…"); res.appendChild(p);
   const links = document.createElement("div");
   const actions = verifyLink("打开 Actions 运行记录", d.actions_url || d.run_url); if (actions) links.appendChild(actions);
@@ -6624,7 +6376,7 @@ function renderChain(d) {
 async function runBoth() {
   const btn = g("wb-both"); if (!authToken) { toast("请先登录"); return; }
   if (btn) { btn.disabled = true; btn.textContent = "启动中…"; }
-  g("wb-runlogs").open = false; g("wb-front-log").textContent = ""; g("wb-back-log").textContent = "";
+  g("wb-runlogs").open = false; g("wb-front-log").textContent = ""; g("wb-back-log").textContent = ""; g("wb-terminal-output").textContent = "正在等待 Pages / Worker 日志…"; g("wb-terminal-status").textContent = "正在连接运行记录";
   showTab("run"); renderVerifyResult({ state: "running", submitted: false, local: true });
   renderChain({ started_at: new Date().toISOString(), state: "running", runs: [] });
   say("正在触发 GitHub Actions：前端 build + Worker deploy 并行跑 …");
@@ -6637,6 +6389,13 @@ async function runBoth() {
     const fl = (front.logs || []).join("\n"), bl = (back.logs || []).join("\n");
     g("wb-front-log").textContent = fl || (front.run_url ? "Pages build / deploy 排队中… " + front.run_url : "等待 GitHub 返回 Pages 部署日志…");
     g("wb-back-log").textContent = bl || (back.run_url ? "Worker deploy 排队中… " + back.run_url : "等待 GitHub 返回 Worker deploy 日志…");
+    const terminalOutput = g("wb-terminal-output");
+    if (terminalOutput) {
+      terminalOutput.textContent = ["[Pages]", fl || g("wb-front-log").textContent, "", "[Worker]", bl || g("wb-back-log").textContent].join("\n");
+      terminalOutput.scrollTop = terminalOutput.scrollHeight;
+    }
+    const terminalStatus = g("wb-terminal-status");
+    if (terminalStatus) terminalStatus.textContent = "Pages / Worker 日志同步中";
     const pagesLink=g("wb-pages-run-link"), workerLink=g("wb-worker-run-link");
     if(pagesLink && front.run_id) pagesLink.href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/"+encodeURIComponent(front.run_id);
     if(workerLink && back.run_id) workerLink.href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/"+encodeURIComponent(back.run_id);
@@ -6691,56 +6450,33 @@ async function openWb() {
 }
 function closeWb() { document.body.classList.remove("wb-open"); g("wb").setAttribute("aria-hidden", "true"); amdOff(); }
 g("wb-open").addEventListener("click", openWb);
-async function openLocalTaskPreview(options) {
-  await openWb();
-  const previewFrame=g("wb-runframe");
-  if(previewFrame&&previewFrame.dataset.localFallback==="1")return;
-  if(!ed)throw new Error("编辑器尚未就绪，无法准备本地预览");
-  return runLocalTaskPreview(options&&options.files);
+function openLocalTaskPreview() {
+  if (!ed) throw new Error("编辑器尚未就绪，无法打开预览");
+  const previewWindow = window.open("about:blank", "_blank");
+  if (!previewWindow) { say("浏览器拦截了预览新窗口，请允许弹出窗口", true); return false; }
+  const doc = previewWindow.document;
+  doc.open();
+  doc.write("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>OpenManus 独立预览</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{display:block;width:100%;height:100%;border:0}</style></head><body><iframe title='当前代码预览' sandbox='allow-scripts allow-forms allow-modals allow-popups allow-downloads'></iframe></body></html>");
+  doc.close();
+  const frame = doc.querySelector("iframe");
+  frame.srcdoc = srcdocOf(ed.get());
+  return true;
 }
-window.openLocalTaskPreview=openLocalTaskPreview;
-window.addEventListener("open-local-task-preview",event=>{void openLocalTaskPreview(event.detail||{}).catch(()=>{});});
+window.openLocalTaskPreview = openLocalTaskPreview;
+window.addEventListener("open-local-task-preview", () => { try { openLocalTaskPreview(); } catch (error) { say(error.message, true); } });});
 g("wb-close").addEventListener("click", closeWb);
 g("wb-save").addEventListener("click", save);
 g("wb-both").addEventListener("click", runBoth);
-g("wb-local-preview").addEventListener("click", async () => {
-  const button = g("wb-local-preview"), wb = g("wb");
-  if (wb.classList.contains("wb-local-preview-mode")) {
-    wb.classList.remove("wb-local-preview-mode");
-    button.textContent = "本地预览";
-    return;
-  }
-  wb.classList.remove("wb-local-preview-fallback");
-  const previousFrame=g("wb-runframe");if(previousFrame){previousFrame.style.display="";previousFrame.dataset.localFallback="0";}
-  button.disabled = true;
-  const alert = g("wb-local-error");
-  if (alert) alert.hidden = true;
-  say("");
-  const startupFrame=g("wb-runframe");
-  if(startupFrame){startupFrame.dataset.localFallback="0";startupFrame.dataset.localReady="0";}
-  try { await openLocalTaskPreview(); }
-  catch (_) {
-    const frame=g("wb-runframe");
-    if(frame&&frame.dataset.localFallback!=="1")fallbackToPagesPreview(frame);
-  }
-  finally { button.disabled = false; }
+g("wb-local-preview").addEventListener("click", () => {
+  try { openLocalTaskPreview(); } catch (error) { say(error.message || String(error), true); }
 });
 g("wb-reload").addEventListener("click", () => { if (!ed) return; if (dirty && !confirm("重新读取会丢掉未保存的修改，继续？")) return; loadFile(); });
 g("wb-prev-refresh").addEventListener("click", renderPreview);
-g("wb-terminal-send").addEventListener("click",sendTerminalCommand);
-g("wb-terminal-input").addEventListener("keydown",event=>{
-  if(event.key==="Enter"){event.preventDefault();sendTerminalCommand();}
-  else if(event.key==="ArrowUp"||event.key==="ArrowDown"){
-    if(!terminalHistory.length)return;event.preventDefault();
-    terminalHistoryIndex=Math.max(0,Math.min(terminalHistory.length,terminalHistoryIndex+(event.key==="ArrowUp"?1:-1)));
-    event.currentTarget.value=terminalHistoryIndex===0?"":(terminalHistory[terminalHistoryIndex-1]||"");
-  }
-});
-document.querySelectorAll("[data-terminal-key]").forEach(button=>button.addEventListener("click",()=>terminalKey(button.dataset.terminalKey)));
 g("wb-terminal-layout").addEventListener("click",()=>{
   const terminal=g("wb-terminal"),button=g("wb-terminal-layout"),full=terminal.classList.toggle("wb-terminal-fullscreen");
-  button.textContent=full?"分屏":"全屏";button.setAttribute("aria-label",full?"切换终端分屏":"切换终端全屏");button.setAttribute("aria-pressed",String(full));
-  document.body.classList.toggle("wb-terminal-expanded",full);setTimeout(()=>{try{terminalFit&&terminalFit.fit();terminalInstance&&terminalInstance.focus();}catch(_){}},100);
+  button.textContent=full?"分屏":"全屏";
+  button.setAttribute("aria-label",full?"切换日志分屏":"切换日志全屏");
+  button.setAttribute("aria-pressed",String(full));
 });
 
 document.querySelectorAll("#wb .wb-tab").forEach(b => b.addEventListener("click", () => showTab(b.dataset.wbtab)));
