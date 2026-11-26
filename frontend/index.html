@@ -4246,37 +4246,85 @@ function splitParts(md, lim = EXP_PART_CP) {
   new MutationObserver(pillText).observe(inp, { attributes: true });
   setInterval(pillText, 1500);
 
-  /* ---- 语音输入 ---- */
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let rec = null, listening = false, base = "", finalText = "", wasFolded = false;
+  /* ---- Safari 兼容语音输入：MediaRecorder 录音 + 网关转写 ---- */
+  let recorder = null, voiceStream = null, voiceChunks = [], voiceStarting = false, voiceBusy = false;
   const mics = [$$("mic"), $$("pill-mic")].filter(Boolean);
-  const setRec = (on) => { listening = on; mics.forEach((m) => m.classList.toggle("rec", on)); inp.placeholder = on ? "正在听…" : "写回复…"; };
-  const put = (txt) => { inp.value = base + txt; inp.dispatchEvent(new Event("input", { bubbles: true })); pillText(); };
-  function startRec() {
-    if (listening) return true;
-    if (!SR) { toast("这个浏览器不支持语音输入，可以用键盘上的麦克风"); return false; }
-    try {
-      rec = new SR(); rec.lang = "zh-CN"; rec.continuous = true; rec.interimResults = true;
-      base = inp.value && !/\s$/.test(inp.value) ? inp.value + " " : inp.value; finalText = "";
-      rec.onresult = (ev) => { let interim = ""; for (let i = ev.resultIndex; i < ev.results.length; i++) { const r = ev.results[i]; if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript; } put(finalText + interim); };
-      rec.onerror = (ev) => { const m = { "not-allowed": "没有麦克风权限，请在浏览器设置里允许", "service-not-allowed": "没有麦克风权限，请在浏览器设置里允许", "no-speech": "", "aborted": "", "audio-capture": "没有检测到麦克风", "network": "语音识别需要联网" }[ev.error]; if (m == null) toast("语音识别出错：" + ev.error); else if (m) toast(m); };
-      rec.onend = () => { setRec(false); rec = null; };
-      rec.start(); setRec(true); return true;
-    } catch (e) { setRec(false); rec = null; toast("语音输入启动失败：" + e.message); return false; }
+  const setVoiceState = (state) => {
+    const recording = state === "recording";
+    mics.forEach((m) => {
+      m.classList.toggle("rec", recording);
+      m.title = recording ? "正在录音，点击结束并转文字" : state === "processing" ? "正在识别语音…" : "语音输入：点击开始录音，再点一次结束";
+      m.setAttribute("aria-label", recording ? "结束语音录音" : state === "processing" ? "正在识别语音" : "语音输入");
+    });
+    inp.placeholder = recording ? "正在录音…" : state === "processing" ? "正在识别语音…" : "写回复…";
+  };
+  function releaseVoiceStream() {
+    if (voiceStream) { voiceStream.getTracks().forEach((track) => track.stop()); voiceStream = null; }
   }
-  function stopRec() { try { rec && rec.stop(); } catch (_) {} }
+  async function uploadVoice(blob, mimeType) {
+    const form = new FormData();
+    const ext = /webm/i.test(mimeType) ? "webm" : /wav/i.test(mimeType) ? "wav" : "m4a";
+    form.append("audio", blob, "voice." + ext);
+    const response = await authFetch(GATEWAY + "/api/transcribe", { method: "POST", body: form });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) throw new Error(data.msg || "语音识别失败（HTTP " + response.status + "）");
+    const transcript = String(data.text || "").trim();
+    if (!transcript) throw new Error("没有识别到语音内容，请再试一次");
+    const current = inp.value || "";
+    inp.value = current + (current && !/\s$/.test(current) ? " " : "") + transcript;
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+    pillText();
+  }
+  async function startRec() {
+    if (voiceStarting || voiceBusy) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === "undefined") {
+      toast("当前 Safari 不支持录音，请更新系统或使用键盘麦克风");
+      return;
+    }
+    voiceStarting = true;
+    try {
+      voiceStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      const candidates = ["audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/webm;codecs=opus", "audio/webm"];
+      const mimeType = candidates.find((type) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(type)) || "";
+      recorder = mimeType ? new MediaRecorder(voiceStream, { mimeType }) : new MediaRecorder(voiceStream);
+      voiceChunks = [];
+      recorder.onerror = () => {
+        voiceBusy = false; voiceStarting = false; recorder = null; releaseVoiceStream(); setVoiceState("idle");
+        toast("录音中断，请重新点击麦克风");
+      };
+      recorder.ondataavailable = (event) => { if (event.data && event.data.size) voiceChunks.push(event.data); };
+      recorder.onstop = async () => {
+        const finished = recorder; recorder = null; releaseVoiceStream();
+        const actualType = (finished && finished.mimeType) || mimeType || "audio/mp4";
+        const blob = new Blob(voiceChunks, { type: actualType }); voiceChunks = [];
+        if (!blob.size) { voiceBusy = false; setVoiceState("idle"); toast("没有录到声音，请检查麦克风权限"); return; }
+        setVoiceState("processing");
+        try { await uploadVoice(blob, actualType); }
+        catch (error) { toast(error && error.message ? error.message : "语音识别失败，请重试"); }
+        finally { voiceBusy = false; setVoiceState("idle"); }
+      };
+      recorder.start(250);
+      voiceBusy = true;
+      setVoiceState("recording");
+    } catch (error) {
+      releaseVoiceStream();
+      const denied = error && (error.name === "NotAllowedError" || error.name === "PermissionDeniedError");
+      toast(denied ? "麦克风权限未开启，请在 Safari 设置中允许麦克风访问" : "无法启动录音：" + (error && error.message || "请检查麦克风"));
+    } finally { voiceStarting = false; }
+  }
+  function stopRec() {
+    if (recorder && recorder.state === "recording") {
+      setVoiceState("processing");
+      try { recorder.stop(); } catch (_) { releaseVoiceStream(); recorder = null; voiceBusy = false; setVoiceState("idle"); }
+    }
+  }
   mics.forEach((m) => {
-    let downAt = 0, wasOn = false;
     m.addEventListener("contextmenu", (e) => e.preventDefault());
-    m.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); downAt = Date.now(); wasOn = listening; try { m.setPointerCapture(e.pointerId); } catch (_) {} if (!wasOn) startRec(); });
-    const up = (e) => {
-      if (!downAt) return; const held = Date.now() - downAt; downAt = 0;
-      if (wasOn) stopRec();                 // 正在听：点一下结束
-      else if (held >= 400) stopRec();      // 长按：松开结束
-      /* 短按：保持在听，再点一下结束 */
-    };
-    m.addEventListener("pointerup", up); m.addEventListener("pointercancel", up);
-    m.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); });
+    m.addEventListener("click", (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (recorder && recorder.state === "recording") stopRec();
+      else if (!voiceBusy && !voiceStarting) startRec();
+    });
   });
 
   /* ---- 「＋」面板里放两个开关：模型支持看图 / 联网搜索（原来在输入框下面的小字） ---- */
