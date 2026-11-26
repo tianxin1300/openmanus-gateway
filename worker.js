@@ -726,9 +726,18 @@ function codeVerifyRedact(text) {
     .replace(/Bearer\s+[A-Za-z0-9._\-]{8,}/gi, "Bearer ***");
 }
 function codeVerifyErrorLines(text) {
-  const lines = String(text || "").split(/\r?\n/).map((x) => x.trimEnd()).filter(Boolean);
-  const hit = lines.filter((x) => /(npm ERR!|error|failed|failure|exception|syntaxerror|exit code|✖|✗)/i.test(x));
-  return (hit.length ? hit : lines).slice(-30).map((x) => codeVerifyRedact(x).slice(0, 1000));
+  const lines = String(text || "").split(/\r?\n/).map((x) => x.trimEnd());
+  const errorPattern = /(npm ERR!|error|failed|failure|exception|syntaxerror|exit code|✖|✗)/i;
+  const locationPattern = /(?:^|[\s("' ])(?:\.{0,2}\/)?[\w@.-]+(?:\/[\w@.-]+)*\.(?:[cm]?[jt]sx?|html?|css|json|ya?ml|py|sh)(?::\d+){1,2}\b|File ["'][^"']+["'], line \d+/i;
+  const selected = new Set();
+  lines.forEach((line, index) => {
+    if (!line || (!errorPattern.test(line) && !locationPattern.test(line))) return;
+    for (let n = Math.max(0, index - 2); n <= Math.min(lines.length - 1, index + 2); n++) {
+      if (lines[n]) selected.add(n);
+    }
+  });
+  const indexes = selected.size ? [...selected].sort((a, b) => a - b) : lines.map((_, i) => i);
+  return indexes.slice(-60).map((i) => codeVerifyRedact(lines[i]).slice(0, 1000));
 }
 async function codeVerifyStatus(env, user) {
   const old = env.KV ? await env.KV.get(codeVerifyKey(user), "json") : null;
