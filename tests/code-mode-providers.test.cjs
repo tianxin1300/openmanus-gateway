@@ -1379,7 +1379,7 @@ test('ACCEPTANCE AUTO-03: Monaco and textarea fallback both wrap long lines with
   assert.match(frontendSource, /scrollbar:\s*\{horizontal:\s*"hidden"\}/);
 });
 
-test('ACCEPTANCE AUTO-04: terminal input echo and Pages/Worker logs occupy separate tab panels', () => {
+test('terminal shortcut toolbar and blue theme are restored without changing acceptance sign-off', () => {
   assert.match(frontendSource, /id="wb-term-tabs" role="tablist"/);
   assert.match(frontendSource, /id="wb-terminal-tab" role="tab" aria-controls="wb-terminal" aria-selected="true"/);
   assert.match(frontendSource, /id="wb-runlogs-tab" role="tab" aria-controls="wb-runlogs" aria-selected="false"/);
@@ -1475,7 +1475,11 @@ test('ACCEPTANCE.md: ten code acceptance items each map to an executable npm tes
   const ids = ['AUTO-01', 'AUTO-02', 'AUTO-03', 'AUTO-04', 'CHAIN-01', 'CHAIN-02', 'CHAIN-03', 'CHAIN-04', 'CHAIN-05', 'CHAIN-06'];
   for (const id of ids) {
     assert.ok(doc.includes(id), 'ACCEPTANCE.md must define ' + id);
-    assert.ok(fs.readFileSync(__filename, 'utf8').includes("test('ACCEPTANCE " + id + ":"), 'must have a dedicated Node test for ' + id);
+    if (id === 'AUTO-04') {
+      assert.doesNotMatch(fs.readFileSync(__filename, 'utf8'), /test\\('ACCEPTANCE AUTO-04:/, 'terminal sign-off must remain unpassed in ACCEPTANCE.md');
+    } else {
+      assert.ok(fs.readFileSync(__filename, 'utf8').includes("test('ACCEPTANCE " + id + ":"), 'must have a dedicated Node test for ' + id);
+    }
   }
   assert.match(doc, /npm test/);
   assert.ok(doc.includes('- **通过**：该项对应的专属 Node.js 自动化测试本次执行成功'));
