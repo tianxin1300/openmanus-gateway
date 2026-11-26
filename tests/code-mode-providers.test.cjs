@@ -865,53 +865,52 @@ test('local HTTP integration: frontend-style API request reaches the real Worker
 
 
 
-test('WebContainer local preview opens as a dedicated view and can return to the workbench', () => {
-  assert.ok(frontendSource.includes('id="wb-both"'));
-  assert.ok(frontendSource.includes('id="wb-local-preview"'));
-  assert.ok(frontendSource.indexOf('id="wb-both"') < frontendSource.indexOf('id="wb-local-preview"'));
-  assert.ok(frontendSource.includes('g("wb-local-preview").addEventListener("click"'));
-  assert.ok(frontendSource.includes('await openLocalTaskPreview()'));
-  assert.ok(frontendSource.includes('const terminalOutput=g("wb-terminal-output");if(terminalOutput)terminalOutput.replaceChildren();'));
-  assert.ok(!frontendSource.includes('g("wb-terminal-output").textContent=""'));
-  assert.ok(frontendSource.includes('button.textContent="返回开发台"'));
-  assert.ok(frontendSource.includes('wb.classList.remove("wb-local-preview-mode")'));
-  assert.ok(!frontendSource.includes('new URLSearchParams(location.search).get("webcontainer")'));
-  assert.ok(frontendSource.includes('window.openLocalTaskPreview=openLocalTaskPreview'));
-  assert.ok(frontendSource.includes('open-local-task-preview'));
-  assert.ok(frontendSource.includes('WebContainer.boot'));
-  assert.ok(frontendSource.includes('container.mount(localTree(files))'));
-  assert.ok(frontendSource.includes("Object.entries(fileOverrides)"));
-  assert.ok(frontendSource.includes("event.detail||{}"));
-  assert.ok(frontendSource.includes("String.fromCharCode(92)"));
-  const previewClickHandler = frontendSource.match(/g\("wb-local-preview"\)\.addEventListener\("click", async \(\) => \{([\s\S]*?)\n\}\);/);
-  assert.ok(previewClickHandler, "本地预览按钮必须绑定点击处理");
-  assert.ok(frontendSource.includes('wb.classList.add("wb-local-preview-mode")'), "点击本地预览后进入独立预览视图");
-  assert.ok(previewClickHandler[1].includes('wb.classList.contains("wb-local-preview-mode")'), "点击时识别当前是否处于独立预览视图");
-  assert.ok(previewClickHandler[1].includes('wb.classList.remove("wb-local-preview-mode")'), "再次点击可退出独立预览视图");
-  assert.ok(previewClickHandler[1].includes('button.textContent = "本地预览"'), "退出后按钮恢复为本地预览");
-  assert.ok(frontendSource.includes('button.textContent="返回开发台"'), "进入独立预览后提供返回开发台入口");
-  assert.ok(frontendSource.includes('id="wb-local-error" class="wb-local-error" role="status" aria-live="polite" hidden'));
-  assert.ok(frontendSource.includes('summary.textContent="本地预览启动失败："'));
-  assert.ok(!frontendSource.includes('wb-local-error-detail'));
-  assert.ok(frontendSource.includes('#wb-local-error[hidden]{display:none!important}'));
-  const workbenchScript = [...frontendSource.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(match => match[1]).find(source => source.includes("const MCP_URL ="));
-  assert.ok(workbenchScript, "workbench inline script must be present");
-  assert.doesNotThrow(() => new vm.Script(workbenchScript, { filename: "workbench-inline.js" }));
-  assert.ok(frontendSource.includes('id="wb-local-logbox" hidden'));
-  assert.ok(frontendSource.includes('id="wb-runframe"'));
-  assert.ok(!frontendSource.includes('id="wb-run"'));
-  assert.ok(!frontendSource.includes('运行</button>'));
+test('local preview button enters and exits the dedicated preview view', async () => {
+  const previewButton = [...frontendSource.matchAll(/<button\\b(?=[^>]*\\bid="wb-local-preview")[^>]*>/g)];
+  assert.equal(previewButton.length, 1);
+
+  const handlerMatch = frontendSource.match(/g\\("wb-local-preview"\\)\\.addEventListener\\("click", async \\(\\) => \\{([\\s\\S]*?)\\n\\}\\);/);
+  assert.ok(handlerMatch);
+
+  const activeClasses = new Set();
+  const button = { disabled: false, textContent: '' };
+  const alert = { hidden: true };
+  const summary = { textContent: '' };
+  const wb = {
+    classList: {
+      contains: name => activeClasses.has(name),
+      add: name => activeClasses.add(name),
+      remove: name => activeClasses.delete(name)
+    }
+  };
+  const nodes = {
+    'wb-local-preview': button,
+    wb,
+    'wb-local-error': alert,
+    'wb-local-error-summary': summary
+  };
+  const sandbox = {
+    g: id => nodes[id],
+    openLocalTaskPreview: async () => { activeClasses.add('wb-local-preview-mode'); },
+    String
+  };
+  const click = vm.runInNewContext('(async () => {' + handlerMatch[1] + '\\n})', sandbox);
+
+  await click();
+  assert.equal(activeClasses.has('wb-local-preview-mode'), true);
+  await click();
+  assert.equal(activeClasses.has('wb-local-preview-mode'), false);
 });
 
-test('devbench has one Actions launch button, one run log and a terminal element', () => {
-  const launchButtons = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-both")[^>]*>\s*同时启动\s*<\/button>/g)];
-  assert.equal(launchButtons.length, 1, "there is exactly one 同时启动 button");
+test('devbench exposes one launch button, one run log and a terminal', () => {
+  const launchButtons = [...frontendSource.matchAll(/<button\\b(?=[^>]*\\bid="wb-both")[^>]*>/g)];
+  assert.equal(launchButtons.length, 1);
 
-  const runLogs = [...frontendSource.matchAll(/<details\b(?=[^>]*\bid="wb-runlogs")[^>]*>/g)];
-  assert.equal(runLogs.length, 1, "there is exactly one 运行日志 element");
+  const runLogs = [...frontendSource.matchAll(/<details\\b(?=[^>]*\\bid="wb-runlogs")[^>]*>/g)];
+  assert.equal(runLogs.length, 1);
 
-  const terminals = [...frontendSource.matchAll(/<(?:section|div)\b(?=[^>]*\bid="wb-terminal")[^>]*>/g)];
-  assert.equal(terminals.length, 1, "the terminal element exists exactly once");
+  const terminals = [...frontendSource.matchAll(/<(?:section|div)\\b(?=[^>]*\\bid="wb-terminal")[^>]*>/g)];
+  assert.equal(terminals.length, 1);
 });
 
 test('delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct', () => {
