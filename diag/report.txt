@@ -1,6 +1,8 @@
-诊断时间(UTC): 2026-11-26T12:48:22+00:00
+诊断时间(UTC): 2026-11-26T12:48:39+00:00
 
 == 最近 12 个提交 ==
+e2180df fix: load xterm stylesheet and wire touch ctrl modifier
+743d449 diag: refresh current project report
 fe318e6 test: cover touch-first interactive terminal controls
 da62e65 feat: add touch-first interactive WebContainer terminal
 14c7560 diag: refresh current project report
@@ -11,8 +13,6 @@ ae878c4 fix: add dedicated WebContainer terminal output panel
 38e4a5a diag: refresh current project report
 3728ebb test: enforce terminal minimum height and bounded logs
 89012f6 fix: reserve visible terminal space below run logs
-ea5f3a0 diag: refresh current project report
-a39441d test: avoid brittle runlogs CSS string assertion
 
 == 文件 ==
 .:
@@ -57,7 +57,7 @@ drwxr-xr-x  2 runner runner   4096 Nov 26 12:48 .
 drwxr-xr-x 11 runner runner   4096 Nov 26 12:48 ..
 -rw-r--r--  1 runner runner     92 Nov 26 12:48 _headers
 -rw-r--r--  1 runner runner  20601 Nov 26 12:48 devrun.js
--rw-r--r--  1 runner runner 609624 Nov 26 12:48 index.html
+-rw-r--r--  1 runner runner 610183 Nov 26 12:48 index.html
 -rw-r--r--  1 runner runner 161913 Nov 26 12:48 openmanus_frontend_file_v99l 2.zip
 -rw-r--r--  1 runner runner  21927 Nov 26 12:48 studio.js
 -rw-r--r--  1 runner runner  12533 Nov 26 12:48 tasks.js
@@ -238,7 +238,7 @@ async function codeConfirm(env, user, yes, input = {}) {
 992: const page = await env.KV.list({ prefix: "code:pend:", cursor });
 
 == frontend/index.html ==
-609624 字节, 6559 行, CRLF=False
+610183 字节, 6564 行, CRLF=False
 -- <script src=…> --
 <script src="https://cdn.tailwindcss.com">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js">
@@ -248,13 +248,13 @@ async function codeConfirm(env, user, yes, input = {}) {
 <script src="app.js">
 <script src="studio.js">
 -- id="wb-…"（工作台）--
-wb-back-log wb-bar wb-both wb-chain wb-ci wb-close wb-deploy wb-devbench wb-editor wb-file wb-front-log wb-history wb-left wb-lint wb-local-error wb-local-error-detail wb-local-error-summary wb-local-log wb-local-logbox wb-main wb-open wb-pages-run-link wb-prev-refresh wb-preview wb-reload wb-res wb-right wb-runframe wb-runlogs wb-save wb-state wb-term wb-terminal wb-terminal-input wb-terminal-layout wb-terminal-send wb-terminal-status wb-worker-run-link wb-xterm
+wb-back-log wb-bar wb-both wb-chain wb-ci wb-close wb-deploy wb-devbench wb-editor wb-file wb-front-log wb-history wb-left wb-lint wb-local-error wb-local-error-detail wb-local-error-summary wb-local-log wb-local-logbox wb-main wb-open wb-pages-run-link wb-prev-refresh wb-preview wb-reload wb-res wb-right wb-runframe wb-runlogs wb-save wb-state wb-term wb-terminal wb-terminal-input wb-terminal-layout wb-terminal-send wb-terminal-status wb-worker-run-link wb-xterm wb-xterm-css
 开发台                     13 处，行号 [628, 732, 5576, 5641, 5675, 5688, 5689, 5691]
-renderDeliveryChain      2 处，行号 [6310, 6335]
-wb-both                  3 处，行号 [5695, 6445, 6526]
-/api/code/verify         2 处，行号 [6368, 6390]
-/api/code/deploy         2 处，行号 [6402, 6404]
-/api/code/logs           1 处，行号 [6260]
+renderDeliveryChain      2 处，行号 [6315, 6340]
+wb-both                  3 处，行号 [5695, 6450, 6531]
+/api/code/verify         2 处，行号 [6373, 6395]
+/api/code/deploy         2 处，行号 [6407, 6409]
+/api/code/logs           1 处，行号 [6265]
 om-code-bar              0 处，行号 []
 composer-inner           4 处，行号 [108, 428, 765, 4186]
 -- 含「开发台」的行（前 6 行）--
@@ -305,49 +305,49 @@ crons = ["0 0 * * *"]
 == npm test（node --test tests/*.cjs） ==
 node v22.23.5
 退出码 1
-✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (1.937657ms)
-✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.347603ms)
-✔ editor delivery: pending work is resumable and deployment state is not overstated (0.273031ms)
-✔ project isolation: code edits use a temporary branch before merging to the base branch (0.406562ms)
-✔ web workbench: refuses unsafe save and keeps local preview opt-in only (0.826585ms)
-✔ remote verification: reuses a dispatchable workflow and returns status fields (0.433032ms)
-✔ remote verification UI: green success, red failures, and no invented preview URL (0.728847ms)
-✔ BUG-01: protected media and files never put the login token in URLs or media bodies (0.775868ms)
-✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (0.769769ms)
-✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (2.596189ms)
-✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (0.752884ms)
-✔ workbench simultaneous start triggers GitHub Actions and renders the full delivery chain (1.636363ms)
-✔ P0-01: frontend gateway stays explicit and WebContainer preview requires a hidden opt-in trigger (0.472221ms)
-✔ P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records (1.247308ms)
-✔ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (1.138104ms)
+✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (2.470181ms)
+✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.359462ms)
+✔ editor delivery: pending work is resumable and deployment state is not overstated (0.340773ms)
+✔ project isolation: code edits use a temporary branch before merging to the base branch (0.515656ms)
+✔ web workbench: refuses unsafe save and keeps local preview opt-in only (0.875278ms)
+✔ remote verification: reuses a dispatchable workflow and returns status fields (0.408506ms)
+✔ remote verification UI: green success, red failures, and no invented preview URL (0.812204ms)
+✔ BUG-01: protected media and files never put the login token in URLs or media bodies (0.772633ms)
+✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (0.829128ms)
+✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.500719ms)
+✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (0.907136ms)
+✔ workbench simultaneous start triggers GitHub Actions and renders the full delivery chain (2.033483ms)
+✔ P0-01: frontend gateway stays explicit and WebContainer preview requires a hidden opt-in trigger (0.612733ms)
+✔ P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records (1.876946ms)
+✔ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (1.156201ms)
 [code] pending expiry branch deletion failed; claim retained simulated GitHub failure
-✔ force-clear: frontend keeps preview panel visible and reports failure (11.767267ms)
-✔ CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim (19.219197ms)
-✔ CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry (1.066045ms)
-✔ CodeClaimDO alarm: GitHub 404 is treated as already deleted (1.564295ms)
-✔ persistent runner, KV logs and Pages deployment are wired end to end (1.733881ms)
-✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (1.212135ms)
-✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (0.940195ms)
-✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (2.587455ms)
-✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (1.790345ms)
-✔ codeLLM: OpenRouter network errors also never fall back to Toter (1.005514ms)
-✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (2.102447ms)
-✔ codeLLM: first usable custom model succeeds without attempting later models (1.924227ms)
-✔ codeLLM: retains the Groq target loop after OpenRouter (1.489172ms)
-✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (0.799243ms)
-✔ frontend: without studio initialization, ordinary-chat providers remain available (1.605627ms)
-✔ frontend: code mode shows provider-specific code models and hides Toter aliases (0.888267ms)
-✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (3.357073ms)
-✔ frontend: switching off code mode restores buttons and preserves chat model choice (2.765864ms)
-✔ studio.js: syncToggle re-renders providers when code mode changes (1.623625ms)
-✔ studio.js: omStudio state is exposed before eager init (1.325956ms)
-✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (1.625698ms)
-✔ frontend/studio.js: omStudio state is exposed before eager init (1.757476ms)
-✔ local HTTP integration: frontend-style API request reaches the real Worker /api/models route (81.371303ms)
-✔ WebContainer local preview is opt-in and hidden behind query or AI trigger (3.558717ms)
-✖ devbench has one Actions launch button and one expandable unified run log (4.400986ms)
-✔ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (5.884129ms)
-✔ delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once (2.578413ms)
+✔ force-clear: frontend keeps preview panel visible and reports failure (9.597603ms)
+✔ CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim (44.035272ms)
+✔ CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry (1.207518ms)
+✔ CodeClaimDO alarm: GitHub 404 is treated as already deleted (0.911543ms)
+✔ persistent runner, KV logs and Pages deployment are wired end to end (2.03204ms)
+✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (1.409973ms)
+✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (1.232326ms)
+✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (2.004809ms)
+✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (0.972304ms)
+✔ codeLLM: OpenRouter network errors also never fall back to Toter (1.040827ms)
+✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (0.916661ms)
+✔ codeLLM: first usable custom model succeeds without attempting later models (0.845042ms)
+✔ codeLLM: retains the Groq target loop after OpenRouter (0.901217ms)
+✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (0.944322ms)
+✔ frontend: without studio initialization, ordinary-chat providers remain available (1.972721ms)
+✔ frontend: code mode shows provider-specific code models and hides Toter aliases (1.248144ms)
+✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (3.440491ms)
+✔ frontend: switching off code mode restores buttons and preserves chat model choice (1.735203ms)
+✔ studio.js: syncToggle re-renders providers when code mode changes (1.462873ms)
+✔ studio.js: omStudio state is exposed before eager init (1.380509ms)
+✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (1.179145ms)
+✔ frontend/studio.js: omStudio state is exposed before eager init (1.092015ms)
+✔ local HTTP integration: frontend-style API request reaches the real Worker /api/models route (108.445663ms)
+✔ WebContainer local preview is opt-in and hidden behind query or AI trigger (4.410722ms)
+✖ devbench has one Actions launch button and one expandable unified run log (2.680146ms)
+✔ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (4.054766ms)
+✔ delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once (1.636995ms)
 ℹ tests 42
 ℹ suites 0
 ℹ pass 41
@@ -355,12 +355,12 @@ node v22.23.5
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 261.220805
+ℹ duration_ms 305.660608
 
 ✖ failing tests:
 
 test at tests/code-mode-providers.test.cjs:884:1
-✖ devbench has one Actions launch button and one expandable unified run log (4.400986ms)
+✖ devbench has one Actions launch button and one expandable unified run log (2.680146ms)
   AssertionError [ERR_ASSERTION]: The input did not match the regular expression /#wb-runlogs\\s*\\{[^}]*\\}/. Input:
   
   '<!DOCTYPE html>\n' +
@@ -372,7 +372,7 @@ test at tests/code-mode-providers.test.cjs:884:1
     '<style>\n' +
     ':root{color-scheme:light;--ink:#19362a;--muted:#71867a;--line:#dfe9df;--panel:#fff;--canvas:#f4f8f2;--accent:#287447;--accent-dark:#1d6039;--nav:#10291f;--nav-soft:#1d4030}\n' +
     '*{box-sizing:border-box}\n' +
-    'html,b
+    'html,bo
 …（中间省略）…
 {background:#eaf2e5;color:#3d7650;box-shadow:none}\n' +
     '#status.checking #status-refresh{animation:spin .8s linear infinite}\n' +
@@ -415,7 +415,7 @@ test at tests/code-mode-providers.test.cjs:884:1
     '.message-file .file-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n' +
     '.message-file .file-state{padding:2px 5px;border-radius:999px;background:#e7f3e5;color:#5f8d65;font-size:9px;white-space:nowrap}\n' +
     '.user .message-file{border-color:rgba(255,255,255,.25);background:rgba(255,255,255,.16);color:#fff}\n' +
-    '.user .message-file .file-kind,.user .message-file .file-state{backgr'... 551296 more characters
+    '.user .message-file .file-kind,.user .message-file .file-state{backgr'... 551855 more characters
   
       at TestContext.<anonymous> (/home/runner/work/openmanus-gateway/openmanus-gateway/tests/code-mode-providers.test.cjs:894:10)
       at Test.runInAsyncScope (node:async_hooks:214:14)
@@ -426,7 +426,7 @@ test at tests/code-mode-providers.test.cjs:884:1
       at async Test.processPendingSubtests (node:internal/test_runner/test:744:7) {
     generatedMessage: true,
     code: 'ERR_ASSERTION',
-    actual: '<!DOCTYPE html>\n<html lang="zh-CN"><head>\n<!-- v99l：所有“正在…”加载提示统一为纯文字“…正在X”，去掉了全部 emoji / 图标（⌛⏳🔎🖼✍⏱ 等）；接口与 Worker 路由核对一致。 -->\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n<title>OpenManus AI 助手</title>\n<style>\n:root{color-scheme:light;--ink:#19362a;--muted:#71867a;--line:#dfe9df;--panel:#fff;--canvas:#f4f8f2;--accent:#287447;--accent-dark:#1d6039;--nav:#10291f;--nav-soft:#1d4030}\n*{box-sizing:border-box}\nhtml,body{height:100%;margin:0}\nbody{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;background:var(--canvas);color:var(--ink);display:flex;overflow:hidden}\nbutton,textarea{font:inherit}\nbutton{padding:10px 14px;border:0;border-radius:11px;background:var(--accent);color:#fff;font-weight:650;font-size:14px;cursor:pointer;transition:background .18s,transform .18s,box-shadow .18s}\nbutton:hover{background:var(--accent-dark);box-shadow:0 5px 14px #28744726}\nbutton:active{transform:translateY(1px)}\nbutton:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}\nbutton.sec{background:#f0f2f7;color:#43506a}\nbutton.sec:hover{background:#e6e9f2;box-shadow:none}\n#side{width:276px;background:var(--nav);color:#edf1fa;display:flex;flex-direction:column;flex-shrink:0;padding:20px 14px 14px}\n.brand{display:flex;align-items:center;gap:11px;padding:4px 8px 22px}\n.brand-mark{width:38px;height:38px;display:grid;place-items:center;border-radius:13px;background:linear-gradient(145deg,#3f9a63,#287447);color:white;font-size:18px;font-weight:800;box-shadow:0 6px 18px #28744744}\n.brand-name{font-weight:750;font-size:15px;letter-spacing:.2px}\n.brand-caption{font-size:11px;color:#9ba8c2;margin-top:3px}\n#side .top{padding:0 2px 18px;display:flex;gap:8px}\n#new{width:100%;text-align:left;background:var(--accent);box-shadow:0 8px 20px #28744733}\n#new:hover{background:#34895a}\n.list-label{padding:0 10px 8px;color:#8592ab;font-size:11px;font-weight:700;letter-spacing:1px}\n#list{flex:1;overflow:auto;padding:0 2px}\n.item{display:flex;align-items:center;gap:8px;padding:10px 11px;border:1px solid transparent;border-radius:10px;cursor:pointer;margin-bottom:4px;color:#c7d0e2;transition:background .18s,border .18s}\n#msel-bar{flex:none;padding:8px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid #cfe0cd;background:#f1f8ef;color:#24382b;position:relative}#msel-bar[hidden]{display:none}#msel-bar .ms-r1,#msel-bar .ms-r2{display:flex;flex-wrap:wrap;gap:6px;align-items:center}#msel-bar .ms-r2{margin-top:7px}#msel-bar b{flex:1;min-width:92px;font-size:14px}#msel-bar button{padding:7px 12px;font-size:13px;border-radius:9px;border:0;background:#dfeedb;color:#2d6a3f;font-weight:650}#msel-bar .ms-r2 button{flex:1;white-space:nowrap}#msel-bar .ms-done{background:#2d6a3f;color:#fff}#msel-bar .danger{background:#d9534f;color:#fff}#msel-bar button:disabled{opacity:.4}#msel-exp{position:absolute;left:12px;right:12px;bottom:100%;margin-bottom:6px;background:#fff;border:1px solid #cfe0cd;border-radius:12px;box-shadow:0 8px 28px #0003;padding:6px;display:flex;flex-direction:column;gap:2px;z-index:20}#msel-exp[hidden]{display:none}#msel-exp button{text-align:left;background:none;padding:10px 12px;font-size:14px;font-weight:600;color:#24382b}#msel-exp button:hover{background:#eef7ee}body.msel #comp{display:none}#msg-select.on{background:#2d6a3f!important;color:#fff!important}.msel-row{position:relative;cursor:pointer;padding-left:36px!important;border-radius:12px}.msel-row:hover{background:rgba(127,165,135,.1)}.msel-row.msel-on{background:rgba(127,165,135,.2);outline:2px solid rgba(63,157,90,.55)}.msel-row *{-webkit-user-select:none;user-select:none}.msel-cb{position:absolute;left:8px;top:14px;width:20px;height:20px;border-radius:6px;border:2px solid #8bad91;background:#fff;color:#fff;font-size:14px;line-height:16px;text-align:center;font-weight:800}.msel-on .msel-cb{background:#3f9d5a;border-color:#3f9d5a}\n.sel-bar{display:flex;align-items:center;gap:6px;margin:6px 0 8px;padding:7px 9px;border-radius:10px;background:rgba(127,165,135,.2);border:1px solid rgba(127,165,135,.45);font-size:13px;position:sticky;top:0;z-index:3;backdrop-filter:blur(6px)}.sel-bar[hidden]{display:none}.sel-bar b{flex:1;font-weight:700}.sel-bar button{padding:4px 10px;font-size:12px;border-radius:8px;border:0;background:rgba(127,127,127,.25);color:inherit}.sel-bar button.danger{background:#d9534f;color:#fff}.sel-bar button:disabled{opacity:.45}.item.sel:before{display:none}.item .sel-cb{width:18px;height:18px;flex:none;pointer-events:none;accent-color:#3f9d5a}.item.sel.picked{background:rgba(127,165,135,.25);border-color:rgba(127,165,135,.6)}\n.item:before{content:"◷";font-size:15px;color:#8090af}\n.item:hover,.item.on{background:var(--nav-soft);border-color:#2a3855;color:#fff}\n.item .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}\n.item .x{background:none;color:#8d9ab3;padding:3px 7px;font-size:14px;box-shadow:none}\n.item .x:hover{color:#ff9292;background:#ff6b6b18}\n#wipe{background:#1b2740;color:#aebbd1}\n#wipe:hover{background:#263551;color:#fff}\n#main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}\n#head{min-height:70px;padding:12px clamp(18px,4vw,46px);border-bottom:1px solid var(--line);background:#ffffffed;display:flex;align-items:center;gap:12px;z-index:1}\n#head h3{margin:0;font-size:16px;font-weight:700;letter-spacing:.1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n#menu{display:none}\n#head .sp{flex:1}\n#head .sec{padding:8px 11px;font-size:13px;white-space:nowrap}\n#status{width:max-content;max-width:calc(100% - 48px);margin:14px auto 0;padding:7px 13px;border:1px solid #e8ebf3;border-radius:99px;background:#fff;color:#71809a;font-size:11px;word-break:break-word;box-shadow:0 2px 8px #28385b08}\n#status:before{content:"";display:inline-block;width:7px;height:7px;margin-right:7px;border-radius:50%;background:#a7b0c1;vertical-align:1px}\n#status{display:flex;align-items:center;gap:6px}\n#status:before{flex:0 0 7px}\n#status-refresh{padding:1px 5px;margin-left:2px;border-radius:6px;background:transparent;color:inherit;font-size:13px;line-height:1;box-shadow:none}\n#status-refresh:hover{background:#eaf2e5;color:#3d7650;box-shadow:none}\n#status.checking #status-refresh{animation:spin .8s linear infinite}\n@keyframes spin{to{transform:rotate(360deg)}}\n#att{align-items:center}\n.att-group{width:100%;display:flex;flex-wrap:wrap;gap:7px;align-items:center;padding:5px 0 2px}\n.att-group-label{width:100%;font-size:10px;color:#819083;font-weight:700;letter-spacing:.2px}\n.att-chip-image{border-color:#cfe2ca;background:#f4faf2}\n.att-chip-file{border-color:#dfe7df;background:#fbfdfb}\n.media-tile{flex-wrap:wrap}\n.media-tile small{width:100%;padding-left:44px;color:#91a093;font-size:10px}\n.att-tools{display:flex;align-items:center;gap:6px;width:100%;margin-bottom:2px;color:#819083;font-size:11px}\n.att-clear{padding:3px 8px;background:transparent;color:#9a6b6b;font-size:11px;box-shadow:none}\n.seg-sel{margin-left:6px;max-width:130px;font-size:11px;padding:1px 2px;border-radius:6px;border:1px solid #cfc8b8;background:#fff;color:inherit}\n.att-clear:hover{background:#f8ecec;color:#814b4b;box-shadow:none}\n.key-hint{color:#9aa59b}\n#msgs{flex:1;overflow:auto;padding:24px clamp(18px,5vw,64px) 30px;scroll-behavior:smooth}\n.row{display:flex;align-items:flex-start;gap:10px;margin:0 auto 20px;max-width:940px}\n.row:before{content:"AI";flex:0 0 34px;width:34px;height:34px;display:grid;place-items:center;border-radius:12px;background:#e7eaff;color:#5462df;font-size:11px;font-weight:800;margin-top:2px}\n.row.user{justify-content:flex-end}\n.row.user:before{display:none}\n.bub{max-width:min(84%,760px);padding:14px 17px;border-radius:17px;line-height:1.75;font-size:14px;word-break:break-word;overflow-wrap:anywhere}\n.user .bub{background:linear-gradient(135deg,#6573ee,#5361db);color:#fff;border-bottom-right-radius:5px;box-shadow:0 6px 18px #5361d528}\n.assistant .bub{background:var(--panel);border:1px solid #e9ecf3;color:#2d374b;border-bottom-left-radius:5px;box-shadow:0 5px 18px #28385b08}\n.user .bub>div{white-space:pre-wrap}\n.bub .message-line{margin:0 0 7px;white-space:pre-wrap}\n.bub .message-line:last-child{margin-bottom:0}\n.bub h1,.bub h2,.bub h3{line-height:1.35;margin:15px 0 8px;color:#202a40}\n.bub h1{font-size:20px}.bub h2{font-size:17px}.bub h3{font-size:15px}\n.bub ul,.bub ol{padding-left:24px;margin:6px 0 11px}\n.bub li{padding-left:3px;margin:3px 0}\n.bub blockquote{margin:8px 0;padding:3px 12px;border-left:3px solid #aab2fa;color:#68748c;background:#f7f8ff;border-radius:0 8px 8px 0}\n.bub p{margin:0 0 8px}\n.bub strong{font-weight:750;color:#202a40}\n.bub code:not(pre code){background:#f0f2f8;color:#6353b8;border-radius:5px;padding:2px 5px;font-size:.91em}\n.bub pre{background:#111a2d;color:#e5eafb;border:1px solid #26324a;border-radius:11px;padding:15px 16px;overflow:auto;font-size:12px;line-height:1.7;margin:8px 0;white-space:pre-wrap;tab-size:2}\n.chip{display:inline-flex;align-items:center;gap:5px;background:#eef1f8;color:#53617a;border-radius:7px;padding:4px 9px;font-size:11px;margin:0 6px 7px 0;max-width:100%;overflow-wrap:anywhere}\n.message-file{display:inline-flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid #dbe7dc;background:#f5faf3;color:#31583a;border-radius:10px;font-size:11px;max-width:100%;vertical-align:middle}\n.message-file .file-kind{display:grid;place-items:center;flex:0 0 24px;width:24px;height:24px;border-radius:7px;background:#e4f0e1;color:#4f8658;font-size:13px;font-weight:700}\n.message-file .file-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.message-file .file-state{padding:2px 5px;border-radius:999px;background:#e7f3e5;color:#5f8d65;font-size:9px;white-space:nowrap}\n.user .message-file{border-color:rgba(255,255,255,.25);background:rgba(255,255,255,.16);color:#fff}\n.user .message-file .file-kind,.user .message-file .file-state{backgr'... 551296 more characters,
+    actual: '<!DOCTYPE html>\n<html lang="zh-CN"><head>\n<!-- v99l：所有“正在…”加载提示统一为纯文字“…正在X”，去掉了全部 emoji / 图标（⌛⏳🔎🖼✍⏱ 等）；接口与 Worker 路由核对一致。 -->\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n<title>OpenManus AI 助手</title>\n<style>\n:root{color-scheme:light;--ink:#19362a;--muted:#71867a;--line:#dfe9df;--panel:#fff;--canvas:#f4f8f2;--accent:#287447;--accent-dark:#1d6039;--nav:#10291f;--nav-soft:#1d4030}\n*{box-sizing:border-box}\nhtml,body{height:100%;margin:0}\nbody{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;background:var(--canvas);color:var(--ink);display:flex;overflow:hidden}\nbutton,textarea{font:inherit}\nbutton{padding:10px 14px;border:0;border-radius:11px;background:var(--accent);color:#fff;font-weight:650;font-size:14px;cursor:pointer;transition:background .18s,transform .18s,box-shadow .18s}\nbutton:hover{background:var(--accent-dark);box-shadow:0 5px 14px #28744726}\nbutton:active{transform:translateY(1px)}\nbutton:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}\nbutton.sec{background:#f0f2f7;color:#43506a}\nbutton.sec:hover{background:#e6e9f2;box-shadow:none}\n#side{width:276px;background:var(--nav);color:#edf1fa;display:flex;flex-direction:column;flex-shrink:0;padding:20px 14px 14px}\n.brand{display:flex;align-items:center;gap:11px;padding:4px 8px 22px}\n.brand-mark{width:38px;height:38px;display:grid;place-items:center;border-radius:13px;background:linear-gradient(145deg,#3f9a63,#287447);color:white;font-size:18px;font-weight:800;box-shadow:0 6px 18px #28744744}\n.brand-name{font-weight:750;font-size:15px;letter-spacing:.2px}\n.brand-caption{font-size:11px;color:#9ba8c2;margin-top:3px}\n#side .top{padding:0 2px 18px;display:flex;gap:8px}\n#new{width:100%;text-align:left;background:var(--accent);box-shadow:0 8px 20px #28744733}\n#new:hover{background:#34895a}\n.list-label{padding:0 10px 8px;color:#8592ab;font-size:11px;font-weight:700;letter-spacing:1px}\n#list{flex:1;overflow:auto;padding:0 2px}\n.item{display:flex;align-items:center;gap:8px;padding:10px 11px;border:1px solid transparent;border-radius:10px;cursor:pointer;margin-bottom:4px;color:#c7d0e2;transition:background .18s,border .18s}\n#msel-bar{flex:none;padding:8px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid #cfe0cd;background:#f1f8ef;color:#24382b;position:relative}#msel-bar[hidden]{display:none}#msel-bar .ms-r1,#msel-bar .ms-r2{display:flex;flex-wrap:wrap;gap:6px;align-items:center}#msel-bar .ms-r2{margin-top:7px}#msel-bar b{flex:1;min-width:92px;font-size:14px}#msel-bar button{padding:7px 12px;font-size:13px;border-radius:9px;border:0;background:#dfeedb;color:#2d6a3f;font-weight:650}#msel-bar .ms-r2 button{flex:1;white-space:nowrap}#msel-bar .ms-done{background:#2d6a3f;color:#fff}#msel-bar .danger{background:#d9534f;color:#fff}#msel-bar button:disabled{opacity:.4}#msel-exp{position:absolute;left:12px;right:12px;bottom:100%;margin-bottom:6px;background:#fff;border:1px solid #cfe0cd;border-radius:12px;box-shadow:0 8px 28px #0003;padding:6px;display:flex;flex-direction:column;gap:2px;z-index:20}#msel-exp[hidden]{display:none}#msel-exp button{text-align:left;background:none;padding:10px 12px;font-size:14px;font-weight:600;color:#24382b}#msel-exp button:hover{background:#eef7ee}body.msel #comp{display:none}#msg-select.on{background:#2d6a3f!important;color:#fff!important}.msel-row{position:relative;cursor:pointer;padding-left:36px!important;border-radius:12px}.msel-row:hover{background:rgba(127,165,135,.1)}.msel-row.msel-on{background:rgba(127,165,135,.2);outline:2px solid rgba(63,157,90,.55)}.msel-row *{-webkit-user-select:none;user-select:none}.msel-cb{position:absolute;left:8px;top:14px;width:20px;height:20px;border-radius:6px;border:2px solid #8bad91;background:#fff;color:#fff;font-size:14px;line-height:16px;text-align:center;font-weight:800}.msel-on .msel-cb{background:#3f9d5a;border-color:#3f9d5a}\n.sel-bar{display:flex;align-items:center;gap:6px;margin:6px 0 8px;padding:7px 9px;border-radius:10px;background:rgba(127,165,135,.2);border:1px solid rgba(127,165,135,.45);font-size:13px;position:sticky;top:0;z-index:3;backdrop-filter:blur(6px)}.sel-bar[hidden]{display:none}.sel-bar b{flex:1;font-weight:700}.sel-bar button{padding:4px 10px;font-size:12px;border-radius:8px;border:0;background:rgba(127,127,127,.25);color:inherit}.sel-bar button.danger{background:#d9534f;color:#fff}.sel-bar button:disabled{opacity:.45}.item.sel:before{display:none}.item .sel-cb{width:18px;height:18px;flex:none;pointer-events:none;accent-color:#3f9d5a}.item.sel.picked{background:rgba(127,165,135,.25);border-color:rgba(127,165,135,.6)}\n.item:before{content:"◷";font-size:15px;color:#8090af}\n.item:hover,.item.on{background:var(--nav-soft);border-color:#2a3855;color:#fff}\n.item .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}\n.item .x{background:none;color:#8d9ab3;padding:3px 7px;font-size:14px;box-shadow:none}\n.item .x:hover{color:#ff9292;background:#ff6b6b18}\n#wipe{background:#1b2740;color:#aebbd1}\n#wipe:hover{background:#263551;color:#fff}\n#main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}\n#head{min-height:70px;padding:12px clamp(18px,4vw,46px);border-bottom:1px solid var(--line);background:#ffffffed;display:flex;align-items:center;gap:12px;z-index:1}\n#head h3{margin:0;font-size:16px;font-weight:700;letter-spacing:.1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n#menu{display:none}\n#head .sp{flex:1}\n#head .sec{padding:8px 11px;font-size:13px;white-space:nowrap}\n#status{width:max-content;max-width:calc(100% - 48px);margin:14px auto 0;padding:7px 13px;border:1px solid #e8ebf3;border-radius:99px;background:#fff;color:#71809a;font-size:11px;word-break:break-word;box-shadow:0 2px 8px #28385b08}\n#status:before{content:"";display:inline-block;width:7px;height:7px;margin-right:7px;border-radius:50%;background:#a7b0c1;vertical-align:1px}\n#status{display:flex;align-items:center;gap:6px}\n#status:before{flex:0 0 7px}\n#status-refresh{padding:1px 5px;margin-left:2px;border-radius:6px;background:transparent;color:inherit;font-size:13px;line-height:1;box-shadow:none}\n#status-refresh:hover{background:#eaf2e5;color:#3d7650;box-shadow:none}\n#status.checking #status-refresh{animation:spin .8s linear infinite}\n@keyframes spin{to{transform:rotate(360deg)}}\n#att{align-items:center}\n.att-group{width:100%;display:flex;flex-wrap:wrap;gap:7px;align-items:center;padding:5px 0 2px}\n.att-group-label{width:100%;font-size:10px;color:#819083;font-weight:700;letter-spacing:.2px}\n.att-chip-image{border-color:#cfe2ca;background:#f4faf2}\n.att-chip-file{border-color:#dfe7df;background:#fbfdfb}\n.media-tile{flex-wrap:wrap}\n.media-tile small{width:100%;padding-left:44px;color:#91a093;font-size:10px}\n.att-tools{display:flex;align-items:center;gap:6px;width:100%;margin-bottom:2px;color:#819083;font-size:11px}\n.att-clear{padding:3px 8px;background:transparent;color:#9a6b6b;font-size:11px;box-shadow:none}\n.seg-sel{margin-left:6px;max-width:130px;font-size:11px;padding:1px 2px;border-radius:6px;border:1px solid #cfc8b8;background:#fff;color:inherit}\n.att-clear:hover{background:#f8ecec;color:#814b4b;box-shadow:none}\n.key-hint{color:#9aa59b}\n#msgs{flex:1;overflow:auto;padding:24px clamp(18px,5vw,64px) 30px;scroll-behavior:smooth}\n.row{display:flex;align-items:flex-start;gap:10px;margin:0 auto 20px;max-width:940px}\n.row:before{content:"AI";flex:0 0 34px;width:34px;height:34px;display:grid;place-items:center;border-radius:12px;background:#e7eaff;color:#5462df;font-size:11px;font-weight:800;margin-top:2px}\n.row.user{justify-content:flex-end}\n.row.user:before{display:none}\n.bub{max-width:min(84%,760px);padding:14px 17px;border-radius:17px;line-height:1.75;font-size:14px;word-break:break-word;overflow-wrap:anywhere}\n.user .bub{background:linear-gradient(135deg,#6573ee,#5361db);color:#fff;border-bottom-right-radius:5px;box-shadow:0 6px 18px #5361d528}\n.assistant .bub{background:var(--panel);border:1px solid #e9ecf3;color:#2d374b;border-bottom-left-radius:5px;box-shadow:0 5px 18px #28385b08}\n.user .bub>div{white-space:pre-wrap}\n.bub .message-line{margin:0 0 7px;white-space:pre-wrap}\n.bub .message-line:last-child{margin-bottom:0}\n.bub h1,.bub h2,.bub h3{line-height:1.35;margin:15px 0 8px;color:#202a40}\n.bub h1{font-size:20px}.bub h2{font-size:17px}.bub h3{font-size:15px}\n.bub ul,.bub ol{padding-left:24px;margin:6px 0 11px}\n.bub li{padding-left:3px;margin:3px 0}\n.bub blockquote{margin:8px 0;padding:3px 12px;border-left:3px solid #aab2fa;color:#68748c;background:#f7f8ff;border-radius:0 8px 8px 0}\n.bub p{margin:0 0 8px}\n.bub strong{font-weight:750;color:#202a40}\n.bub code:not(pre code){background:#f0f2f8;color:#6353b8;border-radius:5px;padding:2px 5px;font-size:.91em}\n.bub pre{background:#111a2d;color:#e5eafb;border:1px solid #26324a;border-radius:11px;padding:15px 16px;overflow:auto;font-size:12px;line-height:1.7;margin:8px 0;white-space:pre-wrap;tab-size:2}\n.chip{display:inline-flex;align-items:center;gap:5px;background:#eef1f8;color:#53617a;border-radius:7px;padding:4px 9px;font-size:11px;margin:0 6px 7px 0;max-width:100%;overflow-wrap:anywhere}\n.message-file{display:inline-flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid #dbe7dc;background:#f5faf3;color:#31583a;border-radius:10px;font-size:11px;max-width:100%;vertical-align:middle}\n.message-file .file-kind{display:grid;place-items:center;flex:0 0 24px;width:24px;height:24px;border-radius:7px;background:#e4f0e1;color:#4f8658;font-size:13px;font-weight:700}\n.message-file .file-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.message-file .file-state{padding:2px 5px;border-radius:999px;background:#e7f3e5;color:#5f8d65;font-size:9px;white-space:nowrap}\n.user .message-file{border-color:rgba(255,255,255,.25);background:rgba(255,255,255,.16);color:#fff}\n.user .message-file .file-kind,.user .message-file .file-state{backgr'... 551855 more characters,
     expected: /#wb-runlogs\\s*\\{[^}]*\\}/,
     operator: 'match',
     diff: 'simple'
