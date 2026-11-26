@@ -941,3 +941,34 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
   assert.match(deploymentFailure[5], /^✗ 部署失败$/);
   assert.equal(deploymentFailure.some(value => value.includes('线上探活失败')), false);
 });
+
+
+test('delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once', async () => {
+  const block = extract(frontendSource, 'let pagesHealthProbe', 'function renderVerifyResult');
+  let payload = { ok: true, status: 200 };
+  let calls = 0;
+  const context = vm.createContext({
+    document: { createElement: tag => element(tag) },
+    AbortController, setTimeout, clearTimeout,
+    GATEWAY: '',
+    authFetch: async () => {
+      calls++;
+      return { ok: true, json: async () => payload };
+    }
+  });
+  vm.runInContext(block, context, { filename: 'delivery-health-probe.vm.js', timeout: 1000 });
+  const healthy = await vm.runInContext('probePagesHealth("deploy-200")', context);
+  assert.equal(healthy.state, 'ok');
+  assert.equal(healthy.status, 200);
+  assert.equal(calls, 1);
+  const cached = await vm.runInContext('probePagesHealth("deploy-200")', context);
+  assert.equal(cached.state, 'ok');
+  assert.equal(calls, 1, 'The same deployment run must not trigger a second live probe');
+
+  payload = { ok: true, status: 503 };
+  const unhealthy = await vm.runInContext('probePagesHealth("deploy-503")', context);
+  assert.equal(unhealthy.state, 'bad');
+  assert.equal(unhealthy.status, 503);
+  assert.match(unhealthy.error, /HTTP 503/);
+  assert.equal(calls, 2);
+});
