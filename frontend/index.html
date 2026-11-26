@@ -6253,42 +6253,43 @@ async function runLocalTaskPreview(fileOverrides) {
           files[path]=content;
         });
       }
-      if(!files["package.json"])files["package.json"]=JSON.stringify({name:"local-task-preview",private:true,scripts:{start:"npx --yes serve -l 3000 ."},dependencies:{serve:"^14.2.0"}},null,2);
+      if(!files["package.json"])files["package.json"]=JSON.stringify({name:"local-task-preview",private:true,scripts:{dev:"vite --host 0.0.0.0"},devDependencies:{vite:"^6.0.0"}},null,2);
       const container=await ensureLocalWebContainer();
       await container.mount(localTree(files));
       await initInteractiveTerminal(container);
       localLog("已挂载 "+Object.keys(files).length+" 个文件："+Object.keys(files).join("、"));
       notes.forEach(note=>localLog("提示："+note));
+      localLog("$ npm install");
       const install=await container.spawn("npm",["install","--no-audit","--no-fund"]);
-      const installOutput=[];install.output.pipeTo(new WritableStream({write(chunk){installOutput.push(String(chunk));localLog(String(chunk).trimEnd());}})).catch(()=>{});
+      install.output.pipeTo(new WritableStream({write(chunk){localLog(String(chunk).trimEnd());}})).catch(()=>{});
       const installCode=await withTimeout(install.exit,180000,"npm install");
       if(installCode!==0)throw new Error("npm install 失败，退出码 "+installCode);
       let pkg={};try{pkg=JSON.parse(files["package.json"]||"{}");}catch(_){}
-      const scripts=pkg.scripts||{};
-      for(const task of ["test","build"]){
-        if(!scripts[task])continue;
-        localLog("$ npm run "+task);
-        const proc=await container.spawn("npm",["run",task]);
-        proc.output.pipeTo(new WritableStream({write(chunk){localLog(String(chunk).trimEnd());}})).catch(()=>{});
-        const code=await withTimeout(proc.exit,120000,"npm run "+task);
-        if(code!==0)localLog("注意：npm run "+task+" 退出码 "+code+"，继续尝试启动预览服务");
-        else localLog("✓ npm run "+task+" 通过");
-      }
-      const startScript=scripts.dev?"dev":scripts.start?"start":"";
-      if(!startScript)throw new Error("package.json 没有 dev 或 start 脚本，无法启动本地预览服务");
-      localLog("$ npm run "+startScript);
+      if(!pkg.scripts||!pkg.scripts.dev)throw new Error("package.json 缺少 dev 脚本");
+      localLog("$ npm run dev -- --host 0.0.0.0");
       const ready=new Promise(resolve=>{localWcReady=resolve;});
-      localWcProcess=await container.spawn("npm",["run",startScript]);
+      localWcProcess=await container.spawn("npm",["run","dev","--","--host","0.0.0.0"]);
       localWcProcess.output.pipeTo(new WritableStream({write(chunk){localLog(String(chunk).trimEnd());}})).catch(()=>{});
-      const url=await Promise.race([ready,new Promise(resolve=>setTimeout(()=>resolve(null),60000))]);
-      if(!url)throw new Error("服务启动 60 秒内没有监听端口");
-      say("本地预览已就绪（WebContainer）");
-      return url;
+      let timeoutId;
+      const serverResult=await Promise.race([
+        ready.then(url=>({url})),
+        localWcProcess.exit.then(code=>({exitCode:code})),
+        new Promise(resolve=>{timeoutId=setTimeout(()=>resolve({timeout:true}),60000);})
+      ]);
+      clearTimeout(timeoutId);
+      localWcReady=null;
+      if(!serverResult.url){
+        if(serverResult.timeout)throw new Error("npm run dev 失败了：60 秒内没有监听端口");
+        throw new Error("npm run dev 失败了：进程退出，退出码 "+serverResult.exitCode);
+      }
+      say("本地预览服务已启动");
+      return serverResult.url;
     }catch(error){
       localLog("本地预览失败："+(error&&error.message||error));
       say("本地预览启动失败："+(error&&error.message||error),true);
+      const frame=g("wb-runframe");if(frame){frame.dataset.live="0";frame.removeAttribute("src");}
       const alert=g("wb-local-error"), summary=g("wb-local-error-summary");
-      if(alert&&summary){summary.textContent="本地预览启动失败："+String(error&&error.message||error);alert.hidden=false;}
+      if(alert&&summary){summary.textContent="npm run dev 失败了";alert.hidden=false;}
       showTab("run");
       throw error;
     }finally{localWcRunning=false;localWcPromise=null;}
