@@ -1,6 +1,7 @@
-诊断时间(UTC): 2026-11-26T13:40:12+00:00
+诊断时间(UTC): 2026-11-26T13:40:26+00:00
 
 == 最近 12 个提交 ==
+e72790f diag: refresh current project report
 1326962 Fix visible local preview test assertions
 5ec59e3 Show local preview startup errors in the inline warning
 97e7014 diag: refresh current project report
@@ -12,7 +13,6 @@ b74db09 diag: refresh current project report
 ec4c8e2 diag: refresh current project report
 8b2a9c1 diag: refresh current project report
 5f5d1e3 diag: refresh current project report
-4d5353d diag: refresh current project report
 
 == 文件 ==
 .:
@@ -305,49 +305,49 @@ crons = ["0 0 * * *"]
 == npm test（node --test tests/*.cjs） ==
 node v22.23.5
 退出码 1
-✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (3.081759ms)
-✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.45897ms)
-✔ editor delivery: pending work is resumable and deployment state is not overstated (0.446512ms)
-✔ project isolation: code edits use a temporary branch before merging to the base branch (0.652197ms)
+✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (2.339566ms)
+✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.348326ms)
+✔ editor delivery: pending work is resumable and deployment state is not overstated (0.368176ms)
+✔ project isolation: code edits use a temporary branch before merging to the base branch (0.491798ms)
 [code] pending expiry branch deletion failed; claim retained simulated GitHub failure
-✖ web workbench: refuses unsafe save and keeps local preview opt-in only (2.082216ms)
-✔ remote verification: reuses a dispatchable workflow and returns status fields (0.51278ms)
-✔ remote verification UI: green success, red failures, and no invented preview URL (1.115334ms)
-✔ BUG-01: protected media and files never put the login token in URLs or media bodies (0.983858ms)
-✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (1.018009ms)
-✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.907607ms)
-✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (1.175122ms)
-✔ workbench simultaneous start triggers GitHub Actions and renders the full delivery chain (2.656268ms)
-✖ P0-01: frontend gateway stays explicit and WebContainer preview requires a hidden opt-in trigger (8.507802ms)
-✔ P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records (2.452405ms)
-✔ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (1.379735ms)
-✔ force-clear: frontend keeps preview panel visible and reports failure (16.744851ms)
-✔ CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim (21.199524ms)
-✔ CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry (1.24815ms)
-✔ CodeClaimDO alarm: GitHub 404 is treated as already deleted (1.015054ms)
-✔ persistent runner, KV logs and Pages deployment are wired end to end (2.538943ms)
-✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (1.597939ms)
-✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (1.305025ms)
-✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (1.080512ms)
-✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (1.572822ms)
-✔ codeLLM: OpenRouter network errors also never fall back to Toter (1.676235ms)
-✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (1.228131ms)
-✔ codeLLM: first usable custom model succeeds without attempting later models (1.065279ms)
-✔ codeLLM: retains the Groq target loop after OpenRouter (1.035975ms)
-✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (1.097537ms)
-✔ frontend: without studio initialization, ordinary-chat providers remain available (2.314871ms)
-✔ frontend: code mode shows provider-specific code models and hides Toter aliases (1.352765ms)
-✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (3.165783ms)
-✔ frontend: switching off code mode restores buttons and preserves chat model choice (1.560122ms)
-✔ studio.js: syncToggle re-renders providers when code mode changes (1.175001ms)
-✔ studio.js: omStudio state is exposed before eager init (1.238811ms)
-✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (1.011849ms)
-✔ frontend/studio.js: omStudio state is exposed before eager init (0.980043ms)
-✔ local HTTP integration: frontend-style API request reaches the real Worker /api/models route (80.753788ms)
-✔ WebContainer local preview starts from a visible button and reports failures in a one-line warning (7.062048ms)
-✔ devbench has one Actions launch button, one run log and a terminal element (1.439213ms)
-✔ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (4.438439ms)
-✔ delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once (1.833668ms)
+✖ web workbench: refuses unsafe save and keeps local preview opt-in only (2.385485ms)
+✔ remote verification: reuses a dispatchable workflow and returns status fields (0.392221ms)
+✔ remote verification UI: green success, red failures, and no invented preview URL (0.85709ms)
+✔ BUG-01: protected media and files never put the login token in URLs or media bodies (0.778273ms)
+✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (0.81717ms)
+✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.480744ms)
+✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (0.910589ms)
+✔ workbench simultaneous start triggers GitHub Actions and renders the full delivery chain (2.047383ms)
+✖ P0-01: frontend gateway stays explicit and WebContainer preview requires a hidden opt-in trigger (4.028909ms)
+✔ P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records (1.900335ms)
+✔ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (1.040412ms)
+✔ force-clear: frontend keeps preview panel visible and reports failure (12.597754ms)
+✔ CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim (16.405616ms)
+✔ CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry (1.203243ms)
+✔ CodeClaimDO alarm: GitHub 404 is treated as already deleted (0.773556ms)
+✔ persistent runner, KV logs and Pages deployment are wired end to end (1.958261ms)
+✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (1.28946ms)
+✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (1.043145ms)
+✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (0.889598ms)
+✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (1.143784ms)
+✔ codeLLM: OpenRouter network errors also never fall back to Toter (1.226918ms)
+✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (0.944349ms)
+✔ codeLLM: first usable custom model succeeds without attempting later models (0.854576ms)
+✔ codeLLM: retains the Groq target loop after OpenRouter (0.88415ms)
+✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (0.906003ms)
+✔ frontend: without studio initialization, ordinary-chat providers remain available (1.905804ms)
+✔ frontend: code mode shows provider-specific code models and hides Toter aliases (1.033962ms)
+✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (2.597589ms)
+✔ frontend: switching off code mode restores buttons and preserves chat model choice (1.276261ms)
+✔ studio.js: syncToggle re-renders providers when code mode changes (0.960133ms)
+✔ studio.js: omStudio state is exposed before eager init (0.988105ms)
+✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (2.026653ms)
+✔ frontend/studio.js: omStudio state is exposed before eager init (0.941335ms)
+✔ local HTTP integration: frontend-style API request reaches the real Worker /api/models route (93.951743ms)
+✔ WebContainer local preview starts from a visible button and reports failures in a one-line warning (5.482964ms)
+✔ devbench has one Actions launch button, one run log and a terminal element (1.112518ms)
+✔ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (3.319318ms)
+✔ delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once (1.306316ms)
 ℹ tests 42
 ℹ suites 0
 ℹ pass 40
@@ -355,12 +355,12 @@ node v22.23.5
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 288.940953
+ℹ duration_ms 240.61049
 
 ✖ failing tests:
 
 test at tests/code-mode-providers.test.cjs:142:1
-✖ web workbench: refuses unsafe save and keeps local preview opt-in only (2.082216ms)
+✖ web workbench: refuses unsafe save and keeps local preview opt-in only (2.385485ms)
   AssertionError [ERR_ASSERTION]: The input did not match the regular expression /new URLSearchParams\(location\.search\)\.get\("webcontainer"\)==="1"/. Input:
   
   '<!DOCTYPE html>\n' +
@@ -370,7 +370,7 @@ test at tests/code-mode-providers.test.cjs:142:1
     '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n' +
     '<title>OpenManus AI 助手</title>\n' +
     '<style>\n' +
-    ':root{color-scheme:light;--ink:#19362a;--muted:#71867a;--line:#dfe9df;--panel:#fff;--canvas:#f4f8f2;--accent:#287447;--accent-dark:#1d6039;--nav:#10291f;--nav-soft
+    ':root{color-scheme:light;--ink:#19362a;--muted:#71867a;--line:#dfe9df;--panel:#fff;--canvas:#f4f8f2;--accent:#287447;--accent-dark:#1d6039;--nav:#10291f;--nav-soft:#
 …（中间省略）…
 lor:inherit}\n' +
     '.att-clear:hover{background:#f8ecec;color:#814b4b;box-shadow:none}\n' +
@@ -419,7 +419,7 @@ lor:inherit}\n' +
   }
 
 test at tests/code-mode-providers.test.cjs:271:1
-✖ P0-01: frontend gateway stays explicit and WebContainer preview requires a hidden opt-in trigger (8.507802ms)
+✖ P0-01: frontend gateway stays explicit and WebContainer preview requires a hidden opt-in trigger (4.028909ms)
   AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
   
     assert.ok(frontendSource.includes('new URLSearchParams(location.search).get("webcontainer")==="1"'))
