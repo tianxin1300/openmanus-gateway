@@ -875,7 +875,7 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
   };
   const labels = values => values.map(value => value.replace(/^[✓✗○…] /, ''));
   const generated = labels(render({ runs: [] }));
-  assert.deepEqual(generated, ['已生成', '已提交', '已验证', '部署中', '线上健康']);
+  assert.deepEqual(generated, ['已生成', '已提交', '已验证', '部署中', '已部署', '线上健康']);
   assert.match(render({ runs: [] })[0], /^✓ /);
   assert.match(render({ runs: [] })[1], /^○ /);
 
@@ -890,7 +890,7 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
     { filename: 'upper-delivery-chain.vm.js', timeout: 1000 });
   vm.runInContext('renderChain({ runs: [] })', chainContext);
   assert.deepEqual(chainNode.children.map(node => node.textContent.replace(/^[✓✗○…] /, '')),
-    ['已生成', '已提交', '已验证', '部署中', '线上健康']);
+    ['已生成', '已提交', '已验证', '部署中', '已部署', '线上健康']);
 
   const queued = render({
     head_sha: 'abc123',
@@ -904,7 +904,8 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
   assert.match(queued[1], /^✓ 已提交$/);
   assert.match(queued[2], /^✓ 已验证$/);
   assert.match(queued[3], /^… 部署中$/);
-  assert.match(queued[4], /^○ 线上健康$/);
+  assert.match(queued[4], /^○ 已部署$/);
+  assert.match(queued[5], /^○ 线上健康$/);
 
   vm.runInContext("pagesHealthProbe = { run_id: '12', state: 'checking', status: null, error: '', promise: null }", context);
   const deployedChecking = render({
@@ -914,8 +915,9 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
       { kind: 'worker', conclusion: 'success' }
     ]
   });
-  assert.match(deployedChecking[3], /^✓ 已部署$/);
-  assert.match(deployedChecking[4], /^… 线上健康$/);
+  assert.match(deployedChecking[3], /^✓ 部署中$/);
+  assert.match(deployedChecking[4], /^✓ 已部署$/);
+  assert.match(deployedChecking[5], /^… 线上健康$/);
 
   vm.runInContext("pagesHealthProbe = { run_id: '12', state: 'ok', status: 200, error: '', promise: null }", context);
   const online = render({
@@ -925,8 +927,9 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
       { kind: 'worker', conclusion: 'success' }
     ]
   });
-  assert.match(online[3], /^✓ 已部署$/);
-  assert.match(online[4], /^✓ 线上健康 HTTP 200$/);
+  assert.match(online[3], /^✓ 部署中$/);
+  assert.match(online[4], /^✓ 已部署$/);
+  assert.match(online[5], /^✓ 线上健康 HTTP 200$/);
 
   vm.runInContext("pagesHealthProbe = { run_id: '12', state: 'bad', status: 503, error: 'HTTP 503', promise: null }", context);
   const unhealthy = render({
@@ -936,9 +939,10 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
       { kind: 'worker', conclusion: 'success' }
     ]
   });
-  assert.match(unhealthy[3], /^✓ 已部署$/);
-  assert.match(unhealthy[4], /^✗ 线上健康失败 HTTP 503$/);
-  assert.match(unhealthy[5], /^✗ 线上探活失败$/);
+  assert.match(unhealthy[3], /^✓ 部署中$/);
+  assert.match(unhealthy[4], /^✓ 已部署$/);
+  assert.match(unhealthy[5], /^✗ 线上健康失败 HTTP 503$/);
+  assert.match(unhealthy[6], /^✗ 线上探活失败$/);
   assert.equal(unhealthy.some(value => value.includes('部署失败')), false);
 
   vm.runInContext("pagesHealthProbe = { run_id: '', state: 'idle', status: null, error: '', promise: null }", context);
@@ -950,8 +954,9 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
     ]
   });
   assert.match(deploymentFailure[3], /^○ 部署中$/);
-  assert.match(deploymentFailure[4], /^○ 线上健康$/);
-  assert.match(deploymentFailure[5], /^✗ 部署失败$/);
+  assert.match(deploymentFailure[4], /^○ 已部署$/);
+  assert.match(deploymentFailure[5], /^○ 线上健康$/);
+  assert.match(deploymentFailure[6], /^✗ 部署失败$/);
   assert.equal(deploymentFailure.some(value => value.includes('线上探活失败')), false);
 });
 
