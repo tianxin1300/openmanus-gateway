@@ -1084,6 +1084,66 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
   assert.match(deploymentFailure[5], /^○ 线上健康$/);
   assert.match(deploymentFailure[6], /^✗ 部署失败$/);
   assert.equal(deploymentFailure.some(value => value.includes('线上探活失败')), false);
+
+  const verifyFailed = render({
+    runs: [
+      { kind: 'verify', run_id: 21, conclusion: 'failure' },
+      { kind: 'deploy', run_id: 22, conclusion: 'success' },
+      { kind: 'worker', run_id: 23, conclusion: 'success' }
+    ]
+  });
+  assert.match(verifyFailed[2], /^✗ 已验证$/);
+  assert.match(verifyFailed[6], /^✗ 验证失败$/);
+  assert.equal(verifyFailed.some(value => value.includes('部署失败')), false);
+
+  const workerFailed = render({
+    runs: [
+      { kind: 'verify', run_id: 31, conclusion: 'success' },
+      { kind: 'deploy', run_id: 32, conclusion: 'success' },
+      { kind: 'worker', run_id: 33, conclusion: 'failure' }
+    ]
+  });
+  assert.match(workerFailed[2], /^✓ 已验证$/);
+  assert.match(workerFailed[4], /^○ 已部署$/);
+  assert.match(workerFailed[5], /^○ 线上健康$/);
+  assert.match(workerFailed[6], /^✗ 部署失败$/);
+  assert.equal(workerFailed.some(value => value.includes('线上探活失败')), false);
+
+  const upperChain = (() => {
+    const chainBlock = extract(frontendSource, 'function chainStep(text, cls)', 'async function runBoth()');
+    const chainNode = element();
+    const chainContext = vm.createContext({
+      document: { createElement: tag => element(tag) },
+      g: id => id === 'wb-chain' ? chainNode : null
+    });
+    vm.runInContext(block + String.fromCharCode(10) + chainBlock, chainContext,
+      { filename: 'upper-delivery-chain-failure.vm.js', timeout: 1000 });
+    return data => {
+      vm.runInContext('renderChain(' + JSON.stringify(data) + ')', chainContext);
+      return chainNode.children.map(node => node.textContent);
+    };
+  })();
+  const upperVerifyFailed = upperChain({
+    runs: [
+      { kind: 'verify', conclusion: 'failure' },
+      { kind: 'deploy', conclusion: 'success' },
+      { kind: 'worker', conclusion: 'success' }
+    ]
+  });
+  assert.match(upperVerifyFailed[2], /^✗ 已验证$/);
+  assert.match(upperVerifyFailed[6], /^✗ 验证失败$/);
+  assert.equal(upperVerifyFailed.some(value => value.includes('部署失败')), false);
+  const upperWorkerFailed = upperChain({
+    runs: [
+      { kind: 'verify', conclusion: 'success' },
+      { kind: 'deploy', conclusion: 'success' },
+      { kind: 'worker', conclusion: 'failure' }
+    ]
+  });
+  assert.match(upperWorkerFailed[4], /^○ 已部署$/);
+  assert.match(upperWorkerFailed[5], /^○ 线上健康$/);
+  assert.match(upperWorkerFailed[6], /^✗ 部署失败$/);
+  assert.equal(upperWorkerFailed.some(value => value.includes('线上探活失败')), false);
 });
 
 
