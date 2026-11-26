@@ -41,7 +41,7 @@ jobs:
           request_id = os.environ["DEPLOY_REQUEST_ID"]
           if not 1 <= len(ref) <= 120 or ref != ref.strip():
               raise SystemExit("Invalid ref length or whitespace")
-          if re.search(r"[\\r\\n'\";`]|\\$\\(|&&", ref):
+          if not 1 <= len(ref) <= 120 or ref != ref.strip() or any(c in ref for c in ["\r", "\n", '"', "'", ";", "]", "\\", "$", "(", "&"]):
               raise SystemExit("Invalid characters in ref")
           if not re.fullmatch(r"(?:[0-9a-fA-F]{7,64}|[A-Za-z0-9._/-]+)", ref):
               raise SystemExit("Ref must be a branch name or commit SHA")
