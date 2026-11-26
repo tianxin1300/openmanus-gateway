@@ -1,0 +1,92 @@
+name: deploy-worker
+run-name: deploy-worker · ${{ github.event.inputs.request_id || 'manual' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: "OpenManus Worker deployment request id"
+        required: false
+        type: string
+      ref:
+        description: "Branch or commit to deploy"
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-worker-${{ github.event.inputs.ref || github.ref }}
+  cancel-in-progress: false
+
+env:
+  DEPLOY_REF: ${{ github.event.inputs.ref || github.ref_name }}
+  DEPLOY_REQUEST_ID: ${{ github.event.inputs.request_id || 'manual' }}
+
+jobs:
+  deploy-worker:
+    name: deploy Cloudflare Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Validate deployment inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re
+          ref = os.environ["DEPLOY_REF"]
+          request_id = os.environ["DEPLOY_REQUEST_ID"]
+          if not 1 <= len(ref) <= 120 or ref != ref.strip():
+              raise SystemExit("Invalid ref length or whitespace")
+          if re.search(r"[\\r\\n'\";`]|\\$\\(|&&", ref):
+              raise SystemExit("Invalid characters in ref")
+          if not re.fullmatch(r"(?:[0-9a-fA-F]{7,64}|[A-Za-z0-9._/-]+)", ref):
+              raise SystemExit("Ref must be a branch name or commit SHA")
+          if any(part in ("", ".", "..") for part in ref.split("/")):
+              raise SystemExit("Invalid ref path segment")
+          if len(request_id) > 160 or "\\r" in request_id or "\\n" in request_id:
+              raise SystemExit("Invalid request id")
+          PY
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_REF }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Confirm Cloudflare credentials
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_API_TOKEN repository secret"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing CLOUDFLARE_ACCOUNT_ID repository secret"; exit 1; }
+
+      - name: Deploy Worker only
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4 deploy --config wrangler.toml
+
+      - name: Write deployment summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## OpenManus Cloudflare Worker deployment"
+            echo
+            echo "- Ref: $DEPLOY_REF"
+            echo "- Request: $DEPLOY_REQUEST_ID"
+            echo "- Target: Worker `openmanus-gateway` (wrangler.toml)"
+            echo "- Result: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
