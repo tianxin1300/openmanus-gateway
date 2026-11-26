@@ -740,7 +740,7 @@ function element(tag = 'div', provider) {
       const classes = new Set(node.className.split(/\s+/).filter(Boolean));
       const enabled = force === undefined ? !classes.has(name) : !!force;
       if (enabled) classes.add(name); else classes.delete(name);
-  ].join('\n');
+      node.className = [...classes].join(' ');
       return enabled;
     }
   };
