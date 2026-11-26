@@ -207,6 +207,11 @@ test('workbench simultaneous start triggers GitHub Actions and renders the full 
   assert.match(frontendSource, /j\.state === "success"/);
   assert.match(frontendSource, /j\.state === "failure"/);
   assert.match(frontendSource, /function renderDeliveryChain\(d\)/);
+  assert.match(frontendSource, /fetch\("https:\/\/zhineng-et5\.pages\.dev\/", \{method:"GET", cache:"no-store"/);
+  assert.match(frontendSource, /response\.status === 200/);
+  assert.match(frontendSource, /health\.state === "ok" && health\.status === 200/);
+  assert.match(frontendSource, /线上探活失败/);
+  assert.doesNotMatch(frontendSource, /const online = !!\(d\.deploy && d\.state === "success"\)/);
   for (const label of ['已生成', '已验证', '已提交', '部署中', '线上健康']) {
     assert.match(frontendSource, new RegExp(label));
   }
