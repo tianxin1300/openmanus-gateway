@@ -169,16 +169,16 @@ test('BUG-07: verification logs preserve file context and expose exact source-li
     '    at TestContext.<anonymous> (/home/runner/work/repo/repo/tests/code-mode-providers.test.cjs:1148:10)',
     '    at async Test.run (node:internal/test_runner/test:632:9)',
     'Error: build failed'
-  ].join('\\n');
+  ].join('\n');
   const kept = vm.runInContext('codeVerifyErrorLines(' + JSON.stringify(log) + ')', workerContext);
   assert.ok(kept.some(line => line.includes('tests/code-mode-providers.test.cjs:1148:10')));
   assert.ok(kept.some(line => line.includes('AssertionError')));
   assert.ok(kept.some(line => line.includes('TestContext.<anonymous>')));
   assert.match(workerSource, /locationPattern/);
-  assert.match(frontendSource, /function verifyErrorLocation\\(raw\\)/);
-  assert.match(frontendSource, /revealLineInCenter\\(line\\)/);
-  assert.match(frontendSource, /setSelectionRange\\(start/);
-  assert.match(frontendSource, /renderVerifyErrorLocations\\(d\\.error_lines, d\\.head_sha\\)/);
+  assert.match(frontendSource, /function verifyErrorLocation\(raw\)/);
+  assert.match(frontendSource, /revealLineInCenter\(line\)/);
+  assert.match(frontendSource, /setSelectionRange\(start/);
+  assert.match(frontendSource, /renderVerifyErrorLocations\(d\.error_lines, d\.head_sha\)/);
   const locationBlock = extract(frontendSource, 'function verifyErrorLocation(raw)', 'function renderVerifyResult(d)');
   const locationContext = vm.createContext({});
   vm.runInContext(locationBlock, locationContext);
@@ -737,7 +737,7 @@ function element(tag = 'div', provider) {
       const classes = new Set(node.className.split(/\s+/).filter(Boolean));
       const enabled = force === undefined ? !classes.has(name) : !!force;
       if (enabled) classes.add(name); else classes.delete(name);
-      node.className = [...classes].join(' ');
+  ].join('\n');
       return enabled;
     }
   };
