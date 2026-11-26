@@ -1312,3 +1312,33 @@ test("devbench standalone preview keeps a synced run-results panel and expandabl
   assert.match(match[1], /g\(["']wb-runlogs["']\)\.addEventListener\(["']toggle["']/);
   assert.match(frontendSource, /#wb-term\.wb-runlogs-expanded/);
 });
+
+
+test('ACCEPTANCE.md: formal acceptance standard covers all iPad and six delivery-chain items with strict evidence gates', () => {
+  const acceptancePath = path.join(root, 'ACCEPTANCE.md');
+  assert.equal(fs.existsSync(acceptancePath), true, 'formal ACCEPTANCE.md must exist');
+  const doc = fs.readFileSync(acceptancePath, 'utf8');
+
+  const requiredSections = [
+    'IPAD-01', 'IPAD-02', 'IPAD-03', 'IPAD-04',
+    'CHAIN-01', 'CHAIN-02', 'CHAIN-03', 'CHAIN-04', 'CHAIN-05', 'CHAIN-06'
+  ];
+  for (const section of requiredSections) {
+    assert.ok(doc.includes(section), `acceptance document must define ${section}`);
+  }
+
+  for (const field of [
+    '前置条件', '操作步骤', '预期结果', '失败判据', '留证方式',
+    '自动化测试 / Actions（单独记录，不代替线上验收）',
+    '线上验收记录（必填）', '线上结论：未验收 / 未通过 / 通过'
+  ]) {
+    const occurrences = doc.split(field).length - 1;
+    assert.ok(occurrences >= 10, `each of the 10 acceptance items must include: ${field}; found ${occurrences}`);
+  }
+
+  assert.match(doc, /缺少任一必填证据[\s\S]*?该项即为\*\*未通过\*\*/);
+  assert.match(doc, /自动化测试通过、Actions 通过、Pages 构建成功，均不能替代线上验收/);
+  assert.match(doc, /禁止使用“基本通过/);
+  assert.match(doc, /全部 10 项均为“通过”[\s\S]*?最终交付结论为“通过”/);
+  assert.match(doc, /最终交付结论 \| \*\*未通过（默认值/);
+});
