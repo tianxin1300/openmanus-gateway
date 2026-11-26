@@ -1119,6 +1119,7 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
     vm.runInContext(block + String.fromCharCode(10) + chainBlock, chainContext,
       { filename: 'upper-delivery-chain-failure.vm.js', timeout: 1000 });
     return data => {
+      chainNode.children.length = 0;
       vm.runInContext('renderChain(' + JSON.stringify(data) + ')', chainContext);
       return chainNode.children.map(node => node.textContent);
     };
