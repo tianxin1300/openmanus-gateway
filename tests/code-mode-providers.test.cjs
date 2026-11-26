@@ -251,6 +251,14 @@ test('persistent runner, KV logs and Pages deployment are wired end to end', () 
   assert.match(workerSource, /path === "\/api\/code\/logs"/);
   assert.match(workerSource, /path === "\/api\/code\/runs"/);
   assert.match(workerSource, /CODE_DEPLOY_WORKFLOW = "deploy-project\.yml"/);
+  assert.match(workerSource, /CODE_WORKER_DEPLOY_WORKFLOW = "deploy-worker\.yml"/);
+  assert.match(workerSource, /for \(const kind of \["deploy", "worker"\]\)/);
+  assert.match(workerSource, /kind === "worker" \? CODE_WORKER_DEPLOY_WORKFLOW : CODE_DEPLOY_WORKFLOW/);
+  assert.match(workerSource, /r\.kind === "worker" \? "deploy-worker · "/);
+  const workerDeploy = fs.readFileSync(path.join(root, '.github/workflows/deploy-worker.yml'), 'utf8');
+  assert.match(workerDeploy, /name: deploy-worker/);
+  assert.match(workerDeploy, /run: npx --yes wrangler@4 deploy --config wrangler\.toml/);
+  assert.doesNotMatch(workerDeploy, /wrangler pages deploy/);
   assert.match(workerSource, /path === "\/api\/code\/deploy"/);
   assert.match(deploy, /name: deploy-project/);
   assert.match(deploy, /actions\/checkout@v4/);
