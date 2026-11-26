@@ -6456,13 +6456,19 @@ function renderDeliveryChain(d) {
 function verifyErrorLocation(raw) {
   const line = String(raw || "");
   const patterns = [
-    /(?:^|[\s("' ])((?:\.{0,2}\/)?[\w@.-]+(?:\/[\w@.-]+)*\.(?:[cm]?[jt]sx?|html?|css|json|ya?ml|py|sh)):(\d+)(?::(\d+))?\b/i,
+    /(?:^|[\s("'(/])((?:\.{0,2}\/)?[\w@.-]+(?:\/[\w@.-]+)*\.(?:[cm]?[jt]sx?|html?|css|json|ya?ml|py|sh)):(\d+)(?::(\d+))?\b/i,
     /File ["']([^"']+)["'], line (\d+)/i,
     /((?:[A-Za-z]:)?[^()\s]+\.(?:[cm]?[jt]sx?|html?|css|json|ya?ml|py|sh))\((\d+),(\d+)\)/i
   ];
   for (const re of patterns) {
     const m = re.exec(line);
-    if (m) return {path: m[1].replace(/^\.\//, ""), line: Number(m[2]), column: Number(m[3] || 1)};
+    if (m) {
+      let path = m[1].replace(/^\.\//, "").replace(/\\/g, "/");
+      const marker = "/" + REPO.repo + "/" + REPO.repo + "/";
+      const at = path.lastIndexOf(marker);
+      if (at >= 0) path = path.slice(at + marker.length);
+      return {path, line: Number(m[2]), column: Number(m[3] || 1)};
+    }
   }
   return null;
 }
