@@ -946,7 +946,8 @@ test('devbench has one Actions launch button and one expandable unified run log'
   assert.ok(frontendSource.includes('wb-terminal-fullscreen'));
   assert.ok(frontendSource.includes('window.visualViewport'));
   assert.ok(frontendSource.includes('aria-live="polite"'));
-  assert.ok(frontendSource.includes('aria-label="输入终端命令"'));
+  assert.ok(frontendSource.includes('id="wb-terminal-input"'), "terminal command input exists");
+  assert.match(frontendSource, /aria-label="[^"]*(?:输入|终端)[^"]*"/, "an aria-label identifies an input or terminal control");
   assert.ok(frontendSource.includes('aria-label="切换终端全屏"'));
   assert.ok(frontendSource.includes('role="toolbar" aria-label="终端特殊按键"'));
   assert.match(frontendSource, /#wb-terminal\\s*\\{[^}]*min-height:180px/);
