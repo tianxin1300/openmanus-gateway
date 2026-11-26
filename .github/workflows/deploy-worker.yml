@@ -52,8 +52,32 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.DEPLOY_REF }}
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
+
+      - name: Resolve deployment ref
+        shell: bash
+        env:
+          DEPLOY_REF: ${{ env.DEPLOY_REF }}
+        run: |
+          set -euo pipefail
+
+          if git show-ref --verify --quiet "refs/remotes/origin/$DEPLOY_REF"; then
+            target="refs/remotes/origin/$DEPLOY_REF"
+            echo "Resolved deployment ref as remote branch: $DEPLOY_REF"
+          elif git show-ref --verify --quiet "refs/tags/$DEPLOY_REF"; then
+            target="refs/tags/$DEPLOY_REF"
+            echo "Resolved deployment ref as tag: $DEPLOY_REF"
+          else
+            target="$(git rev-parse --verify "${DEPLOY_REF}^{commit}" 2>/dev/null)" || {
+              echo "::error::Deployment ref '$DEPLOY_REF' is neither a fetched branch/tag nor a resolvable commit SHA"
+              exit 1
+            }
+            echo "Resolved deployment ref as commit: $target"
+          fi
+
+          git checkout --force --detach "$target"
+          echo "Checked out $(git rev-parse HEAD)"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -85,6 +109,6 @@ jobs:
             echo
             echo "- Ref: $DEPLOY_REF"
             echo "- Request: $DEPLOY_REQUEST_ID"
-            echo "- Target: Worker `openmanus-gateway` (wrangler.toml)"
+            echo '- Target: Worker openmanus-gateway (wrangler.toml)'
             echo "- Result: ${{ job.status }}"
           } >> "$GITHUB_STEP_SUMMARY"
