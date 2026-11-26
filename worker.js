@@ -959,19 +959,26 @@ async function codePendingCreate(env, user, pending) {
 }
 const CODE_PENDING_TTL_MS = 600000;   // v108：待处理改动 10 分钟没点「接受 / 拒绝」就自动过期
 
-// v108 防死循环：所有丢弃路径共用这一个函数——删临时分支（404 当成功）→ 无条件清 Durable Object / KV 里的待处理记录。
-// 任何一步失败都不把记录留着卡死下一次改动：清失败只记日志，读取时还有过期兜底。
+// 丢弃采用 DO 原子占位：先锁定 pending（拒绝 applying），再删 GitHub 分支，最后按 id/version 清记录。
 async function codePendingDiscard(env, user, pending) {
   const p = pending || (await codePendingLoad(env, user));
+  if (!p) return { ok: true, branch_deleted: false, cleared: true, skipped: true };
+  const state = await codeClaimState(env, user);
+  if (!state.ok) return { ok: false, status: 503, cleared: false, msg: state.msg || "无法读取待处理状态", reply: "无法确认旧操作状态，已停止清理；原记录保留。" };
+  if (!state.pending || state.pending.id !== p.id) return { ok: false, status: 409, cleared: false, msg: "待处理修改已变化，拒绝清理过期快照", reply: "待处理修改状态已变化，未执行清理；请刷新后重试。" };
+  const pendingId = String(state.pending.id), version = Number(state.version);
+  const locked = await codeClaimCall(env, user, "discard", { pending_id: pendingId, version });
+  if (!locked.ok) return { ok: false, status: locked.status || 409, cleared: false, msg: locked.msg || "待处理操作正在执行", reply: locked.msg || "这项修改正在执行接受操作，未被清除。" };
   let branch = { ok: true, skipped: true };
-  if (p && p.repo && p.branch) branch = await codeDeleteBranch(env, p.repo, p.branch);
+  if (p.repo && p.branch) branch = await codeDeleteBranch(env, p.repo, p.branch);
   const branchGone = !!(branch && branch.status === 404);
-  if (p && p.repo && p.branch && !branch.ok && !branchGone) {
+  if (p.repo && p.branch && !branch.ok && !branchGone) {
+    await codeClaimCall(env, user, "discard-release", { pending_id: pendingId, version }).catch(() => {});
     return { ok: false, branch_deleted: false, cleared: false, status: branch.status || 502,
       msg: "GitHub 临时分支删除失败，待处理记录已保留：" + (branch.msg || "未知错误"),
       reply: "清空失败：GitHub 临时分支删除失败，待处理记录未清除。" };
   }
-  const cleared = await codeClaimCall(env, user, "clear", {});
+  const cleared = await codeClaimCall(env, user, "clear", { pending_id: pendingId, version });
   if (!cleared.ok) return { ok: false, branch_deleted: !!branch.ok, branch_already_gone: branchGone, cleared: false,
     status: 503, msg: cleared.msg || "Durable Object 清理失败", reply: "临时分支已处理，但待处理记录清除失败；请重试。" };
   if (env.KV) {
@@ -1022,8 +1029,11 @@ async function codeProject(env, user, proj, req, history, ui) {
   if (!env.KV || !env.CODE_CLAIMS) return { ok: false, reply: "❌ 代码推送需要 CODE_CLAIMS Durable Object 绑定，未启用 KV 模拟锁" };
   const previous = await codePendingLoad(env, user);
   if (codePendingActive(previous)) {
-    // v108 防死循环：新消息进来，上一个预览还没处理就直接自动丢弃（删临时分支 + 清记录），绝不阻塞、不再报「还没处理完」。
+    if ((previous.status || "awaiting_approval") === "applying") {
+      return { ok: false, reply: "上一项修改正在执行接受操作，当前操作已保留，没有被新消息丢弃。请等本次执行结束后再提交新的修改需求。" };
+    }
     const discarded = await codePendingDiscard(env, user, previous);
+    if (!discarded.ok) return { ok: false, reply: discarded.reply || discarded.msg || "旧的待处理修改未能安全清理，本次新修改已停止。" };
     console.log("[code] auto-discard on new message", JSON.stringify({ user: String(user).slice(0, 40), branch: previous.branch, branch_deleted: discarded.branch_deleted, branch_already_gone: discarded.branch_already_gone, cleared: discarded.cleared }));
   }
   const tree = await codeFileTree(env, proj.repo, branch);
@@ -9202,6 +9212,10 @@ export class CodeClaimDO {
     const createdAt = (value.pending && value.pending.created_at) || value.created_at || 0;
     if ((value.expires_at && value.expires_at <= Date.now()) || (createdAt && Date.now() - createdAt >= CODE_PENDING_TTL_MS)) {
       const p = value.pending;
+      if (p && ["applying", "discarding"].includes(p.status)) {
+        await this.storage.setAlarm(Date.now() + 60000);
+        return value;
+      }
       if (p && p.repo && p.branch) {
         const removed = await codeDeleteBranch(this.env, p.repo, p.branch);
         if (!removed.ok && removed.status !== 404) {
@@ -9223,6 +9237,10 @@ export class CodeClaimDO {
     const expiresAt = value.expires_at || (createdAt ? createdAt + CODE_PENDING_TTL_MS : 0);
     if (expiresAt && expiresAt > Date.now()) { await this.storage.setAlarm(expiresAt); return; }
     const p = value.pending;
+    if (p && ["applying", "discarding"].includes(p.status)) {
+      await this.storage.setAlarm(Date.now() + 60000);
+      return;
+    }
     if (p && p.repo && p.branch) {
       const removed = await codeDeleteBranch(this.env, p.repo, p.branch);
       if (!removed.ok && removed.status !== 404) {
@@ -9244,7 +9262,7 @@ export class CodeClaimDO {
     if (action === "create") {
       const current = await this.load(), incoming = body.pending;
       if (!incoming || !incoming.id || !incoming.project || !Array.isArray(incoming.edits) || !incoming.edits.length) return this.response({ ok: false, msg: "缺少有效 pending" }, 400);
-      if (current && current.pending && ["awaiting_approval", "applying", "partial", "conflict", "failed"].includes(current.pending.status || "awaiting_approval")) return this.response({ ok: false, conflict: true, pending: current.pending, msg: "已有待处理修改" }, 409);
+      if (current && current.pending && ["awaiting_approval", "applying", "discarding", "partial", "conflict", "failed"].includes(current.pending.status || "awaiting_approval")) return this.response({ ok: false, conflict: true, pending: current.pending, msg: "已有待处理修改" }, 409);
       incoming.status = "awaiting_approval"; incoming.version = 1; incoming.updatedAt = now;
       if (!incoming.created_at) incoming.created_at = now;   // v108：记录创建时间，10 分钟后自动过期
       await this.save({ pending: incoming, created_at: now, version: 1, claims: {}, results: {}, expires_at: now + CODE_PENDING_TTL_MS });
@@ -9275,7 +9293,30 @@ export class CodeClaimDO {
       await this.save(current);
       return this.response({ ok: true, result, pending: p, version: current.version });
     }
-    if (action === "clear") {   // v108：丢弃后无条件清记录（防死循环的关键——DO 里绝不能留旧的待处理改动）
+    if (action === "discard") {
+      const current = await this.load(), p = current && current.pending;
+      const pendingId = String(body.pending_id || ""), version = Number(body.version);
+      if (!current || !p || !pendingId || p.id !== pendingId || !Number.isInteger(version) || Number(current.version) !== version) return this.response({ ok: false, conflict: true, msg: "待处理内容已变化，拒绝丢弃" }, 409);
+      if (p.status === "applying" || Object.keys(current.claims || {}).length) return this.response({ ok: false, busy: true, msg: "这项修改正在执行接受操作，不能自动丢弃" }, 409);
+      if (!["awaiting_approval", "partial", "conflict", "failed"].includes(p.status || "awaiting_approval")) return this.response({ ok: false, busy: true, msg: "当前状态不允许丢弃：" + p.status }, 409);
+      p.discard_previous_status = p.status || "awaiting_approval";
+      p.status = "discarding"; p.updatedAt = now;
+      await this.save(current);
+      return this.response({ ok: true, discarding: true, pending: p, version: current.version });
+    }
+    if (action === "discard-release") {
+      const current = await this.load(), p = current && current.pending;
+      if (!current || !p || p.id !== String(body.pending_id || "") || Number(current.version) !== Number(body.version) || p.status !== "discarding") return this.response({ ok: false, conflict: true, msg: "丢弃占位已变化，不能释放" }, 409);
+      p.status = p.discard_previous_status || "awaiting_approval";
+      delete p.discard_previous_status;
+      p.updatedAt = now;
+      await this.save(current);
+      return this.response({ ok: true, released: true, pending: p, version: current.version });
+    }
+    if (action === "clear") {
+      const current = await this.load(), p = current && current.pending;
+      if (!current || !p || p.id !== String(body.pending_id || "") || Number(current.version) !== Number(body.version) || p.status !== "discarding") return this.response({ ok: false, conflict: true, msg: "待处理内容已变化或正在执行，拒绝清除" }, 409);
+      if (Object.keys(current.claims || {}).length) return this.response({ ok: false, busy: true, msg: "存在执行中的接受操作，拒绝清除" }, 409);
       await this.storage.delete("claim");
       return this.response({ ok: true, cleared: true });
     }
