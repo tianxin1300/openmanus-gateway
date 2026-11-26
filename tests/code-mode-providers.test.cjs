@@ -889,7 +889,7 @@ test('WebContainer local preview opens as a dedicated view and can return to the
   assert.ok(frontendSource.includes('summary.textContent="本地预览启动失败："'));
   assert.ok(!frontendSource.includes('wb-local-error-detail'));
   assert.ok(frontendSource.includes('#wb-local-error[hidden]{display:none!important}'));
-  const workbenchScript = [...frontendSource.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi)].map(match => match[1]).find(source => source.includes("const MCP_URL ="));
+  const workbenchScript = [...frontendSource.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(match => match[1]).find(source => source.includes("const MCP_URL ="));
   assert.ok(workbenchScript, "workbench inline script must be present");
   assert.doesNotThrow(() => new vm.Script(workbenchScript, { filename: "workbench-inline.js" }));
   assert.ok(frontendSource.includes('id="wb-local-logbox" hidden'));
