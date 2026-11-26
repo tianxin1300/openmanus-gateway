@@ -143,7 +143,7 @@ test('web workbench: refuses unsafe save and no longer carries a local WebContai
   assert.match(frontendSource, /没有拿到文件基线 SHA，为避免覆盖线上改动/);
   assert.doesNotMatch(frontendSource, /WebContainer/);
   assert.doesNotMatch(frontendSource, /function initTerm/);
-  assert.doesNotMatch(frontendSource, /async function run\\(\\)/);
+  assert.ok(!frontendSource.includes("async function run()"));
 });
 
 test('remote verification: reuses a dispatchable workflow and returns status fields', () => {
@@ -268,9 +268,9 @@ test('workbench simultaneous start triggers GitHub Actions and renders the full 
 });
 
 test('P0-01: frontend accepts an explicit gateway URL and Actions runner does not boot a local WebContainer', () => {
-  assert.match(frontendSource, /new URLSearchParams\\(location\\.search\\)\\.get\\("gateway"\\)/);
-  assert.match(frontendSource, /location\\.hostname\\.replace\\(/);
-  assert.match(frontendSource, /authFetch\\(GATEWAY \\+ "\\/api\\/code\\/both"/);
+  assert.ok(frontendSource.includes('new URLSearchParams(location.search).get("gateway")'));
+  assert.ok(frontendSource.includes("location.hostname.replace("));
+  assert.ok(frontendSource.includes('authFetch(GATEWAY + "/api/code/both"'));
   assert.doesNotMatch(frontendSource, /WebContainer/);
 });
 
