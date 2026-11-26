@@ -4289,7 +4289,9 @@ function splitParts(md, lim = EXP_PART_CP) {
       recorder = mimeType ? new MediaRecorder(voiceStream, { mimeType }) : new MediaRecorder(voiceStream);
       voiceChunks = [];
       recorder.onerror = () => {
-        voiceBusy = false; voiceStarting = false; recorder = null; releaseVoiceStream(); setVoiceState("idle");
+        voiceBusy = false; voiceStarting = false; voiceChunks = [];
+        if (recorder) recorder.onstop = null;
+        recorder = null; releaseVoiceStream(); setVoiceState("idle");
         toast("录音中断，请重新点击麦克风");
       };
       recorder.ondataavailable = (event) => { if (event.data && event.data.size) voiceChunks.push(event.data); };
