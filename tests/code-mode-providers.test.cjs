@@ -865,13 +865,14 @@ test('local HTTP integration: frontend-style API request reaches the real Worker
 
 
 
-test('WebContainer local preview starts from a visible button and reports failures in a one-line warning', () => {
+test('WebContainer local preview opens as a dedicated view and can return to the workbench', () => {
   assert.ok(frontendSource.includes('id="wb-both"'));
   assert.ok(frontendSource.includes('id="wb-local-preview"'));
   assert.ok(frontendSource.indexOf('id="wb-both"') < frontendSource.indexOf('id="wb-local-preview"'));
   assert.ok(frontendSource.includes('g("wb-local-preview").addEventListener("click"'));
   assert.ok(frontendSource.includes('await openLocalTaskPreview()'));
-  assert.ok(frontendSource.includes('alert.hidden = false'));
+  assert.ok(frontendSource.includes('button.textContent="返回开发台"'));
+  assert.ok(frontendSource.includes('wb.classList.remove("wb-local-preview-mode")'));
   assert.ok(!frontendSource.includes('new URLSearchParams(location.search).get("webcontainer")'));
   assert.ok(frontendSource.includes('window.openLocalTaskPreview=openLocalTaskPreview'));
   assert.ok(frontendSource.includes('open-local-task-preview'));
@@ -880,11 +881,15 @@ test('WebContainer local preview starts from a visible button and reports failur
   assert.ok(frontendSource.includes("Object.entries(fileOverrides)"));
   assert.ok(frontendSource.includes("event.detail||{}"));
   assert.ok(frontendSource.includes("String.fromCharCode(92)"));
+  assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-left'));
+  assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-term{display:none!important}'));
+  assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-runframe{display:block!important'));
+  assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-chain'));
   assert.ok(frontendSource.includes('id="wb-local-error" class="wb-local-error" role="status" aria-live="polite" hidden'));
   assert.ok(frontendSource.includes('summary.textContent="本地预览启动失败："'));
   assert.ok(!frontendSource.includes('wb-local-error-detail'));
   assert.ok(frontendSource.includes('#wb-local-error[hidden]{display:none!important}'));
-  const workbenchScript = [...frontendSource.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(match => match[1]).find(source => source.includes("const MCP_URL ="));
+  const workbenchScript = [...frontendSource.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi)].map(match => match[1]).find(source => source.includes("const MCP_URL ="));
   assert.ok(workbenchScript, "workbench inline script must be present");
   assert.doesNotThrow(() => new vm.Script(workbenchScript, { filename: "workbench-inline.js" }));
   assert.ok(frontendSource.includes('id="wb-local-logbox" hidden'));
