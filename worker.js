@@ -737,7 +737,7 @@ function codePushGuard(env, user, repo, path) {   // 返回空串 = 允许；否
   if (String(user) !== owner) return "只有主人账号能推送";
   if (!codeRepoOk(env, repo)) return "仓库 " + repo + " 不在允许名单里（Worker 变量 CODE_REPOS，逗号分隔）";
   if (!codePathOk(path)) return "文件路径不合法";
-  if (/(^|\/)wrangler\.toml$|^\.github\//i.test(path)) return "部署配置文件（wrangler.toml / .github）不让 AI 推送，请手动改";
+  if (/(^|\/)\.git(?:\/|$)|(^|\/)\.env/i.test(path)) return "敏感文件（.git/、.env）不让 AI 推送，请手动改";
   if (env.CODE_PROTECT === "1" && /^worker\.js$/i.test(path)) return "worker.js 受保护（Worker 变量 CODE_PROTECT=1）；去掉这个变量才能推";
   return "";
 }
