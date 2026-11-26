@@ -1,6 +1,8 @@
-诊断时间(UTC): 2026-11-26T22:43:40+00:00
+诊断时间(UTC): 2026-11-26T22:52:46+00:00
 
 == 最近 12 个提交 ==
+ef0644d Fix iOS Safari voice input with server transcription
+55547de diag: refresh current project report
 141542b Restore terminal touch shortcuts and CTRL modifier
 2ab6d0b diag: refresh current project report
 bccfdb6 Revert PR #8 homepage visual refresh
@@ -11,69 +13,67 @@ f680167 diag: refresh current project report
 856d363 diag: refresh current project report
 5b287f4 Keep terminal AUTO-04 acceptance status unpassed (#17)
 af035c2 diag: refresh current project report
-321a64b Restore terminal shortcuts and unify terminal blue styling (#16)
-b4c13e0 diag: refresh current project report
 
 == 文件 ==
 .:
 total 1084
-drwxr-xr-x 11 runner runner   4096 Nov 26 22:43 .
-drwxr-xr-x  3 runner runner   4096 Nov 26 22:43 ..
-drwxr-xr-x  7 runner runner   4096 Nov 26 22:43 .git
-drwxr-xr-x  3 runner runner   4096 Nov 26 22:43 .github
--rw-r--r--  1 runner runner   8556 Nov 26 22:43 ACCEPTANCE.md
--rw-r--r--  1 runner runner    724 Nov 26 22:43 apply_v106.py
--rw-r--r--  1 runner runner   2686 Nov 26 22:43 apply_v107.py
--rw-r--r--  1 runner runner   4017 Nov 26 22:43 apply_v108.py
--rw-r--r--  1 runner runner   4249 Nov 26 22:43 apply_v109.py
--rw-r--r--  1 runner runner   2497 Nov 26 22:43 dev-run.yml
-drwxr-xr-x  2 runner runner   4096 Nov 26 22:43 diag
--rw-r--r--  1 runner runner   7037 Nov 26 22:43 diag_v110.py
-drwxr-xr-x  3 runner runner   4096 Nov 26 22:43 frontend
--rw-r--r--  1 runner runner    197 Nov 26 22:43 package-lock.json
--rw-r--r--  1 runner runner    338 Nov 26 22:43 package.json
--rw-r--r--  1 runner runner  23105 Nov 26 22:43 studio.js
-drwxr-xr-x  2 runner runner   4096 Nov 26 22:43 tests
-drwxr-xr-x  2 runner runner   4096 Nov 26 22:43 v106
-drwxr-xr-x  2 runner runner   4096 Nov 26 22:43 v107
-drwxr-xr-x  2 runner runner   4096 Nov 26 22:43 v108
-drwxr-xr-x  2 runner runner   4096 Nov 26 22:43 v109
--rw-r--r--  1 runner runner 978979 Nov 26 22:43 worker.js
--rw-r--r--  1 runner runner    512 Nov 26 22:43 wrangler.toml
+drwxr-xr-x 11 runner runner   4096 Nov 26 22:52 .
+drwxr-xr-x  3 runner runner   4096 Nov 26 22:52 ..
+drwxr-xr-x  7 runner runner   4096 Nov 26 22:52 .git
+drwxr-xr-x  3 runner runner   4096 Nov 26 22:52 .github
+-rw-r--r--  1 runner runner   8556 Nov 26 22:52 ACCEPTANCE.md
+-rw-r--r--  1 runner runner    724 Nov 26 22:52 apply_v106.py
+-rw-r--r--  1 runner runner   2686 Nov 26 22:52 apply_v107.py
+-rw-r--r--  1 runner runner   4017 Nov 26 22:52 apply_v108.py
+-rw-r--r--  1 runner runner   4249 Nov 26 22:52 apply_v109.py
+-rw-r--r--  1 runner runner   2497 Nov 26 22:52 dev-run.yml
+drwxr-xr-x  2 runner runner   4096 Nov 26 22:52 diag
+-rw-r--r--  1 runner runner   7037 Nov 26 22:52 diag_v110.py
+drwxr-xr-x  3 runner runner   4096 Nov 26 22:52 frontend
+-rw-r--r--  1 runner runner    197 Nov 26 22:52 package-lock.json
+-rw-r--r--  1 runner runner    338 Nov 26 22:52 package.json
+-rw-r--r--  1 runner runner  23105 Nov 26 22:52 studio.js
+drwxr-xr-x  2 runner runner   4096 Nov 26 22:52 tests
+drwxr-xr-x  2 runner runner   4096 Nov 26 22:52 v106
+drwxr-xr-x  2 runner runner   4096 Nov 26 22:52 v107
+drwxr-xr-x  2 runner runner   4096 Nov 26 22:52 v108
+drwxr-xr-x  2 runner runner   4096 Nov 26 22:52 v109
+-rw-r--r--  1 runner runner 981278 Nov 26 22:52 worker.js
+-rw-r--r--  1 runner runner    512 Nov 26 22:52 wrangler.toml
 
 .github/workflows:
 total 32
-drwxr-xr-x 2 runner runner 4096 Nov 26 22:43 .
-drwxr-xr-x 3 runner runner 4096 Nov 26 22:43 ..
--rw-r--r-- 1 runner runner 2454 Nov 26 22:43 apply-v105.yml
--rw-r--r-- 1 runner runner 2724 Nov 26 22:43 deploy-project.yml
--rw-r--r-- 1 runner runner 4081 Nov 26 22:43 deploy-worker.yml
--rw-r--r-- 1 runner runner 1295 Nov 26 22:43 diag-report.yml
--rw-r--r-- 1 runner runner  679 Nov 26 22:43 test-project.yml
--rw-r--r-- 1 runner runner 2558 Nov 26 22:43 verify-project.yml
+drwxr-xr-x 2 runner runner 4096 Nov 26 22:52 .
+drwxr-xr-x 3 runner runner 4096 Nov 26 22:52 ..
+-rw-r--r-- 1 runner runner 2454 Nov 26 22:52 apply-v105.yml
+-rw-r--r-- 1 runner runner 2724 Nov 26 22:52 deploy-project.yml
+-rw-r--r-- 1 runner runner 4081 Nov 26 22:52 deploy-worker.yml
+-rw-r--r-- 1 runner runner 1295 Nov 26 22:52 diag-report.yml
+-rw-r--r-- 1 runner runner  679 Nov 26 22:52 test-project.yml
+-rw-r--r-- 1 runner runner 2558 Nov 26 22:52 verify-project.yml
 
 frontend:
 total 848
-drwxr-xr-x  3 runner runner   4096 Nov 26 22:43 .
-drwxr-xr-x 11 runner runner   4096 Nov 26 22:43 ..
--rw-r--r--  1 runner runner     90 Nov 26 22:43 _headers
--rw-r--r--  1 runner runner  20601 Nov 26 22:43 devrun.js
--rw-r--r--  1 runner runner 615651 Nov 26 22:43 index.html
--rw-r--r--  1 runner runner 161913 Nov 26 22:43 openmanus_frontend_file_v99l 2.zip
--rw-r--r--  1 runner runner  21927 Nov 26 22:43 studio.js
--rw-r--r--  1 runner runner  12533 Nov 26 22:43 tasks.js
-drwxr-xr-x  2 runner runner   4096 Nov 26 22:43 vendor
--rw-r--r--  1 runner runner     80 Nov 26 22:43 wrangler.toml
+drwxr-xr-x  3 runner runner   4096 Nov 26 22:52 .
+drwxr-xr-x 11 runner runner   4096 Nov 26 22:52 ..
+-rw-r--r--  1 runner runner     90 Nov 26 22:52 _headers
+-rw-r--r--  1 runner runner  20601 Nov 26 22:52 devrun.js
+-rw-r--r--  1 runner runner 617803 Nov 26 22:52 index.html
+-rw-r--r--  1 runner runner 161913 Nov 26 22:52 openmanus_frontend_file_v99l 2.zip
+-rw-r--r--  1 runner runner  21927 Nov 26 22:52 studio.js
+-rw-r--r--  1 runner runner  12533 Nov 26 22:52 tasks.js
+drwxr-xr-x  2 runner runner   4096 Nov 26 22:52 vendor
+-rw-r--r--  1 runner runner     80 Nov 26 22:52 wrangler.toml
 
 tests:
 total 92
-drwxr-xr-x  2 runner runner  4096 Nov 26 22:43 .
-drwxr-xr-x 11 runner runner  4096 Nov 26 22:43 ..
--rw-r--r--  1 runner runner 78962 Nov 26 22:43 code-mode-providers.test.cjs
--rw-r--r--  1 runner runner   889 Nov 26 22:43 homepage-devbench.test.cjs
+drwxr-xr-x  2 runner runner  4096 Nov 26 22:52 .
+drwxr-xr-x 11 runner runner  4096 Nov 26 22:52 ..
+-rw-r--r--  1 runner runner 79870 Nov 26 22:52 code-mode-providers.test.cjs
+-rw-r--r--  1 runner runner   889 Nov 26 22:52 homepage-devbench.test.cjs
 
 == worker.js ==
-978979 字节, 9425 行, CRLF=False
+981278 字节, 9460 行, CRLF=False
 -- 前 10 行 --
 // openmanus-gateway v99y：一个脑子。飞书消息不再自己猜意图，直接调前端同一个 runWorkChat（同一份 WORK_SYSTEM_PROMPT / 同一个模型轮换 / 同一张 FS_TOOLS）。选哪个工具完全由模型自己定：代码里没有关键词分流、没有白名单、没有预调工具，只给任务结构（工具表 + 会话态 + 多轮循环 + 最终自由文本）。删掉飞书先猜意图那层 / 关键…
 // v100：新增「代码助手」（CODE_SYSTEM_PROMPT / codeLLM / codeAssist，OpenRouter 免费代码模型 → Groq llama-3.3-70b 兜底；可经 GitHub REST 读写文件）。其余代码一行没改。
@@ -85,8 +85,8 @@ drwxr-xr-x 11 runner runner  4096 Nov 26 22:43 ..
 // v99u：建文档 / 建知识库页面只认结构 [库名、标题、正文]：正文里有字就算有内容，写没写完由模型自己判断；正文里没字才是空壳，不建；建 + 写 + 回读做完才回成功，只建了空壳 / 只写一半如实报；确认那步贴正文第一段。去掉所有关键词 / 占位词 / 小节检查和强制改道的闸：选哪个工具由模型自己定。
 // v99s：①读飞书文件按来源分流——聊天里直接上传的 .docx 走新加的聊天接口（im/v1/messages/:message_id/resources/:file_key?type=file，file_key 取自 JSON.parse(message.content).file_key），云文档链接 / file_token 仍走原来的云盘接口（drive/v1/files/:fil…
 // v99l：修 Wiki 页误报——①list_wiki_spaces / fsWikiSpaceListAny 改成每次现查（不读旧缓存）：先用用户 OAuth 令牌查，查不到或没授权再用应用（tenant）令牌查，两条路都返回结构化状态（ok / scope_missing / empty_list / token_invalid / err）；②报错说实话：权限没开就说“应用在开放平台没…
--- 所有 path === 路由（79 个）--
-/agg /api/agent/chat /api/agent/cron/run /api/agent/tool/search /api/baidu /api/chat /api/code /api/code/both /api/code/confirm /api/code/deploy /api/code/file /api/code/force-clear /api/code/history /api/code/logs /api/code/pages-health /api/code/pending /api/code/rollback /api/code/runs /api/code/tree /api/code/verify /api/connectors /api/connectors/feishu/execute /api/connectors/figma/execute /api/connectors/github/execute /api/connectors/run /api/connectors/screenshot/execute /api/connectors/search/execute /api/debug/llmprobe /api/feedback /api/feishu/agent-plan /api/feishu/event /api/feishu/logs /api/feishu/oauth/callback /api/feishu/oauth/start /api/feishu/relaylog /api/feishu/selftest /api/feishu/toolcheck /api/fetch /api/file/ai /api/file/read /api/files /api/files/upload /api/generate/audio /api/generate/image /api/history /api/hot /api/kb /api/kb/clear /api/kb/delete /api/library /api/location /api/login /api/map /api/map/jskey /api/memory /api/models /api/places/busrt /api/places/extras /api/places/line /api/places/nearby /api/places/route /api/places/staticmap /api/places/suggest /api/places/where /api/projects /api/register /api/shares /api/tasks/recent /api/tasks/schedules /api/translate /api/translate/diag /api/tts /debug /feishu/logs /feishu/logs/ /openmanus_tools.yaml /openmanus_tools.yml /register /v1/chat/completions
+-- 所有 path === 路由（80 个）--
+/agg /api/agent/chat /api/agent/cron/run /api/agent/tool/search /api/baidu /api/chat /api/code /api/code/both /api/code/confirm /api/code/deploy /api/code/file /api/code/force-clear /api/code/history /api/code/logs /api/code/pages-health /api/code/pending /api/code/rollback /api/code/runs /api/code/tree /api/code/verify /api/connectors /api/connectors/feishu/execute /api/connectors/figma/execute /api/connectors/github/execute /api/connectors/run /api/connectors/screenshot/execute /api/connectors/search/execute /api/debug/llmprobe /api/feedback /api/feishu/agent-plan /api/feishu/event /api/feishu/logs /api/feishu/oauth/callback /api/feishu/oauth/start /api/feishu/relaylog /api/feishu/selftest /api/feishu/toolcheck /api/fetch /api/file/ai /api/file/read /api/files /api/files/upload /api/generate/audio /api/generate/image /api/history /api/hot /api/kb /api/kb/clear /api/kb/delete /api/library /api/location /api/login /api/map /api/map/jskey /api/memory /api/models /api/places/busrt /api/places/extras /api/places/line /api/places/nearby /api/places/route /api/places/staticmap /api/places/suggest /api/places/where /api/projects /api/register /api/shares /api/tasks/recent /api/tasks/schedules /api/transcribe /api/translate /api/translate/diag /api/tts /debug /feishu/logs /feishu/logs/ /openmanus_tools.yaml /openmanus_tools.yml /register /v1/chat/completions
 -- code/dev/task/verify/deploy 开头的函数和类 --
 codeLLM codeVerifyPreview codeGhApi codeGitRefUrl codeTempBranch codeTempPreview codeCreateTempBranch codeDeleteBranch codeMergeTempBranch codeHistoryLoad codeHistorySave codeMemoryAppend codeMemoryPrompt codeRollback codeRunnerNamespace codeRunnerId codeRunnerCall codeRunnerUpdate codeRunnerLockCall codeRunIndexLoad codePersistRun codeRunLogs codeRuns codeWorkflowStatus codeDeployStart codeDeployStatus codeBothStart codeBothStatus codeVerifyStart codeVerifyRedact codeVerifyErrorLines codeVerifyStatus codeGetFile codeFileTree codeUpdateFile codePathProtected codePushGuard codeParse codeBlocks codeAssist codeEditRules codeChunks codeKeywords codePick codeLineAt codeShow codeParseEdits codeApply codeClaimStub codeClaimCall codeClaimState codePendingActive codePendingLoad codePendingCreate codePendingDiscard codePendingSweep codePendingView codeProject codeConfirm codeChatEntry taskIsDue CodeClaimDO CodeRunnerDO
 -- export class --
@@ -241,7 +241,7 @@ async function codeConfirm(env, user, yes, input = {}) {
 1049: const page = await env.KV.list({ prefix: "code:pend:", cursor });
 
 == frontend/index.html ==
-615651 字节, 6637 行, CRLF=False
+617803 字节, 6687 行, CRLF=False
 -- <script src=…> --
 <script src="https://cdn.tailwindcss.com">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js">
@@ -252,21 +252,21 @@ async function codeConfirm(env, user, yes, input = {}) {
 <script src="studio.js">
 -- id="wb-…"（工作台）--
 wb-back-log wb-bar wb-both wb-chain wb-ci wb-close wb-deploy wb-devbench wb-editor wb-file wb-front-log wb-history wb-left wb-lint wb-local-preview wb-main wb-open wb-pages-run-link wb-prev-refresh wb-preview wb-professional-theme wb-reload wb-res wb-right wb-runlogs wb-runlogs-tab wb-runlogs-title wb-save wb-state wb-term wb-term-tabs wb-terminal wb-terminal-command wb-terminal-command-form wb-terminal-command-send wb-terminal-layout wb-terminal-output wb-terminal-separated-panels wb-terminal-shortcuts wb-terminal-status wb-terminal-tab wb-worker-run-link
-开发台                     14 处，行号 [630, 720, 5564, 5629, 5663, 5677, 5777, 5778]
-renderDeliveryChain      2 处，行号 [6227, 6305]
-wb-both                  5 处，行号 [5686, 5687, 5784, 6418, 6533]
-/api/code/verify         2 处，行号 [6339, 6361]
-/api/code/deploy         2 处，行号 [6373, 6375]
-/api/code/logs           1 处，行号 [6177]
+开发台                     14 处，行号 [630, 720, 5614, 5679, 5713, 5727, 5827, 5828]
+renderDeliveryChain      2 处，行号 [6277, 6355]
+wb-both                  5 处，行号 [5736, 5737, 5834, 6468, 6583]
+/api/code/verify         2 处，行号 [6389, 6411]
+/api/code/deploy         2 处，行号 [6423, 6425]
+/api/code/logs           1 处，行号 [6227]
 om-code-bar              0 处，行号 []
 composer-inner           4 处，行号 [110, 430, 753, 4174]
 -- 含「开发台」的行（前 6 行）--
 630: /* ---- 开发台（Monaco 编辑器 + 实时预览 + GitHub Actions 运行日志）---- */
 720: <button id="wb-open" class="sec header-action" type="button" title="开发台：在线编辑 index.html / 实时预览 / 终端" aria-label="开发台"><span class="action-icon" aria-hidden="true">⌘</span><span class="action-label">开发台</span></button>
-5564: /* 开发台 · 代码检测：脚本语法 + 重复 id + $("id") 引用不到的元素 + 遗留 console.log */
-5629: if (!code.trim()) { rows.push(["err", "编辑器里没有内容：先打开开发台并读取文件。"]); return show(rows); }
-5663: /* 开发台顶栏在手机上换行显示，避免「代码检测」等按钮被挤出屏幕 */
-5677: /* 统一开发台视觉：中性石墨灰 + 冷蓝强调，所有面板使用同一套设计语言 */
+5614: /* 开发台 · 代码检测：脚本语法 + 重复 id + $("id") 引用不到的元素 + 遗留 console.log */
+5679: if (!code.trim()) { rows.push(["err", "编辑器里没有内容：先打开开发台并读取文件。"]); return show(rows); }
+5713: /* 开发台顶栏在手机上换行显示，避免「代码检测」等按钮被挤出屏幕 */
+5727: /* 统一开发台视觉：中性石墨灰 + 冷蓝强调，所有面板使用同一套设计语言 */
 
 == wrangler.toml ==
 name = "openmanus-gateway"
@@ -307,118 +307,80 @@ crons = ["0 0 * * *"]
 
 == npm test（node --test tests/*.cjs） ==
 node v22.23.5
-退出码 1
-✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (1.317798ms)
-✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.27951ms)
-✔ editor delivery: pending work is resumable and deployment state is not overstated (0.252489ms)
-✔ project isolation: code edits use a temporary branch before merging to the base branch (0.407011ms)
-✔ web workbench: exposes the local preview control (0.299449ms)
-✔ remote verification: reuses a dispatchable workflow and returns status fields (0.337827ms)
-✔ BUG-07: verification logs preserve file context and expose exact source-line navigation (2.872122ms)
-✔ remote verification UI: green success, red failures, and no invented preview URL (0.613892ms)
-✔ BUG-01: protected media and files never put the login token in URLs or media bodies (0.736726ms)
-✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (1.0057ms)
-✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.137618ms)
-✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (0.717638ms)
-✔ BUG-08: CodeRunnerDO serializes per-user parallel-run claims and owner-only release (17.921974ms)
-✔ BUG-08: parallel deploy preserves partial dispatch failures and holds lock until remaining run ends (0.163906ms)
-✔ workbench simultaneous start triggers GitHub Actions and renders the full delivery chain (1.594403ms)
-✔ P0-01: local preview is started from the visible control (0.258688ms)
-✔ P0-02/03: expiry and force-clear lock pending before deleting the GitHub branch (0.691708ms)
-✔ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (0.755174ms)
+退出码 0
+✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (1.68692ms)
+✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.325594ms)
+✔ editor delivery: pending work is resumable and deployment state is not overstated (0.34387ms)
+✔ project isolation: code edits use a temporary branch before merging to the base branch (0.557017ms)
+✔ web workbench: exposes the local preview control (0.444337ms)
+✔ remote verification: reuses a dispatchable workflow and returns status fields (0.646682ms)
+✔ BUG-07: verification logs preserve file context and expose exact source-line navigation (3.582222ms)
+✔ remote verification UI: green success, red failures, and no invented preview URL (0.826669ms)
+✔ BUG-01: protected media and files never put the login token in URLs or media bodies (0.929898ms)
+✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (0.831261ms)
+✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.928305ms)
+✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (0.935981ms)
+✔ BUG-08: CodeRunnerDO serializes per-user parallel-run claims and owner-only release (22.541291ms)
+✔ BUG-08: parallel deploy preserves partial dispatch failures and holds lock until remaining run ends (0.209293ms)
+✔ workbench simultaneous start triggers GitHub Actions and renders the full delivery chain (2.078008ms)
+✔ P0-01: local preview is started from the visible control (0.485128ms)
+✔ P0-02/03: expiry and force-clear lock pending before deleting the GitHub branch (0.743039ms)
+✔ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (0.910407ms)
 [code] pending expiry branch deletion failed; claim retained simulated GitHub failure
-✔ force-clear: frontend keeps preview panel visible and reports failure (9.403581ms)
-✔ CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim (1.286442ms)
-✔ CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry (0.814182ms)
-✔ CodeClaimDO alarm: GitHub 404 is treated as already deleted (0.649996ms)
-✔ codeProject refuses to auto-discard an applying pending operation (0.08031ms)
-✔ CodeClaimDO atomically rejects discard while an accept operation is applying (1.187673ms)
-✔ CodeClaimDO uses a versioned discard lock and only clears the locked pending (1.329777ms)
-✔ persistent runner, KV logs and Pages deployment are wired end to end (1.622606ms)
-✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (1.072911ms)
-✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (0.848293ms)
-✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (0.702214ms)
-✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (0.705599ms)
-✔ codeLLM: OpenRouter network errors also never fall back to Toter (0.78571ms)
-✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (1.038499ms)
-✔ codeLLM: first usable custom model succeeds without attempting later models (0.910737ms)
-✔ codeLLM: retains the Groq target loop after OpenRouter (0.945569ms)
-✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (0.928584ms)
-✔ frontend: without studio initialization, ordinary-chat providers remain available (1.45841ms)
-✔ frontend: code mode shows provider-specific code models and hides Toter aliases (0.885319ms)
-✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (2.166462ms)
-✔ frontend: switching off code mode restores buttons and preserves chat model choice (0.983026ms)
-✔ studio.js: syncToggle re-renders providers when code mode changes (0.823336ms)
-✔ studio.js: omStudio state is exposed before eager init (0.798118ms)
-✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (0.644999ms)
-✔ frontend/studio.js: omStudio state is exposed before eager init (0.614562ms)
-✔ local HTTP integration: frontend-style API request reaches the real Worker /api/models route (54.680448ms)
-✔ standalone preview uses the current editor srcdoc without WebContainer (1.601484ms)
-✔ editor wraps long lines and iPad visual viewport resizes the workbench above the keyboard (0.708624ms)
-✖ terminal is a standalone command echo panel and Pages/Worker logs stay separate without WebContainer (3.334916ms)
-✔ devbench exposes one launch button, one run log and a terminal (0.821794ms)
-✔ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (4.451863ms)
-✔ delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once (3.845473ms)
-✔ devbench keeps the editor full-width and opens the independent preview in a separate page (0.802585ms)
-✔ devbench standalone preview keeps independent terminal and run-log panels (3.027645ms)
-✔ ACCEPTANCE AUTO-01: independent preview is bui
-…（中间省略）…
- '#status.checking #status-refresh{animation:spin .8s linear infinite}\n' +
-    '@keyframes spin{to{transform:rotate(360deg)}}\n' +
-    '#att{align-items:center}\n' +
-    '.att-group{width:100%;display:flex;flex-wrap:wrap;gap:7px;align-items:center;padding:5px 0 2px}\n' +
-    '.att-group-label{width:100%;font-size:10px;color:#819083;font-weight:700;letter-spacing:.2px}\n' +
-    '.att-chip-image{border-color:#cfe2ca;background:#f4faf2}\n' +
-    '.att-chip-file{border-color:#dfe7df;background:#fbfdfb}\n' +
-    '.media-tile{flex-wrap:wrap}\n' +
-    '.media-tile small{width:100%;padding-left:44px;color:#91a093;font-size:10px}\n' +
-    '.att-tools{display:flex;align-items:center;gap:6px;width:100%;margin-bottom:2px;color:#819083;font-size:11px}\n' +
-    '.att-clear{padding:3px 8px;background:transparent;color:#9a6b6b;font-size:11px;box-shadow:none}\n' +
-    '.seg-sel{margin-left:6px;max-width:130px;font-size:11px;padding:1px 2px;border-radius:6px;border:1px solid #cfc8b8;background:#fff;color:inherit}\n' +
-    '.att-clear:hover{background:#f8ecec;color:#814b4b;box-shadow:none}\n' +
-    '.key-hint{color:#9aa59b}\n' +
-    '#msgs{flex:1;overflow:auto;padding:24px clamp(18px,5vw,64px) 30px;scroll-behavior:smooth}\n' +
-    '.row{display:flex;align-items:flex-start;gap:10px;margin:0 auto 20px;max-width:940px}\n' +
-    '.row:before{content:"AI";flex:0 0 34px;width:34px;height:34px;display:grid;place-items:center;border-radius:12px;background:#e7eaff;color:#5462df;font-size:11px;font-weight:800;margin-top:2px}\n' +
-    '.row.user{justify-content:flex-end}\n' +
-    '.row.user:before{display:none}\n' +
-    '.bub{max-width:min(84%,760px);padding:14px 17px;border-radius:17px;line-height:1.75;font-size:14px;word-break:break-word;overflow-wrap:anywhere}\n' +
-    '.user .bub{background:linear-gradient(135deg,#6573ee,#5361db);color:#fff;border-bottom-right-radius:5px;box-shadow:0 6px 18px #5361d528}\n' +
-    '.assistant .bub{background:var(--panel);border:1px solid #e9ecf3;color:#2d374b;border-bottom-left-radius:5px;box-shadow:0 5px 18px #28385b08}\n' +
-    '.user .bub>div{white-space:pre-wrap}\n' +
-    '.bub .message-line{margin:0 0 7px;white-space:pre-wrap}\n' +
-    '.bub .message-line:last-child{margin-bottom:0}\n' +
-    '.bub h1,.bub h2,.bub h3{line-height:1.35;margin:15px 0 8px;color:#202a40}\n' +
-    '.bub h1{font-size:20px}.bub h2{font-size:17px}.bub h3{font-size:15px}\n' +
-    '.bub ul,.bub ol{padding-left:24px;margin:6px 0 11px}\n' +
-    '.bub li{padding-left:3px;margin:3px 0}\n' +
-    '.bub blockquote{margin:8px 0;padding:3px 12px;border-left:3px solid #aab2fa;color:#68748c;background:#f7f8ff;border-radius:0 8px 8px 0}\n' +
-    '.bub p{margin:0 0 8px}\n' +
-    '.bub strong{font-weight:750;color:#202a40}\n' +
-    '.bub code:not(pre code){background:#f0f2f8;color:#6353b8;border-radius:5px;padding:2px 5px;font-size:.91em}\n' +
-    '.bub pre{background:#111a2d;color:#e5eafb;border:1px solid #26324a;border-radius:11px;padding:15px 16px;overflow:auto;font-size:12px;line-height:1.7;margin:8px 0;white-space:pre-wrap;tab-size:2}\n' +
-    '.chip{display:inline-flex;align-items:center;gap:5px;background:#eef1f8;color:#53617a;border-radius:7px;padding:4px 9px;font-size:11px;margin:0 6px 7px 0;max-width:100%;overflow-wrap:anywhere}\n' +
-    '.message-file{display:inline-flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid #dbe7dc;background:#f5faf3;color:#31583a;border-radius:10px;font-size:11px;max-width:100%;vertical-align:middle}\n' +
-    '.message-file .file-kind{display:grid;place-items:center;flex:0 0 24px;width:24px;height:24px;border-radius:7px;background:#e4f0e1;color:#4f8658;font-size:13px;font-weight:700}\n' +
-    '.message-file .file-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n' +
-    '.message-file .file-state{padding:2px 5px;border-radius:999px;background:#e7f3e5;color:#5f8d65;font-size:9px;white-space:nowrap}\n' +
-    '.user .message-file{border-color:rgba(255,255,255,.25);background:rgba(255,255,255,.16);color:#fff}\n' +
-    '.user .message-file .file-kind,.user .message-file .file-state{back'... 557689 more characters
-  
-      at TestContext.<anonymous> (/home/runner/work/openmanus-gateway/openmanus-gateway/tests/code-mode-providers.test.cjs:1064:10)
-      at Test.runInAsyncScope (node:async_hooks:214:14)
-      at Test.run (node:internal/test_runner/test:1047:25)
-      at Test.processPendingSubtests (node:internal/test_runner/test:744:18)
-      at Test.postRun (node:internal/test_runner/test:1173:19)
-      at Test.run (node:internal/test_runner/test:1101:12)
-      at async Test.processPendingSubtests (node:internal/test_runner/test:744:7) {
-    generatedMessage: true,
-    code: 'ERR_ASSERTION',
-    actual: '<!DOCTYPE html>\n<html lang="zh-CN"><head>\n<!-- v99l：所有“正在…”加载提示统一为纯文字“…正在X”，去掉了全部 emoji / 图标（⌛⏳🔎🖼✍⏱ 等）；接口与 Worker 路由核对一致。 -->\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n<title>OpenManus AI 助手</title>\n\n\n<style>\n:root{color-scheme:light;--ink:#19362a;--muted:#71867a;--line:#dfe9df;--panel:#fff;--canvas:#f4f8f2;--accent:#287447;--accent-dark:#1d6039;--nav:#10291f;--nav-soft:#1d4030}\n*{box-sizing:border-box}\nhtml,body{height:100%;margin:0}\nbody{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;background:var(--canvas);color:var(--ink);display:flex;overflow:hidden}\nbutton,textarea{font:inherit}\nbutton{padding:10px 14px;border:0;border-radius:11px;background:var(--accent);color:#fff;font-weight:650;font-size:14px;cursor:pointer;transition:background .18s,transform .18s,box-shadow .18s}\nbutton:hover{background:var(--accent-dark);box-shadow:0 5px 14px #28744726}\nbutton:active{transform:translateY(1px)}\nbutton:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}\nbutton.sec{background:#f0f2f7;color:#43506a}\nbutton.sec:hover{background:#e6e9f2;box-shadow:none}\n#side{width:276px;background:var(--nav);color:#edf1fa;display:flex;flex-direction:column;flex-shrink:0;padding:20px 14px 14px}\n.brand{display:flex;align-items:center;gap:11px;padding:4px 8px 22px}\n.brand-mark{width:38px;height:38px;display:grid;place-items:center;border-radius:13px;background:linear-gradient(145deg,#3f9a63,#287447);color:white;font-size:18px;font-weight:800;box-shadow:0 6px 18px #28744744}\n.brand-name{font-weight:750;font-size:15px;letter-spacing:.2px}\n.brand-caption{font-size:11px;color:#9ba8c2;margin-top:3px}\n#side .top{padding:0 2px 18px;display:flex;gap:8px}\n#new{width:100%;text-align:left;background:var(--accent);box-shadow:0 8px 20px #28744733}\n#new:hover{background:#34895a}\n.list-label{padding:0 10px 8px;color:#8592ab;font-size:11px;font-weight:700;letter-spacing:1px}\n#list{flex:1;overflow:auto;padding:0 2px}\n.item{display:flex;align-items:center;gap:8px;padding:10px 11px;border:1px solid transparent;border-radius:10px;cursor:pointer;margin-bottom:4px;color:#c7d0e2;transition:background .18s,border .18s}\n#msel-bar{flex:none;padding:8px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid #cfe0cd;background:#f1f8ef;color:#24382b;position:relative}#msel-bar[hidden]{display:none}#msel-bar .ms-r1,#msel-bar .ms-r2{display:flex;flex-wrap:wrap;gap:6px;align-items:center}#msel-bar .ms-r2{margin-top:7px}#msel-bar b{flex:1;min-width:92px;font-size:14px}#msel-bar button{padding:7px 12px;font-size:13px;border-radius:9px;border:0;background:#dfeedb;color:#2d6a3f;font-weight:650}#msel-bar .ms-r2 button{flex:1;white-space:nowrap}#msel-bar .ms-done{background:#2d6a3f;color:#fff}#msel-bar .danger{background:#d9534f;color:#fff}#msel-bar button:disabled{opacity:.4}#msel-exp{position:absolute;left:12px;right:12px;bottom:100%;margin-bottom:6px;background:#fff;border:1px solid #cfe0cd;border-radius:12px;box-shadow:0 8px 28px #0003;padding:6px;display:flex;flex-direction:column;gap:2px;z-index:20}#msel-exp[hidden]{display:none}#msel-exp button{text-align:left;background:none;padding:10px 12px;font-size:14px;font-weight:600;color:#24382b}#msel-exp button:hover{background:#eef7ee}body.msel #comp{display:none}#msg-select.on{background:#2d6a3f!important;color:#fff!important}.msel-row{position:relative;cursor:pointer;padding-left:36px!important;border-radius:12px}.msel-row:hover{background:rgba(127,165,135,.1)}.msel-row.msel-on{background:rgba(127,165,135,.2);outline:2px solid rgba(63,157,90,.55)}.msel-row *{-webkit-user-select:none;user-select:none}.msel-cb{position:absolute;left:8px;top:14px;width:20px;height:20px;border-radius:6px;border:2px solid #8bad91;background:#fff;color:#fff;font-size:14px;line-height:16px;text-align:center;font-weight:800}.msel-on .msel-cb{background:#3f9d5a;border-color:#3f9d5a}\n.sel-bar{display:flex;align-items:center;gap:6px;margin:6px 0 8px;padding:7px 9px;border-radius:10px;background:rgba(127,165,135,.2);border:1px solid rgba(127,165,135,.45);font-size:13px;position:sticky;top:0;z-index:3;backdrop-filter:blur(6px)}.sel-bar[hidden]{display:none}.sel-bar b{flex:1;font-weight:700}.sel-bar button{padding:4px 10px;font-size:12px;border-radius:8px;border:0;background:rgba(127,127,127,.25);color:inherit}.sel-bar button.danger{background:#d9534f;color:#fff}.sel-bar button:disabled{opacity:.45}.item.sel:before{display:none}.item .sel-cb{width:18px;height:18px;flex:none;pointer-events:none;accent-color:#3f9d5a}.item.sel.picked{background:rgba(127,165,135,.25);border-color:rgba(127,165,135,.6)}\n.item:before{content:"◷";font-size:15px;color:#8090af}\n.item:hover,.item.on{background:var(--nav-soft);border-color:#2a3855;color:#fff}\n.item .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}\n.item .x{background:none;color:#8d9ab3;padding:3px 7px;font-size:14px;box-shadow:none}\n.item .x:hover{color:#ff9292;background:#ff6b6b18}\n#wipe{background:#1b2740;color:#aebbd1}\n#wipe:hover{background:#263551;color:#fff}\n#main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}\n#head{min-height:70px;padding:12px clamp(18px,4vw,46px);border-bottom:1px solid var(--line);background:#ffffffed;display:flex;align-items:center;gap:12px;z-index:1}\n#head h3{margin:0;font-size:16px;font-weight:700;letter-spacing:.1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n#menu{display:none}\n#head .sp{flex:1}\n#head .sec{padding:8px 11px;font-size:13px;white-space:nowrap}\n#status{width:max-content;max-width:calc(100% - 48px);margin:14px auto 0;padding:7px 13px;border:1px solid #e8ebf3;border-radius:99px;background:#fff;color:#71809a;font-size:11px;word-break:break-word;box-shadow:0 2px 8px #28385b08}\n#status:before{content:"";display:inline-block;width:7px;height:7px;margin-right:7px;border-radius:50%;background:#a7b0c1;vertical-align:1px}\n#status{display:flex;align-items:center;gap:6px}\n#status:before{flex:0 0 7px}\n#status-refresh{padding:1px 5px;margin-left:2px;border-radius:6px;background:transparent;color:inherit;font-size:13px;line-height:1;box-shadow:none}\n#status-refresh:hover{background:#eaf2e5;color:#3d7650;box-shadow:none}\n#status.checking #status-refresh{animation:spin .8s linear infinite}\n@keyframes spin{to{transform:rotate(360deg)}}\n#att{align-items:center}\n.att-group{width:100%;display:flex;flex-wrap:wrap;gap:7px;align-items:center;padding:5px 0 2px}\n.att-group-label{width:100%;font-size:10px;color:#819083;font-weight:700;letter-spacing:.2px}\n.att-chip-image{border-color:#cfe2ca;background:#f4faf2}\n.att-chip-file{border-color:#dfe7df;background:#fbfdfb}\n.media-tile{flex-wrap:wrap}\n.media-tile small{width:100%;padding-left:44px;color:#91a093;font-size:10px}\n.att-tools{display:flex;align-items:center;gap:6px;width:100%;margin-bottom:2px;color:#819083;font-size:11px}\n.att-clear{padding:3px 8px;background:transparent;color:#9a6b6b;font-size:11px;box-shadow:none}\n.seg-sel{margin-left:6px;max-width:130px;font-size:11px;padding:1px 2px;border-radius:6px;border:1px solid #cfc8b8;background:#fff;color:inherit}\n.att-clear:hover{background:#f8ecec;color:#814b4b;box-shadow:none}\n.key-hint{color:#9aa59b}\n#msgs{flex:1;overflow:auto;padding:24px clamp(18px,5vw,64px) 30px;scroll-behavior:smooth}\n.row{display:flex;align-items:flex-start;gap:10px;margin:0 auto 20px;max-width:940px}\n.row:before{content:"AI";flex:0 0 34px;width:34px;height:34px;display:grid;place-items:center;border-radius:12px;background:#e7eaff;color:#5462df;font-size:11px;font-weight:800;margin-top:2px}\n.row.user{justify-content:flex-end}\n.row.user:before{display:none}\n.bub{max-width:min(84%,760px);padding:14px 17px;border-radius:17px;line-height:1.75;font-size:14px;word-break:break-word;overflow-wrap:anywhere}\n.user .bub{background:linear-gradient(135deg,#6573ee,#5361db);color:#fff;border-bottom-right-radius:5px;box-shadow:0 6px 18px #5361d528}\n.assistant .bub{background:var(--panel);border:1px solid #e9ecf3;color:#2d374b;border-bottom-left-radius:5px;box-shadow:0 5px 18px #28385b08}\n.user .bub>div{white-space:pre-wrap}\n.bub .message-line{margin:0 0 7px;white-space:pre-wrap}\n.bub .message-line:last-child{margin-bottom:0}\n.bub h1,.bub h2,.bub h3{line-height:1.35;margin:15px 0 8px;color:#202a40}\n.bub h1{font-size:20px}.bub h2{font-size:17px}.bub h3{font-size:15px}\n.bub ul,.bub ol{padding-left:24px;margin:6px 0 11px}\n.bub li{padding-left:3px;margin:3px 0}\n.bub blockquote{margin:8px 0;padding:3px 12px;border-left:3px solid #aab2fa;color:#68748c;background:#f7f8ff;border-radius:0 8px 8px 0}\n.bub p{margin:0 0 8px}\n.bub strong{font-weight:750;color:#202a40}\n.bub code:not(pre code){background:#f0f2f8;color:#6353b8;border-radius:5px;padding:2px 5px;font-size:.91em}\n.bub pre{background:#111a2d;color:#e5eafb;border:1px solid #26324a;border-radius:11px;padding:15px 16px;overflow:auto;font-size:12px;line-height:1.7;margin:8px 0;white-space:pre-wrap;tab-size:2}\n.chip{display:inline-flex;align-items:center;gap:5px;background:#eef1f8;color:#53617a;border-radius:7px;padding:4px 9px;font-size:11px;margin:0 6px 7px 0;max-width:100%;overflow-wrap:anywhere}\n.message-file{display:inline-flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid #dbe7dc;background:#f5faf3;color:#31583a;border-radius:10px;font-size:11px;max-width:100%;vertical-align:middle}\n.message-file .file-kind{display:grid;place-items:center;flex:0 0 24px;width:24px;height:24px;border-radius:7px;background:#e4f0e1;color:#4f8658;font-size:13px;font-weight:700}\n.message-file .file-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.message-file .file-state{padding:2px 5px;border-radius:999px;background:#e7f3e5;color:#5f8d65;font-size:9px;white-space:nowrap}\n.user .message-file{border-color:rgba(255,255,255,.25);background:rgba(255,255,255,.16);color:#fff}\n.user .message-file .file-kind,.user .message-file .file-state{back'... 557689 more characters,
-    expected: /id="wb-terminal-input"|data-terminal-key|initInteractiveTerminal|spawn\("jsh"/,
-    operator: 'doesNotMatch',
-    diff: 'simple'
-  }
+✔ force-clear: frontend keeps preview panel visible and reports failure (10.219484ms)
+✔ CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim (1.644763ms)
+✔ CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry (0.982188ms)
+✔ CodeClaimDO alarm: GitHub 404 is treated as already deleted (0.887349ms)
+✔ codeProject refuses to auto-discard an applying pending operation (0.100312ms)
+✔ CodeClaimDO atomically rejects discard while an accept operation is applying (1.406602ms)
+✔ CodeClaimDO uses a versioned discard lock and only clears the locked pending (1.689865ms)
+✔ persistent runner, KV logs and Pages deployment are wired end to end (2.008455ms)
+✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (1.217459ms)
+✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (1.255163ms)
+✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (1.082853ms)
+✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (1.082221ms)
+✔ codeLLM: OpenRouter network errors also never fall back to Toter (1.167172ms)
+✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (1.155406ms)
+✔ codeLLM: first usable custom model succeeds without attempting later models (0.874498ms)
+✔ codeLLM: retains the Groq target loop after OpenRouter (0.810552ms)
+✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (0.996135ms)
+✔ frontend: without studio initialization, ordinary-chat providers remain available (1.741177ms)
+✔ frontend: code mode shows provider-specific code models and hides Toter aliases (1.209035ms)
+✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (3.386549ms)
+✔ frontend: switching off code mode restores buttons and preserves chat model choice (1.526868ms)
+✔ studio.js: syncToggle re-renders providers when code mode changes (1.174767ms)
+✔ studio.js: omStudio state is exposed before eager init (1.172612ms)
+✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (0.986839ms)
+✔ frontend/studio.js: omStudio state is exposed before eager init (0.981255ms)
+✔ local HTTP integration: frontend-style API request reaches the real Worker /api/models route (69.397343ms)
+✔ standalone preview uses the current editor srcdoc without WebContainer (1.979246ms)
+✔ editor wraps long lines and iPad visual viewport resizes the workbench above the keyboard (0.864346ms)
+✔ terminal is a standalone command echo panel and Pages/Worker logs stay separate without WebContainer (3.420942ms)
+✔ devbench exposes one launch button, one run log and a terminal (0.9425ms)
+✔ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (4.536975ms)
+✔ delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once (1.34137ms)
+✔ devbench keeps the editor full-width and opens the independent preview in a separate page (1.027775ms)
+✔ devbench standalone preview keeps independent terminal and run-log panels (3.078079ms)
+✔ ACCEPTANCE AUTO-01: independent preview is built from the current editor source (0.603054ms)
+✔ ACCEPTANCE AUTO-02: independent preview synchronizes results, status chain and run logs (0.388148ms)
+✔ ACCEPTANCE AUTO-03: Monaco and textarea fallback both wrap long lines without horizontal overflow (1.126906ms)
+✔ terminal panels and viewport behavior remain independently testable; terminal acceptance stays unpassed (1.626172ms)
+✔ ACCEPTANCE CHAIN-01: generated state exists before any downstream delivery state (1.412401ms)
+✔ ACCEPTANCE CHAIN-02: submitted state requires a commit or correlated run identifier (2.86166ms)
+✔ ACCEPTANCE CHAIN-03: verified state follows the verification conclusion only (2.768946ms)
+✔ ACCEPTANCE CHAIN-04: deploying state appears only while deployment runs are active (2.980611ms)
+✔ ACCEPTANCE CHAIN-05: deployed state requires both Pages and Worker deployment success (2.83499ms)
+✔ ACCEPTANCE CHAIN-06: online health requires successful deployment and HTTP 200 for its run (3.800016ms)
+✔ ACCEPTANCE.md: ten code acceptance items each map to an executable npm test and exclude manual iPad sign-off (2.048318ms)
+✔ iOS Safari voice input uses MediaRecorder and authenticated server transcription, not Web Speech Recognition (2.105637ms)
+ℹ tests 64
+ℹ suites 0
+ℹ pass 64
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 245.278814
 
 == npm run build ==
 退出码 0
