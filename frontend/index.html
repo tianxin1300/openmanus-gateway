@@ -5777,6 +5777,9 @@ const bestPlace = (list, q) => {
 /* 默认恢复旧版：编辑器、实时预览、运行结果和运行日志同时可见。
    只有主动进入 WebContainer 本地预览时，才切换为独立全屏预览。 */
 #wb.wb-local-preview-mode #wb-right{display:flex!important}
+/* 开发台默认只保留全宽编辑器；实时预览与运行结果进入独立全屏工作区 */
+#wb:not(.wb-local-preview-mode) #wb-right{display:none!important}
+#wb:not(.wb-local-preview-mode) #wb-left{flex:1 1 100%!important;width:100%!important;border-right:0!important;border-bottom:0!important}
 
 </style>
 <!-- 开发台：全宽编辑器与统一运行日志；本地预览在独立全屏工作区显示 -->
