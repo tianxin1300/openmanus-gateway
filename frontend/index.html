@@ -6043,7 +6043,7 @@ async function runLocalTaskPreview(fileOverrides) {
       const notes=[],files=await collectLocalFiles(notes);
       if(fileOverrides&&typeof fileOverrides==="object"){
         Object.entries(fileOverrides).forEach(([name,content])=>{
-          const path=String(name).replace(/\\\\/g,"/").replace(/^\\/+/, "");
+          const path=String(name).split(String.fromCharCode(92)).join("/").split("/").filter(Boolean).join("/");
           if(!path||path.split("/").some(part=>part===".."||part==="."))throw new Error("本地预览文件路径不安全："+name);
           if(typeof content!=="string")throw new Error("本地预览文件必须是文本："+name);
           files[path]=content;
