@@ -6231,7 +6231,7 @@ async function runLocalTaskPreview(fileOverrides) {
   localWcPromise=(async()=>{
     localWcRunning=true;showTab("run");g("wb-runlogs").open=false;
     const frame=g("wb-runframe");if(frame){frame.dataset.live="0";frame.removeAttribute("src");}
-    g("wb-local-log").textContent="";g("wb-local-logbox").hidden=false;g("wb-terminal-output").textContent="";
+    g("wb-local-log").textContent="";g("wb-local-logbox").hidden=false;const terminalOutput=g("wb-terminal-output");if(terminalOutput)terminalOutput.replaceChildren();
     say("正在启动 WebContainer 本地预览 …");
     try{
       localLog("读取任务文件 …");
