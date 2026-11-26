@@ -6103,7 +6103,7 @@ function renderDeliveryChain(d) {
   const deployed = deploy.conclusion === "success" && worker.conclusion === "success";
   const deploying = d.state === "queued" || d.state === "running" || !!((deploy.run_id && !deploy.conclusion) || (worker.run_id && !worker.conclusion));
   const online = deployed && health.state === "ok" && health.status === 200;
-  const healthFailed = deploy.conclusion === "failure" || worker.conclusion === "failure" || (deployed && health.state === "bad");
+  const healthFailed = deployed && health.state === "bad";
   const healthLabel = online ? "线上健康 HTTP 200" : healthFailed ? "线上健康失败" + (health.status ? " HTTP " + health.status : "") : "线上健康";
   const steps = [{name:"已生成", ok:true}, {name:"已验证", ok:verified}, {name:"已提交", ok:submitted}, {name:deployed ? "已部署" : "部署中", ok:deployed, now:deploying && !deployed}, {name:healthLabel, ok:online, bad:healthFailed, now:deployed && health.state === "checking"}];
   if (failed) steps.push({name:"部署失败", bad:true});
