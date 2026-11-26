@@ -1,6 +1,8 @@
-诊断时间(UTC): 2026-11-26T11:13:17+00:00
+诊断时间(UTC): 2026-11-26T11:13:41+00:00
 
 == 最近 12 个提交 ==
+26f84d3 test: fix isolated status-chain fixture assembly
+2f72731 diag: refresh current project report
 232d354 diag: refresh current project report
 d215e26 test: assert consistent delivery chain ordering
 8129cc0 ui: reorder delivery chain and rebalance tablet workspace
@@ -11,8 +13,6 @@ b9f9367 diag: refresh current project report
 428278d diag: refresh current project report
 d58ba6e Allow main push events to execute diagnostic refresh
 7f76ab6 Run diagnostic report on main updates without report loops
-73eb89b Exercise actual delivery health probe state transitions
-ae6406a Separate deployment failures from live health failures
 
 == 文件 ==
 .:
@@ -67,7 +67,7 @@ tests:
 total 60
 drwxr-xr-x  2 runner runner  4096 Nov 26 11:13 .
 drwxr-xr-x 11 runner runner  4096 Nov 26 11:13 ..
--rw-r--r--  1 runner runner 50734 Nov 26 11:13 code-mode-providers.test.cjs
+-rw-r--r--  1 runner runner 50752 Nov 26 11:13 code-mode-providers.test.cjs
 
 == worker.js ==
 969919 字节, 9304 行, CRLF=False
@@ -304,76 +304,56 @@ crons = ["0 0 * * *"]
 
 == npm test（node --test tests/*.cjs） ==
 node v22.23.5
-退出码 1
-✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (2.308149ms)
-✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.378194ms)
-✔ editor delivery: pending work is resumable and deployment state is not overstated (0.290162ms)
-✔ project isolation: code edits use a temporary branch before merging to the base branch (0.432044ms)
-✔ web workbench: refuses unsafe save and recognizes dev/test/build scripts (0.462769ms)
-✔ remote verification: reuses a dispatchable workflow and returns status fields (0.376802ms)
-✔ remote verification UI: green success, red failures, and no invented preview URL (0.606354ms)
-✔ BUG-01: protected media and files never put the login token in URLs or media bodies (0.65744ms)
-✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (0.73167ms)
-✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.38924ms)
-✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (0.823086ms)
-✔ workbench simultaneous start triggers GitHub Actions and renders the full delivery chain (1.734445ms)
-✔ P0-01: simultaneous WebContainer startup routes frontend API calls to its paired local Wrangler port (0.380136ms)
-✔ P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records (1.277894ms)
-✔ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (1.054892ms)
+退出码 0
+✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (2.389111ms)
+✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.338934ms)
+✔ editor delivery: pending work is resumable and deployment state is not overstated (0.369223ms)
+✔ project isolation: code edits use a temporary branch before merging to the base branch (0.517938ms)
+✔ web workbench: refuses unsafe save and recognizes dev/test/build scripts (0.693563ms)
+✔ remote verification: reuses a dispatchable workflow and returns status fields (0.651888ms)
+✔ remote verification UI: green success, red failures, and no invented preview URL (0.697863ms)
+✔ BUG-01: protected media and files never put the login token in URLs or media bodies (0.751461ms)
+✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (0.824612ms)
+✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.559745ms)
+✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (0.972672ms)
+✔ workbench simultaneous start triggers GitHub Actions and renders the full delivery chain (1.992592ms)
+✔ P0-01: simultaneous WebContainer startup routes frontend API calls to its paired local Wrangler port (0.442617ms)
+✔ P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records (1.077213ms)
+✔ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (0.944948ms)
 [code] pending expiry branch deletion failed; claim retained simulated GitHub failure
-✔ force-clear: frontend keeps preview panel visible and reports failure (8.700695ms)
-✔ CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim (14.799453ms)
-✔ CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry (1.101231ms)
-✔ CodeClaimDO alarm: GitHub 404 is treated as already deleted (0.835054ms)
-✔ persistent runner, KV logs and Pages deployment are wired end to end (1.796948ms)
-✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (1.260027ms)
-✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (1.075663ms)
-✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (0.853201ms)
-✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (1.958708ms)
-✔ codeLLM: OpenRouter network errors also never fall back to Toter (0.91914ms)
-✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (0.808766ms)
-✔ codeLLM: first usable custom model succeeds without attempting later models (0.753282ms)
-✔ codeLLM: retains the Groq target loop after OpenRouter (0.879511ms)
-✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (0.856636ms)
-✔ frontend: without studio initialization, ordinary-chat providers remain available (1.894443ms)
-✔ frontend: code mode shows provider-specific code models and hides Toter aliases (1.065598ms)
-✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (2.423701ms)
-✔ frontend: switching off code mode restores buttons and preserves chat model choice (1.127009ms)
-✔ studio.js: syncToggle re-renders providers when code mode changes (0.920271ms)
-✔ studio.js: omStudio state is exposed before eager init (1.010986ms)
-✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (1.05375ms)
-✔ frontend/studio.js: omStudio state is exposed before eager init (0.920722ms)
-✔ local HTTP integration: frontend-style API request reaches the real Worker /api/models route (68.718389ms)
-✖ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (3.201771ms)
-✔ delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once (1.779952ms)
+✔ force-clear: frontend keeps preview panel visible and reports failure (7.70101ms)
+✔ CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim (15.502311ms)
+✔ CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry (1.108341ms)
+✔ CodeClaimDO alarm: GitHub 404 is treated as already deleted (0.87612ms)
+✔ persistent runner, KV logs and Pages deployment are wired end to end (1.980471ms)
+✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (1.162868ms)
+✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (1.015632ms)
+✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (0.811925ms)
+✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (1.552914ms)
+✔ codeLLM: OpenRouter network errors also never fall back to Toter (0.927853ms)
+✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (0.804737ms)
+✔ codeLLM: first usable custom model succeeds without attempting later models (0.781631ms)
+✔ codeLLM: retains the Groq target loop after OpenRouter (0.835393ms)
+✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (0.831902ms)
+✔ frontend: without studio initialization, ordinary-chat providers remain available (1.783934ms)
+✔ frontend: code mode shows provider-specific code models and hides Toter aliases (1.015273ms)
+✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (2.418647ms)
+✔ frontend: switching off code mode restores buttons and preserves chat model choice (1.132661ms)
+✔ studio.js: syncToggle re-renders providers when code mode changes (0.927041ms)
+✔ studio.js: omStudio state is exposed before eager init (0.916286ms)
+✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (1.014291ms)
+✔ frontend/studio.js: omStudio state is exposed before eager init (0.878429ms)
+✔ local HTTP integration: frontend-style API request reaches the real Worker /api/models route (60.304196ms)
+✔ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (2.846098ms)
+✔ delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once (1.216672ms)
 ℹ tests 40
 ℹ suites 0
-ℹ pass 39
-ℹ fail 1
+ℹ pass 40
+ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 191.876625
-
-✖ failing tests:
-
-test at tests/code-mode-providers.test.cjs:863:1
-✖ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (3.201771ms)
-  upper-delivery-chain.vm.js:63
-  \nfunction chainStep(text, cls) { const s = document.createElement("span"); s.className = "wb-chain-step" + (cls ? " " + cls : ""); s.textContent = text; return s; }
-  ^
-  
-  SyntaxError: Invalid or unexpected token
-      at new Script (node:vm:117:7)
-      at createScript (node:vm:269:10)
-      at Object.runInContext (node:vm:300:10)
-      at TestContext.<anonymous> (/home/runner/work/openmanus-gateway/openmanus-gateway/tests/code-mode-providers.test.cjs:889:6)
-      at Test.runInAsyncScope (node:async_hooks:214:14)
-      at Test.run (node:internal/test_runner/test:1047:25)
-      at Test.processPendingSubtests (node:internal/test_runner/test:744:18)
-      at Test.postRun (node:internal/test_runner/test:1173:19)
-      at Test.run (node:internal/test_runner/test:1101:12)
-      at async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+ℹ duration_ms 177.351327
 
 == npm run build ==
 退出码 0
