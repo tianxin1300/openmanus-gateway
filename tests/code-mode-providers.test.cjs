@@ -18,6 +18,33 @@ const blockedProviders = ['肖恩AI', 'Toter', 'Toter2'];
 const messages = [{ role: 'user', content: 'Write a small function.' }];
 const openRouterUrl = 'https://openrouter.ai/api/v1/chat/completions';
 
+function loadCodePendingDiscard({ pending, deleteBranch, claimCall, kvDelete }) {
+  const start = workerSource.indexOf('async function codePendingDiscard(');
+  const end = workerSource.indexOf('// v108：cron 扫 KV', start);
+  assert.ok(start >= 0 && end > start, 'codePendingDiscard source must exist');
+  const source = workerSource.slice(start, end);
+  const sandbox = {
+    codePendingLoad: async () => pending,
+    codeDeleteBranch: deleteBranch,
+    codeClaimCall: claimCall,
+    CODE_PENDING_TTL_MS: 600000,
+    env: null,
+    console
+  };
+  vm.runInNewContext(source + '\\nglobalThis.testDiscard = codePendingDiscard;', sandbox);
+  return sandbox.testDiscard;
+}
+
+function loadFrontendForceClear(stubs) {
+  const start = frontendStudioSource.indexOf('  function clearOnServer() {');
+  const end = frontendStudioSource.indexOf('  /* ---------- 读取待推送的修改 ---------- */', start);
+  assert.ok(start >= 0 && end > start, 'frontend force-clear handlers must exist');
+  const source = frontendStudioSource.slice(start, end);
+  const sandbox = { api: stubs.api, busy: stubs.busy, say: stubs.say, hide: stubs.hide, toast: stubs.toast };
+  vm.runInNewContext(source + '\\nglobalThis.testForceClear = forceClear;', sandbox);
+  return sandbox.testForceClear;
+}
+
 function loadCodeClaimDO(deleteBranch) {
   const start = workerSource.indexOf('export class CodeClaimDO');
   const end = workerSource.indexOf('export class CodeRunnerDO', start);
@@ -256,6 +283,43 @@ test('P0-02/03: expiry and force-clear delete the GitHub branch before clearing 
   assert.ok(claimDO.indexOf('codeDeleteBranch(this.env') < claimDO.indexOf('this.storage.delete("claim")'));
   assert.match(claimDO, /this\.storage\.setAlarm\(now \+ CODE_PENDING_TTL_MS\)/);
   assert.match(claimDO, /GitHub 临时分支删除失败/);
+});
+
+test('force-clear: GitHub branch deletion failure retains DO/KV records and returns failure', async () => {
+  const events = [];
+  const pending = { id: 'force-1', repo: 'owner/repo', branch: 'code/force-1', edits: [{ path: 'a.js' }] };
+  const kv = { async delete(key) { events.push('kv.delete:' + key); } };
+  const env = { KV: kv };
+  const discard = loadCodePendingDiscard({
+    pending,
+    deleteBranch: async () => { events.push('github.delete'); return { ok: false, status: 503, msg: 'simulated GitHub API outage' }; },
+    claimCall: async () => { events.push('do.clear'); return { ok: true }; },
+    kvDelete: kv.delete
+  });
+  const result = await discard(env, 'user-1');
+  assert.equal(result.ok, false);
+  assert.equal(result.cleared, false);
+  assert.equal(result.status, 503);
+  assert.match(result.msg, /GitHub 临时分支删除失败/);
+  assert.match(result.reply, /待处理记录未清除/);
+  assert.deepEqual(events, ['github.delete']);
+});
+
+test('force-clear: frontend keeps preview panel visible and reports failure', async () => {
+  const calls = [];
+  const forceClear = loadFrontendForceClear({
+    api: async () => ({ status: 503, json: async () => ({ ok: false, msg: 'GitHub 临时分支删除失败，待处理记录已保留', reply: '清空失败：GitHub 临时分支删除失败，待处理记录未清除。' }) }),
+    busy: value => calls.push(['busy', value]),
+    say: (message, className) => calls.push(['say', message, className]),
+    hide: () => calls.push(['hide']),
+    toast: message => calls.push(['toast', message])
+  });
+  forceClear();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(calls.some(x => x[0] === 'say' && /清空失败/.test(x[1])));
+  assert.ok(calls.some(x => x[0] === 'busy' && x[1] === false));
+  assert.equal(calls.some(x => x[0] === 'hide'), false);
+  assert.equal(calls.some(x => x[0] === 'toast'), false);
 });
 
 test('CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim', async () => {
