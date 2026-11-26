@@ -1330,7 +1330,7 @@ function renderAcceptanceDeliveryChain(data, health = { run_id: '', state: 'idle
     GATEWAY: ''
   });
   vm.runInContext(block, context, { filename: 'acceptance-delivery-chain.vm.js', timeout: 1000 });
-  context.pagesHealthProbe = health;
+  vm.runInContext('pagesHealthProbe = ' + JSON.stringify(health), context, { timeout: 1000 });
   const node = vm.runInContext('renderDeliveryChain(' + JSON.stringify(data) + ')', context, { timeout: 1000 });
   return node.children.map(child => child.textContent);
 }
@@ -1342,7 +1342,7 @@ test('ACCEPTANCE AUTO-01: independent preview is built from the current editor s
   assert.match(script[1], /function srcdocOf\(code\)/);
   assert.match(script[1], /frame\.srcdoc = srcdocOf\(ed\.get\(\)\)/);
   assert.match(script[1], /window\.open\("about:blank", "_blank"\)/);
-  assert.match(script[1], /id="local-preview-frame"/);
+  assert.match(script[1], /id=['"]local-preview-frame['"]/);
   assert.doesNotMatch(script[1], /WebContainer|ensureLocalWebContainer|spawn\(["']jsh/);
 });
 
@@ -1451,8 +1451,8 @@ test('ACCEPTANCE.md: ten code acceptance items each map to an executable npm tes
     assert.ok(new RegExp("test\('" + id + ":").test(fs.readFileSync(__filename, 'utf8')), 'must have a dedicated Node test for ' + id);
   }
   assert.match(doc, /npm test/);
-  assert.match(doc, /测试通过即该项通过/);
-  assert.match(doc, /测试失败即该项未通过/);
+  assert.match(doc, /通过：该项对应的专属 Node\.js 自动化测试本次执行成功/);
+  assert.match(doc, /测试失败、被跳过、未执行/);
   assert.doesNotMatch(doc, /IPAD-0[1-4]|iPad 型号|iPadOS|录屏|截图证据|线上验收记录/);
   assert.match(doc, /最终交付结论/);
 });
