@@ -1515,6 +1515,14 @@ test('mobile composer auto-grows and app plus terminal follow the visual viewpor
 });
 
  
+test('terminal navigation and shortcut buttons use consistent dimensions and typography', () => {
+  assert.ok(frontendSource.includes('#wb-term-tabs button{flex:1 1 0;min-width:0;height:32px;min-height:32px;'));
+  assert.ok(frontendSource.includes('font:600 12px/1 system-ui'));
+  assert.ok(frontendSource.includes('#wb-terminal-shortcuts button{flex:0 0 48px;width:48px;height:30px;min-width:48px;min-height:30px;'));
+  assert.ok(frontendSource.includes('font:600 11px/1 system-ui'));
+  assert.ok(frontendSource.includes('@media(max-width:520px){#wb-terminal-shortcuts{flex-basis:38px;gap:4px;padding:3px 6px}#wb-terminal-shortcuts button{flex-basis:48px;width:48px;min-width:48px;height:30px;min-height:30px;'));
+});
+
 test('terminal command input auto-grows, wraps long commands, shrinks after clear, and keeps Enter-to-send', () => {
   assert.match(frontendSource, /<textarea id="wb-terminal-command"[^>]*rows="1"/);
   assert.match(frontendSource, /#wb-terminal-command\{[^}]*max-height:120px;[^}]*resize:none;[^}]*overflow-y:hidden;[^}]*white-space:pre-wrap/s);
