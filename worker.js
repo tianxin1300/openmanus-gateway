@@ -9424,7 +9424,8 @@ export class CodeRunnerDO {
   async alarm() {
     const record = await this.load();
     if (!record || record.kind !== "both" || !record.owner_user || !record.repo || !Array.isArray(record.runs)) return;
-    if (record.dispatching) { await this.scheduleWatch(); return; }
+    if (record.dispatching && Date.now() - Date.parse(record.started_at || 0) < 60000) { await this.scheduleWatch(); return; }
+    record.dispatching = false;
     const token = this.env.GH_PAT;
     if (!token) {
       record.watch_error = "GH_PAT 未配置，后台状态监控无法查询 GitHub";
@@ -9539,7 +9540,7 @@ export class CodeRunnerDO {
     if (action === "update") {
       const current = { ...(await this.load() || {}), ...body, updated_at: new Date().toISOString() };
       await this.storage.put("runner", current);
-      if (current.kind === "both" && current.state !== "success" && current.state !== "failure" && !current.dispatching) await this.scheduleWatch();
+      if (current.kind === "both" && current.state !== "success" && current.state !== "failure") await this.scheduleWatch();
       return this.response({ ok: true, runner: current });
     }
     if (action === "clear") {
