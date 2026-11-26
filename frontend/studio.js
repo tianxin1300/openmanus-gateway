@@ -277,7 +277,7 @@
   function forceClear() {
     busy(true); say("正在清空…");
     clearOnServer().then(function (j) {
-      if (j && (j.ok || /没有待推送/.test(String(j.reply || "")))) { hide(); toast("已强制清空，面板已关闭"); }
+      if (j && j.ok === true) { hide(); toast("已强制清空，面板已关闭"); }
       else { busy(false); say((j && (j.reply || j.msg)) || "清空失败", "om-errc"); }
     }).catch(function (e) { busy(false); say("清空失败：" + (e && e.message || e), "om-errc"); });
   }
