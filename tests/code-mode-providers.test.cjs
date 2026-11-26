@@ -1325,6 +1325,10 @@ test("devbench standalone preview keeps independent terminal and run-log panels"
   const runBoth = match[1].slice(match[1].indexOf("async function runBoth()"), match[1].indexOf("/* ---------------- 打开 / 关闭", match[1].indexOf("async function runBoth()")));
   assert.doesNotMatch(runBoth, /wb-terminal-output|terminalOutput/);
   assert.match(frontendSource, /#wb-terminal-command-form\{display:flex;flex:0 0 auto/);
+  assert.match(frontendSource, /#wb-terminal-shortcuts\{display:flex;flex:0 0 40px;flex-wrap:nowrap/);
+  assert.match(frontendSource, /overflow-x:auto;overflow-y:hidden;white-space:nowrap/);
+  assert.match(frontendSource, /id="wb-terminal-shortcuts"[\s\S]*?<pre id="wb-terminal-output"/);
+  assert.match(frontendSource, /data-terminal-key="clear">清屏/);
   assert.match(match[1], /window\.visualViewport\.addEventListener\("resize"/);
   assert.match(match[1], /window\.visualViewport\.addEventListener\("scroll"/);
 });
