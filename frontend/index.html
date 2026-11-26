@@ -6030,7 +6030,7 @@ async function ensureLocalWebContainer() {
   localWc.on("error",error=>localLog("WebContainer 错误："+(error&&error.message||error)));
   return localWc;
 }
-async function runLocalTaskPreview() {
+async function runLocalTaskPreview(fileOverrides) {
   if(localWcPromise)return localWcPromise;
   if(localWcRunning)return;
   localWcPromise=(async()=>{
@@ -6041,6 +6041,14 @@ async function runLocalTaskPreview() {
     try{
       localLog("读取任务文件 …");
       const notes=[],files=await collectLocalFiles(notes);
+      if(fileOverrides&&typeof fileOverrides==="object"){
+        Object.entries(fileOverrides).forEach(([name,content])=>{
+          const path=String(name).replace(/\\\\/g,"/").replace(/^\\/+/, "");
+          if(!path||path.split("/").some(part=>part===".."||part==="."))throw new Error("本地预览文件路径不安全："+name);
+          if(typeof content!=="string")throw new Error("本地预览文件必须是文本："+name);
+          files[path]=content;
+        });
+      }
       if(!files["package.json"])files["package.json"]=JSON.stringify({name:"local-task-preview",private:true,scripts:{start:"npx --yes serve -l 3000 ."},dependencies:{serve:"^14.2.0"}},null,2);
       const container=await ensureLocalWebContainer();
       await container.mount(localTree(files));
@@ -6396,13 +6404,13 @@ async function openWb() {
 }
 function closeWb() { document.body.classList.remove("wb-open"); g("wb").setAttribute("aria-hidden", "true"); amdOff(); }
 g("wb-open").addEventListener("click", openWb);
-async function openLocalTaskPreview() {
+async function openLocalTaskPreview(options) {
   await openWb();
   if(!ed)throw new Error("编辑器尚未就绪，无法准备本地预览");
-  return runLocalTaskPreview();
+  return runLocalTaskPreview(options&&options.files);
 }
 window.openLocalTaskPreview=openLocalTaskPreview;
-window.addEventListener("open-local-task-preview",()=>{void openLocalTaskPreview().catch(()=>{});});
+window.addEventListener("open-local-task-preview",event=>{void openLocalTaskPreview(event.detail||{}).catch(()=>{});});
 if(new URLSearchParams(location.search).get("webcontainer")==="1"){
   window.addEventListener("load",()=>{void openLocalTaskPreview().catch(()=>{});},{once:true});
 }
