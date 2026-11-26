@@ -6036,6 +6036,7 @@ async function initInteractiveTerminal(container) {
   if(!window.FitAddon){
     try{await loadScript("https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js",20000);}catch(e){throw new Error("xterm FitAddon 加载失败："+e.message);}
   }
+  if(!document.getElementById("wb-xterm-css")){const css=document.createElement("link");css.id="wb-xterm-css";css.rel="stylesheet";css.href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css";document.head.appendChild(css);}
   terminalInstance=new window.Terminal({cursorBlink:true,convertEol:true,scrollback:5000,fontSize:12,lineHeight:1.35,fontFamily:"ui-monospace,SFMono-Regular,Menlo,Consolas,monospace",theme:{background:"#07140d",foreground:"#d8ecd9",cursor:"#a9d6b1",selectionBackground:"#31543d"},allowProposedApi:false});
   terminalFit=new window.FitAddon.FitAddon();terminalInstance.loadAddon(terminalFit);terminalInstance.open(host);
   const fit=()=>{try{terminalFit.fit();if(terminalProcess&&terminalInstance.cols&&terminalInstance.rows)terminalProcess.resize({cols:terminalInstance.cols,rows:terminalInstance.rows});}catch(_){}};
@@ -6045,7 +6046,11 @@ async function initInteractiveTerminal(container) {
   const shell=await container.spawn("jsh",[],{terminal:{cols:terminalInstance.cols||80,rows:terminalInstance.rows||24}});
   terminalProcess=shell;terminalWriter=shell.input.getWriter();
   shell.output.pipeTo(new WritableStream({write(chunk){terminalInstance.write(chunk);}})).catch(error=>{if(status)status.textContent="终端输出已结束";});
-  terminalInstance.onData(data=>{if(terminalWriter)terminalWriter.write(data).catch(()=>{});});
+  terminalInstance.onData(data=>{
+    if(!terminalWriter)return;
+    if(terminalCtrlPending&&data.length===1){terminalWriter.write(String.fromCharCode(data.toUpperCase().charCodeAt(0)&31)).catch(()=>{});terminalCtrlPending=false;const b=document.querySelector('[data-terminal-key="ctrl"]');if(b){b.setAttribute("aria-pressed","false");b.textContent="CTRL";}return;}
+    terminalWriter.write(data).catch(()=>{});
+  });
   terminalInstance.onResize(({cols,rows})=>{try{terminalProcess&&terminalProcess.resize({cols,rows});}catch(_){}});
   terminalHistory=[];terminalHistoryIndex=0;terminalInitialized=true;
   if(status)status.textContent="Shell 已就绪";
