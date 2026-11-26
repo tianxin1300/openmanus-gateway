@@ -76,7 +76,7 @@ function loadCodeRunnerDO() {
     async delete(key) { return values.delete(key); }
   };
   const sandbox = { URL, Response, Request, Date, structuredClone };
-  vm.runInNewContext(classSource + '\\n' + 'globalThis.TestCodeRunnerDO = CodeRunnerDO;', sandbox);
+  vm.runInNewContext(classSource + '\n' + 'globalThis.TestCodeRunnerDO = CodeRunnerDO;', sandbox);
   return { Runner: sandbox.TestCodeRunnerDO, storage };
 }
 
