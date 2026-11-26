@@ -70,10 +70,25 @@ function loadCodeRunnerDO() {
   assert.ok(start >= 0 && end > start, 'CodeRunnerDO source must exist');
   const classSource = workerSource.slice(start, end).replace(/^export /, '');
   const values = new Map();
+  let transactionTail = Promise.resolve();
   const storage = {
     async get(key) { return values.has(key) ? values.get(key) : undefined; },
     async put(key, value) { values.set(key, structuredClone(value)); },
-    async delete(key) { return values.delete(key); }
+    async delete(key) { return values.delete(key); },
+    async transaction(callback) {
+      const previous = transactionTail;
+      let release;
+      transactionTail = new Promise(resolve => { release = resolve; });
+      await previous;
+      try {
+        const txn = {
+          async get(key) { return values.has(key) ? values.get(key) : undefined; },
+          async put(key, value) { values.set(key, structuredClone(value)); },
+          async delete(key) { return values.delete(key); }
+        };
+        return await callback(txn);
+      } finally { release(); }
+    }
   };
   const sandbox = { URL, Response, Request, Date, structuredClone };
   vm.runInNewContext(classSource + '\n' + 'globalThis.TestCodeRunnerDO = CodeRunnerDO;', sandbox);
@@ -300,21 +315,25 @@ test('BUG-08: CodeRunnerDO serializes per-user parallel-run claims and owner-onl
     }));
     return response.json();
   };
-  const first = await call('claim', { request_id: 'both-a', ref: 'main' });
-  assert.equal(first.ok, true);
-  assert.equal(first.active.request_id, 'both-a');
-  const second = await call('claim', { request_id: 'both-b', ref: 'main' });
-  assert.equal(second.ok, false);
-  assert.equal(second.active.request_id, 'both-a');
-  const wrongRelease = await call('release', { request_id: 'both-b' });
+  const concurrent = await Promise.all([
+    call('claim', { request_id: 'both-a', ref: 'main' }),
+    call('claim', { request_id: 'both-b', ref: 'main' })
+  ]);
+  assert.equal(concurrent.filter(result => result.ok).length, 1);
+  const first = concurrent.find(result => result.ok);
+  const loser = concurrent.find(result => !result.ok);
+  assert.ok(['both-a', 'both-b'].includes(first.active.request_id));
+  assert.equal(loser.active.request_id, first.active.request_id);
+  const secondId = first.active.request_id === 'both-a' ? 'both-b' : 'both-a';
+  const wrongRelease = await call('release', { request_id: secondId });
   assert.equal(wrongRelease.ok, false);
-  const touched = await call('touch', { request_id: 'both-a', stage: 'polling' });
+  const touched = await call('touch', { request_id: first.active.request_id, stage: 'polling' });
   assert.equal(touched.ok, true);
   assert.equal(touched.active.stage, 'polling');
-  const released = await call('release', { request_id: 'both-a' });
+  const released = await call('release', { request_id: first.active.request_id });
   assert.equal(released.ok, true);
   assert.equal(released.released, true);
-  const retry = await call('claim', { request_id: 'both-b', ref: 'main' });
+  const retry = await call('claim', { request_id: secondId, ref: 'main' });
   assert.equal(retry.ok, true);
 });
 
