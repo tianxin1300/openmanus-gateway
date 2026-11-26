@@ -64,7 +64,7 @@ function loadCodeClaimDO(deleteBranch) {
   return sandbox.TestCodeClaimDO;
 }
 
-function loadCodeRunnerDO() {
+function loadCodeRunnerDO(fetchImpl) {
   const start = workerSource.indexOf('export class CodeRunnerDO');
   const end = workerSource.indexOf('export default WORKER_DEFAULT', start);
   assert.ok(start >= 0 && end > start, 'CodeRunnerDO source must exist');
@@ -94,7 +94,7 @@ function loadCodeRunnerDO() {
       } finally { release(); }
     }
   };
-  const sandbox = { URL, Response, Request, Date, structuredClone, fetch: async () => { throw new Error("unexpected fetch"); }, codeRunLogKey: id => "log:run:" + id, codeRunIndexKey: user => "code:runs:" + user, codeVerifyKey: user => "code:verify:" + user, codeVerifyErrorLines: value => String(value).split(/\\r?\\n/).filter(Boolean) };
+  const sandbox = { URL, Response, Request, Date, structuredClone, fetch: fetchImpl || (async () => { throw new Error("unexpected fetch"); }), codeRunLogKey: id => "log:run:" + id, codeRunIndexKey: user => "code:runs:" + user, codeVerifyKey: user => "code:verify:" + user, codeVerifyErrorLines: value => String(value).split(/\\r?\\n/).filter(Boolean) };
   vm.runInNewContext(classSource + '\n' + 'globalThis.TestCodeRunnerDO = CodeRunnerDO;', sandbox);
   return { Runner: sandbox.TestCodeRunnerDO, storage };
 }
@@ -360,10 +360,10 @@ test('persistent runner watchdog polls GitHub and persists terminal state withou
     GH_PAT: 'test-token', KV: kv,
     CODE_RUNNER: { idFromName: name => name, get: id => ({ fetch: async (url, options) => { releaseCalls.push({ id, url, body: JSON.parse(options.body) }); return new Response(JSON.stringify({ ok: true, released: true })); } }) }
   };
-  const { Runner, storage } = loadCodeRunnerDO();
-  const runner = new Runner({ storage, fetch: fetchMock }, env);
+  const { Runner, storage } = loadCodeRunnerDO(fetchMock);
+  const runner = new Runner({ storage }, env);
   await runner.fetch(new Request('https://runner/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-    request_id: 'both-abc', run_id: 'both-abc', owner_user: 'user-1', repo: 'owner/repo', kind: 'both', status: 'queued',
+    request_id: 'both-abc', run_id: 'both-abc', owner_user: 'user-1', repo: 'owner/repo', kind: 'both', dispatching: false, status: 'queued',
     runs: [{ kind: 'deploy', workflow: 'deploy-project.yml', status: 'queued', conclusion: null }, { kind: 'worker', workflow: 'deploy-worker.yml', status: 'queued', conclusion: null }]
   }) }));
   assert.ok(await storage.getAlarm(), 'watchdog alarm scheduled without a browser request');
