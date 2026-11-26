@@ -871,6 +871,8 @@ test('WebContainer local preview opens as a dedicated view and can return to the
   assert.ok(frontendSource.indexOf('id="wb-both"') < frontendSource.indexOf('id="wb-local-preview"'));
   assert.ok(frontendSource.includes('g("wb-local-preview").addEventListener("click"'));
   assert.ok(frontendSource.includes('await openLocalTaskPreview()'));
+  assert.ok(frontendSource.includes('const terminalOutput=g("wb-terminal-output");if(terminalOutput)terminalOutput.replaceChildren();'));
+  assert.ok(!frontendSource.includes('g("wb-terminal-output").textContent=""'));
   assert.ok(frontendSource.includes('button.textContent="返回开发台"'));
   assert.ok(frontendSource.includes('wb.classList.remove("wb-local-preview-mode")'));
   assert.ok(!frontendSource.includes('new URLSearchParams(location.search).get("webcontainer")'));
