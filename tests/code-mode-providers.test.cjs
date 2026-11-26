@@ -896,6 +896,16 @@ test('devbench has one Actions launch button and one expandable unified run log'
   assert.ok(frontendSource.includes('if(logs) logs.open=false'));
   assert.ok(frontendSource.includes('showTab("run");g("wb-runlogs").open=false'));
   assert.ok(frontendSource.includes('g("wb-runlogs").open = false;'));
+  assert.ok(frontendSource.includes('id="wb-local-error" class="wb-local-error" hidden'));
+  assert.ok(frontendSource.includes('id="wb-local-error-summary"'));
+  assert.ok(frontendSource.includes('id="wb-local-error-detail"'));
+  assert.ok(frontendSource.includes('.wb-local-error>summary{height:28px;line-height:28px'));
+  assert.ok(frontendSource.includes('.wb-local-error>pre{max-height:72px;overflow:auto'));
+  assert.ok(frontendSource.includes('alert.open=false'));
+  assert.ok(frontendSource.includes('showTab("prev")'));
+  assert.ok(frontendSource.includes('#wb-right{flex:0 0 25%;max-height:25%'));
+  assert.ok(frontendSource.includes('#wb-term{flex:0 0 24%;min-height:120px;max-height:32%;overflow:hidden}'));
+  assert.ok(frontendSource.includes('#wb-runlogs{flex:0 1 auto;min-height:0;max-height:50%;overflow:auto}'));
   assert.ok(!frontendSource.includes('点右上角「运行」会在浏览器里启动 WebContainer'));
   assert.ok(!frontendSource.includes('g("wb-run").addEventListener'));
   assert.ok(!frontendSource.includes("function initTerm"));
