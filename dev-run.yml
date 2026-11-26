@@ -1,0 +1,69 @@
+name: dev-run
+
+# 开发台「同时启动」用的工作流：手动触发（workflow_dispatch），两个 job 并行跑。
+# 这是 CI 里的检查 / 预演，不是常驻的开发服务器；真正的部署仍然是 push 到 main 后由 Cloudflare 自动做。
+# 不用任何自定义 secrets，也不会打印任何密钥。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-build:
+    name: 前端 build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: 前端检查与 build
+        working-directory: frontend
+        run: |
+          set -e
+          echo "== 文件 =="
+          ls -la
+          if [ -f package.json ]; then
+            npm ci || npm install
+            npm run build --if-present
+          else
+            echo "（没有 package.json：纯静态页面，不需要 npm build）"
+          fi
+          echo "== JS 语法检查 =="
+          for f in *.js; do
+            if [ -f "$f" ]; then node --check "$f"; echo "OK  $f"; fi
+          done
+          echo "== index.html 检查 =="
+          python3 - <<'PY'
+          s = open("index.html", encoding="utf-8").read()
+          print("大小:", len(s), "字节")
+          for tag in ('<script src="studio.js"></script>', '<script src="tasks.js"></script>', '<script src="devrun.js"></script>'):
+              print(("OK   " if s.count(tag) == 1 else "缺   ") + tag + "  x" + str(s.count(tag)))
+          assert s.count('<script src="studio.js"></script>') == 1, "studio.js 的 script 标签数量不对"
+          assert s.rstrip().endswith("</body></html>"), "文件末尾不是 </body></html>"
+          print("index.html 通过")
+          PY
+
+  worker-check:
+    name: Worker 部署预检
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: worker.js 语法检查
+        run: |
+          set -e
+          cp worker.js /tmp/worker-check.mjs
+          node --check /tmp/worker-check.mjs
+          echo "OK  worker.js 语法通过"
+          wc -c worker.js
+      - name: 打包预演（dry-run，不会真的部署）
+        continue-on-error: true
+        run: |
+          set -e
+          npx --yes wrangler@4 deploy worker.js --dry-run --outdir /tmp/wrangler-out --name openmanus-gateway --compatibility-date 2025-01-01
+          ls -la /tmp/wrangler-out
