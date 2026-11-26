@@ -875,9 +875,22 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
   };
   const labels = values => values.map(value => value.replace(/^[✓✗○…] /, ''));
   const generated = labels(render({ runs: [] }));
-  assert.deepEqual(generated, ['已生成', '已验证', '已提交', '部署中', '线上健康']);
+  assert.deepEqual(generated, ['已生成', '已提交', '已验证', '部署中', '线上健康']);
   assert.match(render({ runs: [] })[0], /^✓ /);
   assert.match(render({ runs: [] })[1], /^○ /);
+
+  // The upper status strip must use the same order as the run-result status chain.
+  const chainBlock = extract(frontendSource, 'function chainStep(text, cls)', 'async function runBoth()');
+  const chainNode = element();
+  const chainContext = vm.createContext({
+    document: { createElement: tag => element(tag) },
+    g: id => id === 'wb-chain' ? chainNode : null
+  });
+  vm.runInContext(block + '\\n' + chainBlock, chainContext,
+    { filename: 'upper-delivery-chain.vm.js', timeout: 1000 });
+  vm.runInContext('renderChain({ runs: [] })', chainContext);
+  assert.deepEqual(chainNode.children.map(node => node.textContent.replace(/^[✓✗○…] /, '')),
+    ['已生成', '已提交', '已验证', '部署中', '线上健康']);
 
   const queued = render({
     head_sha: 'abc123',
@@ -888,8 +901,8 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
       { kind: 'worker', run_id: 13 }
     ]
   });
-  assert.match(queued[1], /^✓ 已验证$/);
-  assert.match(queued[2], /^✓ 已提交$/);
+  assert.match(queued[1], /^✓ 已提交$/);
+  assert.match(queued[2], /^✓ 已验证$/);
   assert.match(queued[3], /^… 部署中$/);
   assert.match(queued[4], /^○ 线上健康$/);
 
