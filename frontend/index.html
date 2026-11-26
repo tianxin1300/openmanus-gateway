@@ -6067,10 +6067,12 @@ async function probePagesHealth(runId) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch("https://zhineng-et5.pages.dev/", {method:"GET", cache:"no-store", redirect:"follow", signal:controller.signal});
-      probe.status = response.status;
-      probe.state = response.status === 200 ? "ok" : "bad";
-      if (response.status !== 200) probe.error = "线上探活返回 HTTP " + response.status + "（要求 HTTP 200）";
+      const response = await authFetch(GATEWAY + "/api/code/pages-health", {cache:"no-store", signal:controller.signal, headers:{"Accept":"application/json"}});
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.ok !== true) throw new Error(result.msg || "线上探活接口请求失败");
+      probe.status = result.status;
+      probe.state = result.status === 200 ? "ok" : "bad";
+      if (result.status !== 200) probe.error = "线上探活返回 HTTP " + result.status + "（要求 HTTP 200）";
     } catch (e) {
       probe.state = "bad";
       probe.error = e && e.name === "AbortError" ? "线上探活超时（15 秒）" : "线上探活请求失败：" + (e && e.message || String(e));
