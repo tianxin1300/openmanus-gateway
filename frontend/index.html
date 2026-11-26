@@ -6459,7 +6459,7 @@ function openLocalTaskPreview() {
   return true;
 }
 window.openLocalTaskPreview = openLocalTaskPreview;
-window.addEventListener("open-local-task-preview", () => { try { openLocalTaskPreview(); } catch (error) { say(error.message, true); } });});
+window.addEventListener("open-local-task-preview", () => { try { openLocalTaskPreview(); } catch (error) { say(error.message, true); } });
 g("wb-close").addEventListener("click", closeWb);
 g("wb-save").addEventListener("click", save);
 g("wb-both").addEventListener("click", runBoth);
