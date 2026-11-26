@@ -1336,18 +1336,18 @@ function renderAcceptanceDeliveryChain(data, health = { run_id: '', state: 'idle
 }
 
 test('ACCEPTANCE AUTO-01: independent preview is built from the current editor source', () => {
-  const script = /<script\\b(?=[^>]*\\bid=["']wb-devbench["'])[^>]*>([\\s\\S]*?)<\\/script\\s*>/i.exec(frontendSource);
+  const script = /<script\b(?=[^>]*\bid=["']wb-devbench["'])[^>]*>([\s\S]*?)<\/script\s*>/i.exec(frontendSource);
   assert.ok(script, 'devbench script exists');
   assert.doesNotThrow(() => new vm.Script(script[1]));
-  assert.match(script[1], /function srcdocOf\\(code\\)/);
-  assert.match(script[1], /frame\\.srcdoc = srcdocOf\\(ed\\.get\\(\\)\\)/);
-  assert.match(script[1], /window\\.open\\("about:blank", "_blank"\\)/);
+  assert.match(script[1], /function srcdocOf\(code\)/);
+  assert.match(script[1], /frame\.srcdoc = srcdocOf\(ed\.get\(\)\)/);
+  assert.match(script[1], /window\.open\("about:blank", "_blank"\)/);
   assert.match(script[1], /id="local-preview-frame"/);
-  assert.doesNotMatch(script[1], /WebContainer|ensureLocalWebContainer|spawn\\(["']jsh/);
+  assert.doesNotMatch(script[1], /WebContainer|ensureLocalWebContainer|spawn\(["']jsh/);
 });
 
 test('ACCEPTANCE AUTO-02: independent preview synchronizes results, status chain and run logs', () => {
-  const script = /<script\\b(?=[^>]*\\bid=["']wb-devbench["'])[^>]*>([\\s\\S]*?)<\\/script\\s*>/i.exec(frontendSource)[1];
+  const script = /<script\b(?=[^>]*\bid=["']wb-devbench["'])[^>]*>([\s\S]*?)<\/script\s*>/i.exec(frontendSource)[1];
   const start = script.indexOf('function syncLocalTaskPreview()');
   const end = script.indexOf('function openLocalTaskPreview()', start);
   assert.ok(start >= 0 && end > start, 'preview sync function exists');
@@ -1355,33 +1355,33 @@ test('ACCEPTANCE AUTO-02: independent preview synchronizes results, status chain
   for (const id of ['local-preview-frame', 'local-run-result-content', 'local-run-chain', 'local-run-logs']) {
     assert.ok(sync.includes(id), 'syncs ' + id);
   }
-  assert.match(sync, /frame\\.srcdoc = srcdocOf\\(ed\\.get\\(\\)\\)/);
-  assert.match(sync, /source\\.cloneNode\\(true\\)/);
-  assert.match(sync, /sourceChain\\.cloneNode\\(true\\)/);
-  assert.match(sync, /output\\.textContent/);
-  assert.match(script, /syncLocalTaskPreview\\(\\)/);
+  assert.match(sync, /frame\.srcdoc = srcdocOf\(ed\.get\(\)\)/);
+  assert.match(sync, /source\.cloneNode\(true\)/);
+  assert.match(sync, /sourceChain\.cloneNode\(true\)/);
+  assert.match(sync, /output\.textContent/);
+  assert.match(script, /syncLocalTaskPreview\(\)/);
 });
 
 test('ACCEPTANCE AUTO-03: Monaco and textarea fallback both wrap long lines without horizontal overflow', () => {
-  assert.match(frontendSource, /wordWrap:\\s*"on"/);
-  assert.match(frontendSource, /wrappingStrategy:\\s*"advanced"/);
-  assert.match(frontendSource, /ta\\.wrap\\s*=\\s*"soft"/);
-  assert.match(frontendSource, /#wb-editor textarea\\{[^}]*white-space:pre-wrap!important;[^}]*overflow-wrap:anywhere!important;[^}]*overflow-x:hidden!important/s);
-  assert.match(frontendSource, /scrollbar:\\s*\\{horizontal:\\s*"hidden"\\}/);
+  assert.match(frontendSource, /wordWrap:\s*"on"/);
+  assert.match(frontendSource, /wrappingStrategy:\s*"advanced"/);
+  assert.match(frontendSource, /ta\.wrap\s*=\s*"soft"/);
+  assert.match(frontendSource, /#wb-editor textarea\{[^}]*white-space:pre-wrap!important;[^}]*overflow-wrap:anywhere!important;[^}]*overflow-x:hidden!important/s);
+  assert.match(frontendSource, /scrollbar:\s*\{horizontal:\s*"hidden"\}/);
 });
 
 test('ACCEPTANCE AUTO-04: terminal and expandable run logs are mutually exclusive and viewport-aware', () => {
   assert.match(frontendSource, /id="wb-term-tabs" role="tablist"/);
   assert.match(frontendSource, /id="wb-terminal-tab" role="tab" aria-controls="wb-terminal" aria-selected="true"/);
   assert.match(frontendSource, /id="wb-runlogs-tab" role="tab" aria-controls="wb-runlogs" aria-selected="false"/);
-  assert.match(frontendSource, /#wb-term\\[data-panel="terminal"\\] #wb-runlogs,#wb-term\\[data-panel="logs"\\] #wb-terminal\\{display:none\\}/);
-  const script = /<script\\b(?=[^>]*\\bid=["']wb-devbench["'])[^>]*>([\\s\\S]*?)<\\/script\\s*>/i.exec(frontendSource)[1];
-  assert.match(script, /function setTerminalPanel\\(panel\\)/);
-  assert.match(script, /setTerminalPanel\\("terminal"\\)/);
-  assert.match(script, /setTerminalPanel\\("logs"\\)/);
-  assert.match(script, /g\\("wb-runlogs"\\)\\.addEventListener\\("toggle"/);
-  assert.match(script, /window\\.visualViewport\\.addEventListener\\("resize"/);
-  assert.match(script, /window\\.visualViewport\\.addEventListener\\("scroll"/);
+  assert.match(frontendSource, /#wb-term\[data-panel="terminal"\] #wb-runlogs,#wb-term\[data-panel="logs"\] #wb-terminal\{display:none\}/);
+  const script = /<script\b(?=[^>]*\bid=["']wb-devbench["'])[^>]*>([\s\S]*?)<\/script\s*>/i.exec(frontendSource)[1];
+  assert.match(script, /function setTerminalPanel\(panel\)/);
+  assert.match(script, /setTerminalPanel\("terminal"\)/);
+  assert.match(script, /setTerminalPanel\("logs"\)/);
+  assert.match(script, /g\("wb-runlogs"\)\.addEventListener\("toggle"/);
+  assert.match(script, /window\.visualViewport\.addEventListener\("resize"/);
+  assert.match(script, /window\.visualViewport\.addEventListener\("scroll"/);
   assert.doesNotMatch(frontendSource, /wb-runlogs-expanded/);
 });
 
@@ -1448,7 +1448,7 @@ test('ACCEPTANCE.md: ten code acceptance items each map to an executable npm tes
   const ids = ['AUTO-01', 'AUTO-02', 'AUTO-03', 'AUTO-04', 'CHAIN-01', 'CHAIN-02', 'CHAIN-03', 'CHAIN-04', 'CHAIN-05', 'CHAIN-06'];
   for (const id of ids) {
     assert.ok(doc.includes(id), 'ACCEPTANCE.md must define ' + id);
-    assert.ok(new RegExp("test\\('" + id + ":").test(fs.readFileSync(__filename, 'utf8')), 'must have a dedicated Node test for ' + id);
+    assert.ok(new RegExp("test\('" + id + ":").test(fs.readFileSync(__filename, 'utf8')), 'must have a dedicated Node test for ' + id);
   }
   assert.match(doc, /npm test/);
   assert.match(doc, /测试通过即该项通过/);
