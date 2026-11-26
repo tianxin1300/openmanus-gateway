@@ -6544,10 +6544,10 @@ function renderChain(d) {
   const byKind = {}; runs.forEach((r) => { byKind[r.kind] = r; });
   const verify = byKind.verify || (d && !d.deploy ? d : {}) || {};
   const deploy = byKind.deploy || (d && d.deploy ? d : {}) || {};
+  const worker = byKind.worker || {};
   const failed = !!(d && d.state === "failure") || [deploy, worker].some((r) => r.conclusion && r.conclusion !== "success");
   const verified = byKind.verify ? verify.conclusion === "success" : (byKind.deploy && deploy.conclusion === "success");
   const submitted = !!(d && (d.head_sha || d.submitted || deploy.run_id || verify.run_id));
-  const worker = byKind.worker || {};
   const deploying = d.state === "queued" || d.state === "running" || !!((deploy.run_id && !deploy.conclusion) || (worker.run_id && !worker.conclusion));
   const deployed = deploy.conclusion === "success" && worker.conclusion === "success";
   const health = pagesHealthFor(deploy);
@@ -6561,7 +6561,6 @@ function renderChain(d) {
     ["已部署", deployed ? "ok" : ""],
     [online ? "线上健康 HTTP 200" : "线上健康", online ? "ok" : (healthFailed ? "bad" : (health.state === "checking" ? "now" : ""))]
   ];
-  if (byKind.verify && verify.conclusion && verify.conclusion !== "success") steps.push(["验证失败", "bad"]);
   if (byKind.verify && verify.conclusion && verify.conclusion !== "success") steps.push(["验证失败", "bad"]);
   if (failed) steps.push(["部署失败", "bad"]);
   else if (healthFailed) steps.push(["线上探活失败", "bad"]);
