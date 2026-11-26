@@ -906,7 +906,11 @@ test('devbench has one Actions launch button and one expandable unified run log'
   assert.ok(frontendSource.includes('showTab("prev")'));
   assert.ok(frontendSource.includes('#wb-right{flex:0 0 25%;max-height:25%'));
   assert.ok(frontendSource.includes('#wb-term{flex:0 0 24%;min-height:120px;max-height:32%;overflow:hidden}'));
-  assert.ok(frontendSource.includes('#wb-runlogs{flex:0 1 auto;min-height:0;max-height:50%;overflow:auto}'));
+  assert.match(frontendSource, /#wb-term\\s*\\{[^}]*flex:0 0 max\\(180px,30vh\\)[^}]*min-height:180px/);
+  assert.match(frontendSource, /#wb-runlogs\\s*\\{[^}]*flex:0 0 34px[^}]*max-height:34px/);
+  assert.match(frontendSource, /#wb-runlogs\\[open\\]\\s*\\{[^}]*max-height:50%[^}]*overflow:auto/);
+  assert.match(frontendSource, /#wb-main\\s*\\{[^}]*min-height:0[^}]*overflow:hidden/);
+  assert.match(frontendSource, /@media\\(max-width:1100px\\)[\\s\\S]*?#wb-term\\s*\\{[^}]*min-height:180px/);
   assert.ok(!frontendSource.includes('点右上角「运行」会在浏览器里启动 WebContainer'));
   assert.ok(!frontendSource.includes('g("wb-run").addEventListener'));
   assert.ok(!frontendSource.includes("function initTerm"));
