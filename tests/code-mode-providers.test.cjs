@@ -1033,9 +1033,9 @@ test('delivery chain: real probePagesHealth logic accepts only HTTP 200 and prob
 
 
 test('devbench hides legacy preview/result cards until the dedicated local preview workspace opens', () => {
-  assert.match(frontendSource, /#wb:not\\(\\.wb-local-preview-mode\\)\\s+#wb-right\\s*\\{\\s*display:\\s*none!important;\\s*\\}/);
-  assert.match(frontendSource, /#wb:not\\(\\.wb-local-preview-mode\\)\\s+#wb-left\\s*\\{[^}]*flex:\\s*1 1 100%!important/);
-  assert.match(frontendSource, /#wb\\.wb-local-preview-mode\\s+#wb-right\\s*\\{\\s*display:\\s*flex!important/);
-  assert.match(frontendSource, /#wb\\.wb-local-preview-mode\\s+#wb-runframe\\s*\\{[^}]*display:\\s*block!important/);
-  assert.match(frontendSource, /button\\.textContent = "返回开发台"/);
+  assert.ok(frontendSource.includes('#wb:not(.wb-local-preview-mode) #wb-right{display:none!important}'));
+  assert.ok(frontendSource.includes('#wb:not(.wb-local-preview-mode) #wb-left{flex:1 1 100%!important;width:100%!important;border-right:0!important;border-bottom:0!important}'));
+  assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-right{display:flex!important}'));
+  assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-runframe{position:absolute!important;inset:0!important;display:block!important;'));
+  assert.ok(frontendSource.includes('button.textContent = "返回开发台"'));
 });
