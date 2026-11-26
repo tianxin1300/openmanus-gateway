@@ -5708,16 +5708,11 @@ const bestPlace = (list, q) => {
 #wb-runlogs .wb-logtitle a{color:#9fc0f5!important}
 #wb-runlogs pre{color:#d8e0ec!important}
 #wb-terminal{background:#171c25!important;color:#e5eaf2!important;border-top:1px solid #354052!important}
-.wb-terminal-head,.wb-terminal-command,.wb-terminal-tools{background:#252e3d!important;color:#dce4ef!important}
+.wb-terminal-head{background:#252e3d!important;color:#dce4ef!important}
 .wb-terminal-hint{color:#aab7ca!important}
-#wb-xterm{background:#171c25!important}
-#wb-terminal-input{background:#111722!important;color:#edf2f8!important;border-color:#46536a!important}
-#wb-terminal-input::placeholder{color:#8794a8!important}
 .wb-touch-btn{background:#354155!important;color:#edf2f8!important;border-color:#53627a!important}
 .wb-touch-btn:hover{background:#40516b!important}
-.wb-send-btn{background:#426fbd!important;border-color:#426fbd!important}
-.wb-send-btn:hover{background:#527fc9!important}
-#wb-terminal-command input:focus-visible,#wb-terminal-input:focus-visible,.wb-touch-btn:focus-visible,#wb-bar button:focus-visible{outline:2px solid #8db6f4!important;outline-offset:2px}
+#wb-terminal-layout:focus-visible,#wb-bar button:focus-visible{outline:2px solid #8db6f4!important;outline-offset:2px}
 #wb-lint-panel{background:#202938!important;color:#e5eaf2!important;border-color:#3b4659!important}
 #wb-lint-panel button{background:#354155!important;color:#edf2f8!important}
 #wb-terminal.wb-terminal-fullscreen{background:#171c25!important}
@@ -5737,6 +5732,8 @@ const bestPlace = (list, q) => {
 }
 
 #wb-bar #wb-local-preview{background:#34465f!important;border-color:#536985!important;color:#f2f6fc!important}
+#wb-right{display:none!important}
+#wb-left{flex:1 1 100%!important;width:100%!important;border-right:0!important;border-bottom:0!important}
 #wb-editor textarea{white-space:pre-wrap!important;overflow-wrap:anywhere!important;word-break:break-word!important;overflow-x:hidden!important}
 #wb-terminal-output{display:block;flex:1 1 0;min-height:0;max-height:100%;overflow:auto;margin:0;padding:8px 10px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;color:#d8e0ec;background:#171c25;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 #wb{height:var(--wb-visual-height,100dvh)!important;top:var(--wb-visual-top,0px)!important;bottom:auto!important}
@@ -5884,8 +5881,7 @@ function withTimeout(p, ms, what) { let to; return Promise.race([p, new Promise(
 function loadScript(src, ms) {
   return withTimeout(new Promise((ok, no) => { const s = document.createElement("script"); s.src = src; s.crossOrigin = "anonymous"; s.onload = ok; s.onerror = () => { s.remove(); no(new Error("加载失败 " + src)); }; document.head.appendChild(s); }), ms || 15000, "加载 " + src);
 }
-/* Monaco 的 AMD 加载器会占用全局 define/require，让后面加载的 UMD 库（含主页面导出用的库）认成 AMD 模块而不挂全局。
-   所以：xterm 用「屏蔽 define 后执行」的方式加载；开发台关闭时把 define/require 还原，再打开时再换回来。 */
+/* Monaco 的 AMD 加载器会占用全局 define/require；开发台关闭时还原，重新打开时再恢复。 */
 const amd0 = {d: window.define, r: window.require}; let amdMonaco = null;
 function amdSet(d, r) {
   [["define", d], ["require", r]].forEach(([k, v]) => { if (v === undefined) { try { delete window[k]; } catch (_) { window[k] = undefined; } } else window[k] = v; });
