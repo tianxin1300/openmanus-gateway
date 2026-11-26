@@ -6436,16 +6436,16 @@ function renderDeliveryChain(d) {
   const runs = Array.isArray(d.runs) ? d.runs : [];
   const deploy = runs.find((r) => r.kind === "deploy") || (d.deploy ? d : {});
   const worker = runs.find((r) => r.kind === "worker") || {};
-  const verify = runs.find((r) => r.kind === "verify");
+  const verify = runs.find((r) => r.kind === "verify") || (d.kind === "verify" ? d : null);
   const health = pagesHealthFor(deploy);
-  const failed = d.state === "failure" || [deploy, worker].some((r) => r.conclusion && r.conclusion !== "success");
+  const verifyFailed = !!(verify && verify.conclusion && verify.conclusion !== "success");
+  const failed = (d.state === "failure" && !verifyFailed) || [deploy, worker].some((r) => r.conclusion && r.conclusion !== "success");
   const verified = verify ? verify.conclusion === "success" : (deploy.conclusion === "success" || (!runs.length && d.conclusion === "success"));
   const submitted = !!(d.head_sha || d.submitted || deploy.run_id || worker.run_id || (runs.find((r) => r.kind === "verify") || {}).run_id);
   const deployed = deploy.conclusion === "success" && worker.conclusion === "success";
   const deploying = d.state === "queued" || d.state === "running" || !!((deploy.run_id && !deploy.conclusion) || (worker.run_id && !worker.conclusion));
   const online = deployed && health.state === "ok" && health.status === 200;
   const healthFailed = deployed && health.state === "bad";
-  const verifyFailed = !!(verify && verify.conclusion && verify.conclusion !== "success");
   const healthLabel = online ? "线上健康 HTTP 200" : healthFailed ? "线上健康失败" + (health.status ? " HTTP " + health.status : "") : "线上健康";
   const steps = [{name:"已生成", ok:true}, {name:"已提交", ok:submitted}, {name:"已验证", ok:verified, bad:verifyFailed}, {name:"部署中", ok:deployed, now:deploying && !deployed}, {name:"已部署", ok:deployed}, {name:healthLabel, ok:online, bad:healthFailed, now:deployed && health.state === "checking"}];
   if (verifyFailed) steps.push({name:"验证失败", bad:true});
@@ -6542,11 +6542,12 @@ function renderChain(d) {
   const box = g("wb-chain"); if (!box) return;
   const runs = (d && Array.isArray(d.runs)) ? d.runs : [];
   const byKind = {}; runs.forEach((r) => { byKind[r.kind] = r; });
-  const verify = byKind.verify || (d && !d.deploy ? d : {}) || {};
+  const verify = byKind.verify || (d && !d.deploy && !runs.length ? d : {}) || {};
   const deploy = byKind.deploy || (d && d.deploy ? d : {}) || {};
   const worker = byKind.worker || {};
-  const failed = !!(d && d.state === "failure") || [deploy, worker].some((r) => r.conclusion && r.conclusion !== "success");
-  const verified = byKind.verify ? verify.conclusion === "success" : (byKind.deploy && deploy.conclusion === "success");
+  const verifyFailed = !!((byKind.verify || (!runs.length && d && !d.deploy)) && verify.conclusion && verify.conclusion !== "success");
+  const failed = (!!(d && d.state === "failure") && !verifyFailed) || [deploy, worker].some((r) => r.conclusion && r.conclusion !== "success");
+  const verified = byKind.verify ? verify.conclusion === "success" : byKind.deploy ? deploy.conclusion === "success" : (!runs.length && d && !d.deploy ? verify.conclusion === "success" : false);
   const submitted = !!(d && (d.head_sha || d.submitted || deploy.run_id || verify.run_id));
   const deploying = d.state === "queued" || d.state === "running" || !!((deploy.run_id && !deploy.conclusion) || (worker.run_id && !worker.conclusion));
   const deployed = deploy.conclusion === "success" && worker.conclusion === "success";
@@ -6561,7 +6562,7 @@ function renderChain(d) {
     ["已部署", deployed ? "ok" : ""],
     [online ? "线上健康 HTTP 200" : "线上健康", online ? "ok" : (healthFailed ? "bad" : (health.state === "checking" ? "now" : ""))]
   ];
-  if (byKind.verify && verify.conclusion && verify.conclusion !== "success") steps.push(["验证失败", "bad"]);
+  if (verifyFailed) steps.push(["验证失败", "bad"]);
   if (failed) steps.push(["部署失败", "bad"]);
   else if (healthFailed) steps.push(["线上探活失败", "bad"]);
   box.innerHTML = "";
