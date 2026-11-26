@@ -6547,7 +6547,7 @@ function renderChain(d) {
   const worker = byKind.worker || {};
   const verifyFailed = !!((byKind.verify || (!runs.length && d && !d.deploy)) && verify.conclusion && verify.conclusion !== "success");
   const failed = (!!(d && d.state === "failure") && !verifyFailed) || [deploy, worker].some((r) => r.conclusion && r.conclusion !== "success");
-  const verified = byKind.verify ? verify.conclusion === "success" : byKind.deploy ? deploy.conclusion === "success" : (!runs.length && d && !d.deploy ? verify.conclusion === "success" : false);
+  const verified = byKind.verify ? verify.conclusion === "success" : (byKind.deploy || (d && d.deploy) ? deploy.conclusion === "success" : (!runs.length && d && !d.deploy ? verify.conclusion === "success" : false));
   const submitted = !!(d && (d.head_sha || d.submitted || deploy.run_id || verify.run_id));
   const deploying = d.state === "queued" || d.state === "running" || !!((deploy.run_id && !deploy.conclusion) || (worker.run_id && !worker.conclusion));
   const deployed = deploy.conclusion === "success" && worker.conclusion === "success";
