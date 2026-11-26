@@ -207,7 +207,7 @@ test('workbench simultaneous start triggers GitHub Actions and renders the full 
   assert.match(frontendSource, /j\.state === "success"/);
   assert.match(frontendSource, /j\.state === "failure"/);
   assert.match(frontendSource, /function renderDeliveryChain\(d\)/);
-  assert.match(frontendSource, /fetch\("https:\/\/zhineng-et5\.pages\.dev\/", \{method:"GET", cache:"no-store"/);
+  assert.match(frontendSource, /authFetch\(GATEWAY \+ "\/api\/code\/pages-health"/);
   assert.match(frontendSource, /response\.status === 200/);
   assert.match(frontendSource, /new AbortController\(\)/);
   assert.match(frontendSource, /线上探活超时（15 秒）/);
@@ -252,6 +252,9 @@ test('persistent runner, KV logs and Pages deployment are wired end to end', () 
   assert.match(workerSource, /path === "\/api\/code\/runs"/);
   assert.match(workerSource, /CODE_DEPLOY_WORKFLOW = "deploy-project\.yml"/);
   assert.match(workerSource, /CODE_WORKER_DEPLOY_WORKFLOW = "deploy-worker\.yml"/);
+  assert.match(workerSource, /path === "\/api\/code\/pages-health"/);
+  assert.match(workerSource, /fetch\("https:\/\/zhineng-et5\.pages\.dev\/", \{ method: "GET"/);
+  assert.match(workerSource, /status: response\.status/);
   assert.match(workerSource, /for \(const kind of \["deploy", "worker"\]\)/);
   assert.match(workerSource, /kind === "worker" \? CODE_WORKER_DEPLOY_WORKFLOW : CODE_DEPLOY_WORKFLOW/);
   assert.match(workerSource, /r\.kind === "worker" \? "deploy-worker · "/);
