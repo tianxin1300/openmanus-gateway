@@ -5685,6 +5685,76 @@ const bestPlace = (list, q) => {
   #wb-lint-panel { left: 8px !important; right: 8px !important; width: auto !important; max-height: 55vh !important; bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important; }
 }
 </style>
+<style id="wb-professional-theme">
+/* 统一开发台视觉：中性石墨灰 + 冷蓝强调，所有面板使用同一套设计语言 */
+#wb{background:#11151d!important;color:#e7ebf2!important;color-scheme:dark}
+#wb-bar{background:#1b2230!important;color:#eef2f8!important;border-bottom:1px solid #30394a!important;gap:9px!important;padding:8px 12px!important;min-height:54px}
+#wb-bar strong{color:#f3f5f9!important;font-size:14px;letter-spacing:.2px}
+#wb-file{color:#aab7ca!important;background:#252e3d;padding:5px 8px;border:1px solid #354155;border-radius:6px}
+#wb-state{color:#9fc1f6!important}
+#wb-state.warn{color:#f0c77b!important}
+#wb-bar button{min-height:36px;padding:7px 12px!important;border:1px solid #3b4659!important;border-radius:8px!important;background:#2a3445!important;color:#e7edf7!important;font-size:12px!important;box-shadow:none!important}
+#wb-bar button:hover{background:#35445a!important;border-color:#58749e!important}
+#wb-bar #wb-save,#wb-bar #wb-both{background:#426fbd!important;border-color:#426fbd!important;color:#fff!important}
+#wb-bar #wb-save:hover,#wb-bar #wb-both:hover{background:#527fc9!important}
+#wb-bar #wb-close{min-width:36px;font-size:18px!important}
+#wb-chain{background:#202938!important;border-bottom:1px solid #354052!important;padding:8px 12px!important;gap:7px!important}
+#wb-chain .wb-chain-step{background:#2b3545!important;border-color:#3c485c!important;color:#aeb9ca!important;border-radius:7px!important;padding:5px 9px!important}
+#wb-chain .wb-chain-step.ok{background:#263b57!important;border-color:#426a9e!important;color:#b8d2f6!important}
+#wb-chain .wb-chain-step.bad{background:#492d35!important;border-color:#81505c!important;color:#f0c3ca!important}
+#wb-chain .wb-chain-step.now{background:#443a2b!important;border-color:#79623b!important;color:#f0d7a1!important}
+#wb-main{background:#11151d!important}
+#wb-left{background:#171c25!important;border-right:1px solid #30394a!important;border-bottom-color:#30394a!important}
+#wb-editor{background:#171c25!important;color:#e5eaf2!important}
+#wb-editor textarea{background:#171c25!important;color:#e5eaf2!important;caret-color:#8db6f4!important;selection-background-color:#344b6c}
+#wb-right{background:#f7f8fb!important;color:#252d3b!important;border-left:1px solid #30394a!important}
+.wb-rhead{background:#e9edf3!important;border-bottom:1px solid #d6dce6!important;padding:5px 9px!important;gap:6px!important}
+.wb-tab{background:transparent!important;color:#667287!important;border:1px solid transparent!important;border-radius:7px!important;box-shadow:none!important}
+.wb-tab:hover{background:#dfe6f0!important;color:#34445c!important}
+.wb-tab.on{background:#fff!important;color:#315f9e!important;border-color:#d5deeb!important;box-shadow:0 1px 3px #202a3a12!important}
+.wb-rhead .wb-mini{background:#fff!important;color:#4b5c75!important;border:1px solid #d3dbe7!important}
+.wb-pane{background:#fff!important;color:#283244!important}
+#wb-res{background:#f8f9fc!important;color:#283244!important}
+#wb-res h4{color:#315f9e!important}
+#wb-res pre{color:#303b4d!important}
+#wb-local-error{background:#fff5f4!important;color:#8e3434!important;border:1px solid #edc7c7!important;border-radius:8px!important;margin:8px!important;padding:8px 10px!important}
+#wb-local-error pre{color:#7b3030!important}
+#wb-term{border-top:1px solid #354052!important;background:#171c25!important;color:#e5eaf2!important}
+#wb-runlogs{background:#171c25!important;color:#e5eaf2!important}
+#wb-runlogs>summary{background:#252e3d!important;border-color:#3b4659!important;color:#cbd5e4!important}
+#wb-runlogs .wb-logbox{background:#1c2330!important;border-color:#39465b!important}
+#wb-runlogs .wb-logtitle{background:#273246!important;color:#d9e3f2!important}
+#wb-runlogs .wb-logtitle a{color:#9fc0f5!important}
+#wb-runlogs pre{color:#d8e0ec!important}
+#wb-terminal{background:#171c25!important;color:#e5eaf2!important;border-top:1px solid #354052!important}
+.wb-terminal-head,.wb-terminal-command,.wb-terminal-tools{background:#252e3d!important;color:#dce4ef!important}
+.wb-terminal-hint{color:#aab7ca!important}
+#wb-xterm{background:#171c25!important}
+#wb-terminal-input{background:#111722!important;color:#edf2f8!important;border-color:#46536a!important}
+#wb-terminal-input::placeholder{color:#8794a8!important}
+.wb-touch-btn{background:#354155!important;color:#edf2f8!important;border-color:#53627a!important}
+.wb-touch-btn:hover{background:#40516b!important}
+.wb-send-btn{background:#426fbd!important;border-color:#426fbd!important}
+.wb-send-btn:hover{background:#527fc9!important}
+#wb-terminal-command input:focus-visible,#wb-terminal-input:focus-visible,.wb-touch-btn:focus-visible,#wb-bar button:focus-visible{outline:2px solid #8db6f4!important;outline-offset:2px}
+#wb-lint-panel{background:#202938!important;color:#e5eaf2!important;border-color:#3b4659!important}
+#wb-lint-panel button{background:#354155!important;color:#edf2f8!important}
+#wb-terminal.wb-terminal-fullscreen{background:#171c25!important}
+@media(max-width:1100px){
+ #wb-bar{background:#1b2230!important;padding:calc(7px + env(safe-area-inset-top,0px)) 9px 7px!important}
+ #wb-bar button{min-height:40px!important}
+ #wb-main{background:#11151d!important}
+ #wb-left{border-bottom:1px solid #30394a!important}
+ #wb-right{border-left:0!important}
+}
+@media(max-width:700px){
+ #wb-bar{gap:6px!important}
+ #wb-bar strong{font-size:13px}
+ #wb-file{font-size:11px}
+ #wb-bar button{min-height:40px!important;padding:7px 10px!important}
+ .wb-rhead{min-height:42px}
+}
+</style>
 <!-- 开发台：编辑器、实时预览/运行结果、统一运行日志；代码通过 GitHub Actions 执行 -->
 <div id="wb" role="dialog" aria-hidden="true" aria-label="开发台">
   <div id="wb-bar">
