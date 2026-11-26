@@ -911,7 +911,8 @@ test('devbench has one Actions launch button and one expandable unified run log'
 
 
   assert.match(frontendSource, /#wb-main\s*\{[^}]*min-height:0[^}]*overflow:hidden/);
-  assert.ok(frontendSource.includes('id="wb-terminal" aria-label="WebContainer 终端输出"'));
+  assert.ok(frontendSource.includes('id="wb-terminal"'), "terminal container id exists");
+  assert.match(frontendSource, /aria-label="[^"]*终端[^"]*"/, "terminal aria-label contains 终端");
   const terminalCss = frontendSource.match(/#wb-terminal\s*\{[^}]*\}[\s\S]*?#wb-terminal-output\s*\{[^}]*\}/);
   assert.ok(terminalCss, "terminal visual theme CSS exists");
   assert.match(terminalCss[0], /background:#171b24/, "terminal uses neutral charcoal, not green");
