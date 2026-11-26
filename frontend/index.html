@@ -6496,6 +6496,9 @@ g("wb-local-preview").addEventListener("click", () => {
 });
 g("wb-reload").addEventListener("click", () => { if (!ed) return; if (dirty && !confirm("重新读取会丢掉未保存的修改，继续？")) return; loadFile(); });
 g("wb-prev-refresh").addEventListener("click", renderPreview);
+g("wb-runlogs").addEventListener("toggle", () => {
+  g("wb-term").classList.toggle("wb-runlogs-expanded", g("wb-runlogs").open);
+});
 g("wb-terminal-layout").addEventListener("click",()=>{
   const terminal=g("wb-terminal"),button=g("wb-terminal-layout"),full=terminal.classList.toggle("wb-terminal-fullscreen");
   button.textContent=full?"分屏":"全屏";
