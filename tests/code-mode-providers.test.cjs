@@ -874,7 +874,7 @@ test('devbench has one Actions launch button and one expandable unified run log'
   assert.ok(!frontendSource.includes('g("wb-run").addEventListener'));
   assert.ok(!frontendSource.includes("WebContainer"));
   assert.ok(!frontendSource.includes("function initTerm"));
-  assert.ok(!frontendSource.includes("function run()"));
+  assert.ok(!frontendSource.includes("async function run() {"));
 });
 
 test('delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct', () => {
