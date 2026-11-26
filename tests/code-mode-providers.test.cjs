@@ -891,8 +891,9 @@ test('devbench has one Actions launch button and one expandable unified run log'
   assert.ok(frontendSource.includes('(d.runs||[]).slice(0,20)'));
   assert.ok(frontendSource.includes('#wb-right{flex:0 0 25%;max-height:25%'));
 
-  assert.match(frontendSource, /#wb-runlogs\\s*\\{[^}]*\\}/);
-  assert.match(frontendSource, /#wb-runlogs\\s*\\{[^}]*max-height\\s*:/);
+  const runlogsCss = frontendSource.match(/#wb-runlogs\s*\{[^}]*\}/);
+  assert.ok(runlogsCss, "run log CSS rule exists");
+  assert.match(runlogsCss[0], /max-height\s*:/, "run log CSS has a height cap");
   assert.ok(frontendSource.includes('#wb-res{min-height:0;max-height:100%;overflow:auto'));
   assert.ok(frontendSource.includes('if(logs) logs.open=false'));
   assert.ok(frontendSource.includes('showTab("run");g("wb-runlogs").open=false'));
