@@ -575,8 +575,10 @@ async function codeRunnerCall(env, user, requestId, action, payload) {
   return await r.json().catch(() => null);
 }
 async function codeRunnerUpdate(env, user, record) {
-  if (!record || !record.request_id) return;
-  await codeRunnerCall(env, user, record.request_id, "update", record).catch(() => null);
+  if (!record || !record.request_id) return { ok: false, msg: "runner record missing request_id" };
+  const result = await codeRunnerCall(env, user, record.request_id, "update", { ...record, owner_user: String(user || "") });
+  if (!result || result.ok !== true) throw new Error(result && result.msg || "CodeRunnerDO 状态写入失败");
+  return result;
 }
 async function codeRunnerLockCall(env, user, action, payload) {
   return await codeRunnerCall(env, user, "__parallel_active__", action, payload).catch(() => null);
@@ -585,7 +587,7 @@ async function codeRunIndexLoad(env, user) { return env.KV ? (await env.KV.get(c
 async function codePersistRun(env, user, record) {
   if (!record) return record;
   const runId = String(record.run_id || record.request_id || "");
-  record.run_id = runId; record.log_key = codeRunLogKey(runId); record.updated_at = new Date().toISOString();
+  record.run_id = runId; record.log_key = codeRunLogKey(runId); record.owner_user = String(user || ""); record.updated_at = new Date().toISOString();
   if (env.KV && runId) {
     await env.KV.put(record.log_key, JSON.stringify({ ok: true, ...record, logs: Array.isArray(record.logs) ? record.logs : [], error_lines: Array.isArray(record.error_lines) ? record.error_lines : [] }), { expirationTtl: 31536000 });
     const rows = await codeRunIndexLoad(env, user);
@@ -686,11 +688,11 @@ async function codeBothStart(env, user, body) {
     }
     runs.push({ kind, workflow, run_id: null, run_url: "", status: "queued", conclusion: null, head_sha: "", logs: [], error_lines: [], failed_step: "" });
     // 先落盘已成功派发的任务，避免 Worker 第二次 dispatch 失败时丢失 Pages 任务句柄。
-    const partial = { request_id: requestId, repo, ref, kind: "both", workflow: CODE_VERIFY_WORKFLOW, started_at: now, updated_at: now, status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions", preview_url: "https://zhineng-et5.pages.dev", error_lines: [], logs: [], runs: [...runs] };
+    const partial = { request_id: requestId, repo, ref, kind: "both", workflow: CODE_VERIFY_WORKFLOW, dispatching: true, started_at: now, updated_at: now, status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions", preview_url: "https://zhineng-et5.pages.dev", error_lines: [], logs: [], runs: [...runs] };
     if (env.KV) await env.KV.put(key, JSON.stringify(partial), { expirationTtl: 86400 });
     await codePersistRun(env, user, partial);
   }
-  const job = { request_id: requestId, repo, ref, kind: "both", workflow: CODE_VERIFY_WORKFLOW, started_at: now, updated_at: now, status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions", preview_url: "https://zhineng-et5.pages.dev", error_lines: [], logs: [], runs };
+  const job = { request_id: requestId, repo, ref, kind: "both", workflow: CODE_VERIFY_WORKFLOW, dispatching: false, started_at: now, updated_at: now, status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions", preview_url: "https://zhineng-et5.pages.dev", error_lines: [], logs: [], runs };
   if (env.KV) await env.KV.put(key, JSON.stringify(job), { expirationTtl: 86400 });
   await codePersistRun(env, user, job);
   return { ok: true, ...job, state: "queued", message: "已触发 Actions：前端 build 与 Worker deploy 并行跑" };
@@ -9413,9 +9415,94 @@ export class CodeClaimDO {
 }
 
 export class CodeRunnerDO {
-  constructor(state) { this.storage = state.storage; }
+  constructor(state, env) { this.state = state; this.storage = state.storage; this.env = env || {}; }
   async load() { return (await this.storage.get("runner")) || null; }
   response(value, status = 200) { return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } }); }
+  async scheduleWatch() {
+    if (this.state && this.state.storage && this.state.storage.setAlarm) await this.state.storage.setAlarm(Date.now() + 15000);
+  }
+  async alarm() {
+    const record = await this.load();
+    if (!record || record.kind !== "both" || !record.owner_user || !record.repo || !Array.isArray(record.runs)) return;
+    if (record.dispatching && Date.now() - Date.parse(record.started_at || 0) < 60000) { await this.scheduleWatch(); return; }
+    record.dispatching = false;
+    const token = this.env.GH_PAT;
+    if (!token) {
+      record.watch_error = "GH_PAT 未配置，后台状态监控无法查询 GitHub";
+      await this.storage.put("runner", record);
+      await this.scheduleWatch();
+      return;
+    }
+    const base = "https://api.github.com/repos/" + record.repo;
+    const headers = { Authorization: "Bearer " + token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+    for (const run of record.runs) {
+      if (run.dispatch_error) continue;
+      try {
+        if (!run.run_id) {
+          const listed = await fetch(base + "/actions/workflows/" + encodeURIComponent(run.workflow) + "/runs?event=workflow_dispatch&per_page=30", { headers });
+          if (listed.ok) {
+            const data = await listed.json();
+            const marker = (run.kind === "worker" ? "deploy-worker · " : "deploy-project · ") + record.request_id;
+            const found = (data.workflow_runs || []).find(item => item.name === marker);
+            if (found) { run.run_id = String(found.id); run.run_url = found.html_url || ""; }
+          }
+        }
+        if (!run.run_id) { run.status = run.status || "queued"; continue; }
+        const response = await fetch(base + "/actions/runs/" + encodeURIComponent(String(run.run_id)), { headers });
+        if (!response.ok) { run.watch_error = "GitHub Actions 查询 HTTP " + response.status; continue; }
+        const live = await response.json();
+        run.status = live.status || run.status;
+        run.conclusion = live.conclusion || null;
+        run.run_url = live.html_url || run.run_url;
+        run.head_sha = live.head_sha || run.head_sha;
+        run.watch_error = "";
+        if (run.conclusion && run.conclusion !== "success") {
+          const jobsResponse = await fetch(base + "/actions/runs/" + encodeURIComponent(String(run.run_id)) + "/jobs?per_page=20", { headers });
+          if (jobsResponse.ok) {
+            const jobsData = await jobsResponse.json();
+            const jobs = jobsData.jobs || [];
+            const failed = jobs.find(item => item.conclusion === "failure") || jobs[0];
+            if (failed) {
+              run.failed_step = (failed.steps || []).find(step => step.conclusion === "failure")?.name || (run.kind === "worker" ? "Worker deploy" : "Pages deploy");
+              const logResponse = await fetch(base + "/actions/jobs/" + encodeURIComponent(String(failed.id)) + "/logs", { headers: { ...headers, Accept: "text/plain" } });
+              if (logResponse.ok) run.error_lines = codeVerifyErrorLines(await logResponse.text());
+            }
+          }
+        }
+        run.logs = Array.isArray(run.error_lines) ? run.error_lines : [];
+      } catch (error) {
+        run.watch_error = String(error && error.message || error).slice(0, 300);
+      }
+    }
+    const failed = record.runs.some(run => run.dispatch_error || (run.conclusion && run.conclusion !== "success"));
+    const running = record.runs.some(run => !run.conclusion);
+    record.state = running ? "running" : failed ? "failure" : "success";
+    record.status = running ? "in_progress" : "completed";
+    record.conclusion = running ? null : failed ? "failure" : "success";
+    record.updated_at = new Date().toISOString();
+    record.watch_updated_at = record.updated_at;
+    record.error_lines = record.runs.find(run => run.dispatch_error || (run.conclusion && run.conclusion !== "success"))?.error_lines || [];
+    record.logs = record.error_lines;
+    await this.storage.put("runner", record);
+    const user = record.owner_user;
+    const runId = String(record.run_id || record.request_id || "");
+    if (this.env.KV && runId) {
+      record.log_key = codeRunLogKey(runId);
+      await this.env.KV.put(record.log_key, JSON.stringify({ ok: true, ...record }), { expirationTtl: 31536000 });
+      const indexKey = codeRunIndexKey(user);
+      const rows = await this.env.KV.get(indexKey, "json").catch(() => []) || [];
+      const summary = { run_id: runId, request_id: record.request_id, kind: record.kind, workflow: record.workflow, status: record.status, conclusion: record.conclusion, state: record.state, run_url: record.run_url, preview_url: record.preview_url, log_key: record.log_key, started_at: record.started_at, updated_at: record.updated_at };
+      await this.env.KV.put(indexKey, JSON.stringify([summary, ...rows.filter(row => row.run_id !== runId && row.request_id !== record.request_id)].slice(0, 50)), { expirationTtl: 31536000 });
+      await this.env.KV.put(codeVerifyKey(user) + ":both", JSON.stringify(record), { expirationTtl: 86400 });
+    }
+    if (running) {
+      await this.scheduleWatch();
+    } else if (this.env.CODE_RUNNER) {
+      const lockId = this.env.CODE_RUNNER.idFromName("runner:" + user + ":__parallel_active__");
+      await this.env.CODE_RUNNER.get(lockId).fetch("https://runner/release", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request_id: record.request_id }) });
+      if (this.state && this.state.storage && this.state.storage.deleteAlarm) await this.state.storage.deleteAlarm();
+    }
+  }
   async fetch(request) {
     const action = new URL(request.url).pathname.replace(/^\//, "") || "state";
     if (request.method === "GET" || action === "state") return this.response({ ok: true, runner: await this.load() });
@@ -9450,8 +9537,17 @@ export class CodeRunnerDO {
       });
       return this.response(result, result.ok ? 200 : 409);
     }
-    if (action === "update") { const current = { ...(await this.load() || {}), ...body, updated_at: new Date().toISOString() }; await this.storage.put("runner", current); return this.response({ ok: true, runner: current }); }
-    if (action === "clear") { await this.storage.delete("runner"); return this.response({ ok: true }); }
+    if (action === "update") {
+      const current = { ...(await this.load() || {}), ...body, updated_at: new Date().toISOString() };
+      await this.storage.put("runner", current);
+      if (current.kind === "both" && current.state !== "success" && current.state !== "failure") await this.scheduleWatch();
+      return this.response({ ok: true, runner: current });
+    }
+    if (action === "clear") {
+      await this.storage.delete("runner");
+      if (this.state && this.state.storage && this.state.storage.deleteAlarm) await this.state.storage.deleteAlarm();
+      return this.response({ ok: true });
+    }
     return this.response({ ok: false, msg: "未知 runner 操作" }, 404);
   }
 }
