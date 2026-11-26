@@ -641,7 +641,7 @@ button.om-ic-only .om-ic{margin:0;width:16px;height:16px}
 #wb-left{flex:1 1 50%;min-width:0;border-right:1px solid #1d4030;background:#1e1e1e}
 #wb-editor{width:100%;height:100%}
 #wb-editor textarea{width:100%;height:100%;box-sizing:border-box;border:0;outline:0;resize:none;padding:10px 12px;background:#1e1e1e;color:#e6e6e6;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre;tab-size:2}
-#wb-right{flex:1 1 50%;min-width:0;display:flex;flex-direction:column;background:#fff;color:#304936}
+#wb-right{flex:0 0 50%;max-height:50%;min-width:0;min-height:0;display:flex;flex-direction:column;background:#fff;color:#304936;overflow:hidden}
 .wb-rhead{flex:0 0 38px;display:flex;align-items:center;gap:6px;padding:0 10px;background:#f3f8f1;border-bottom:1px solid #dfe9df}
 .wb-rhead .sp{flex:1}
 .wb-tab{padding:5px 12px;border-radius:8px;background:transparent;color:#5b7560;font-size:12px;box-shadow:none}
@@ -650,15 +650,15 @@ button.om-ic-only .om-ic{margin:0;width:16px;height:16px}
 .wb-rhead .wb-mini{padding:5px 10px;font-size:12px;border-radius:8px}
 .wb-pane{flex:1;min-height:0;display:none;border:0;background:#fff;width:100%}
 .wb-pane.on{display:block}
-#wb-res{overflow:auto;padding:14px 16px}
+#wb-res{overflow:auto;padding:8px 10px;overscroll-behavior:contain}
 #wb-res h4{margin:0 0 8px;font-size:14px;color:#1d5a34}
 #wb-res h4.bad{color:#b3261e}
 #wb-res pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#304936}
-#wb-term{flex:0 0 32%;min-height:130px;display:flex;flex-direction:column;border-top:1px solid #1d4030;background:#0b1a13}
+#wb-term{flex:0 0 24%;min-height:110px;display:flex;flex-direction:column;border-top:1px solid #1d4030;background:#0b1a13;overflow:hidden}
 .wb-thead{flex:0 0 28px;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:12px;color:#9fc3a8;background:#0f2419}
 .wb-thead .sp{flex:1}
 .wb-thead button{padding:2px 9px;font-size:11px;border-radius:6px;background:#1d4030;color:#d8ecd9}
-#wb-parallel-logs{display:none;flex:0 0 38%;min-height:110px;gap:8px;padding:7px 8px;background:#09150f}#wb-parallel-logs.on{display:flex}#wb-parallel-logs .wb-logbox{flex:1;min-width:0;display:flex;flex-direction:column;border:1px solid #28543a;border-radius:7px;overflow:hidden;background:#0d2116}#wb-parallel-logs .wb-logtitle{flex:0 0 23px;padding:4px 7px;color:#a9d6b1;background:#12301e;font-size:11px;font-weight:700}#wb-parallel-logs pre{flex:1;min-height:0;margin:0;padding:5px 7px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:#d8ecd9;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}#wb-xterm{flex:1;min-height:0;padding:4px 8px;overflow:hidden}
+#wb-runlogs{flex:1 1 auto;min-height:0;overflow:auto;padding:6px 8px;background:#09150f;color:#d8ecd9}#wb-runlogs>summary{cursor:pointer;list-style:none;padding:7px 9px;border:1px solid #28543a;border-radius:7px;background:#12301e;color:#a9d6b1;font-size:12px;font-weight:700}#wb-runlogs>summary::-webkit-details-marker{display:none}#wb-runlogs[open]>summary{margin-bottom:7px}#wb-runlogs .wb-logbox{display:flex;flex-direction:column;min-height:90px;margin:7px 0;border:1px solid #28543a;border-radius:7px;overflow:hidden;background:#0d2116}#wb-runlogs .wb-logtitle{flex:0 0 25px;padding:5px 8px;color:#a9d6b1;background:#12301e;font-size:11px;font-weight:700}#wb-runlogs .wb-logtitle a{color:#a9d6b1;text-decoration:underline;margin-left:8px}#wb-runlogs pre{max-height:170px;min-height:48px;margin:0;padding:6px 8px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:#d8ecd9;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}#wb-history{display:flex;flex-wrap:wrap;gap:5px;padding:3px 0}#wb-history button{font-size:11px;padding:4px 7px}#wb-xterm{display:none}
 #wb-xterm pre{margin:0;height:100%;overflow:auto;white-space:pre-wrap;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#d8ecd9}
 @media(max-width:820px){#wb-main{flex-direction:column}#wb-left{flex:1 1 45%;border-right:0;border-bottom:1px solid #1d4030}#wb-right{flex:1 1 45%}#wb-term{flex-basis:26%}#wb-file{display:none}}
 /* 平板 / 小屏开发台：编辑器限高，结果区与双日志始终保留可见空间 */
@@ -669,11 +669,10 @@ button.om-ic-only .om-ic{margin:0;width:16px;height:16px}
   #wb-left{flex:0 0 clamp(150px,26vh,250px);width:100%;min-width:0;min-height:0;overflow:hidden;border-right:0;border-bottom:1px solid #1d4030}
   #wb-editor{width:100%;height:100%;min-height:0;overflow:hidden}
   #wb-editor textarea{overflow:auto}
-  #wb-right{flex:1 1 0;min-height:0;width:100%;overflow:hidden}
-  #wb-term{flex:0 0 clamp(170px,27vh,250px);min-height:0;overflow:hidden}
-  #wb-parallel-logs.on{flex:1 1 0;min-height:0;overflow:hidden}
-  #wb-parallel-logs .wb-logbox{min-height:0}
-  #wb-xterm{flex:1 1 0;min-height:0}
+  #wb-right{flex:0 0 50%;max-height:50%;min-height:0;width:100%;overflow:hidden}
+  #wb-term{flex:0 0 clamp(150px,24vh,220px);min-height:0;overflow:hidden}
+  #wb-runlogs{flex:1 1 0;min-height:0;overflow:auto}
+  #wb-runlogs .wb-logbox{min-height:0}
 }
 </style></head>
 <body>
@@ -5654,14 +5653,13 @@ const bestPlace = (list, q) => {
   #wb-lint-panel { left: 8px !important; right: 8px !important; width: auto !important; max-height: 55vh !important; bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important; }
 }
 </style>
-<!-- 开发台：左 Monaco 编辑器 / 右 实时预览（含运行结果）/ 下 终端（WebContainer + xterm），库全部按需从 CDN 加载 -->
+<!-- 开发台：编辑器、实时预览/运行结果、统一运行日志；代码通过 GitHub Actions 执行 -->
 <div id="wb" role="dialog" aria-hidden="true" aria-label="开发台">
   <div id="wb-bar">
     <strong>开发台</strong><span id="wb-file">frontend/index.html</span><span id="wb-state"></span>
     <span class="sp"></span>
     <button id="wb-reload" class="sec" type="button" title="重新从 GitHub 读取 index.html（会丢掉未保存的修改）">重新读取</button>
     <button id="wb-save" type="button" title="把编辑器里的内容通过 MCP update_file 推到 GitHub main（Ctrl/Cmd+S）">保存到 GitHub</button>
-    <button id="wb-run" type="button" title="在浏览器里启动 WebContainer：安装依赖，自动运行 test/build（如果有），再运行 dev 或 start">运行</button>
     <button id="wb-both" class="sec" type="button" title="触发 GitHub Actions：前端 build 与 Worker deploy 两个 job 并行跑，日志并排显示">同时启动</button>
     <button id="wb-ci" class="sec" type="button" title="触发 GitHub Actions：checkout → npm install → npm test → npm run build，并把结果回传到开发台">运行 / 验证</button>
     <button id="wb-deploy" class="sec" type="button" title="验证通过后构建并部署到 Cloudflare Pages">部署</button>
@@ -5680,18 +5678,20 @@ const bestPlace = (list, q) => {
       </div>
       <iframe id="wb-preview" class="wb-pane on" title="实时预览" sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads"></iframe>
       <div id="wb-res" class="wb-pane"></div>
-      <iframe id="wb-runframe" class="wb-pane" title="WebContainer 运行结果" allow="cross-origin-isolated"></iframe>
+      <iframe id="wb-runframe" class="wb-pane" title="运行结果"></iframe>
     </div>
   </div>
   <div id="wb-term">
-    <div class="wb-thead"><span>终端</span><span class="sp"></span><button id="wb-term-clear" type="button">清屏</button></div>
-    <div id="wb-parallel-logs"><div class="wb-logbox"><div class="wb-logtitle">前端日志 · npm run dev</div><pre id="wb-front-log"></pre></div><div class="wb-logbox"><div class="wb-logtitle">后端日志 · wrangler dev</div><pre id="wb-back-log"></pre></div></div>
-    <div id="wb-xterm"></div>
+    <div class="wb-thead"><span>运行日志</span><span class="sp"></span></div>
+    <details id="wb-runlogs"><summary>展开运行日志（历史记录 · Pages · Worker）</summary>
+      <div id="wb-history" aria-label="历史运行日志"></div>
+      <div class="wb-logbox"><div class="wb-logtitle">Pages 前端日志 · <a id="wb-pages-run-link" href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/45809262138" target="_blank" rel="noopener">打开 Pages Actions Run</a></div><pre id="wb-front-log"></pre></div>
+      <div class="wb-logbox"><div class="wb-logtitle">Worker 后端日志 · <a id="wb-worker-run-link" href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/45809265485" target="_blank" rel="noopener">打开 Worker Actions Run</a></div><pre id="wb-back-log"></pre></div>
+    </details>
   </div>
 </div>
 <script id="wb-devbench">
-/* 开发台：Monaco（CDN）+ 实时预览 + WebContainer/xterm 终端（CDN）；文件读写直接走 MCP，不经过 Dify。
-   全部库在第一次点「开发台」/「运行」时才加载，不影响主页面启动速度。 */
+/* 开发台：Monaco 编辑器 + 实时预览 + GitHub Actions 运行日志；文件读写直接走 MCP。 */
 (function () {
 "use strict";
 const MCP_URL = "https://my-github-mcp.tianxinyuan881.workers.dev/mcp";
@@ -6007,7 +6007,7 @@ async function initTerm() {
       g("wb-xterm").innerHTML = ""; term.open(g("wb-xterm")); fit();
       term.onData(d => { if (shellIn) shellIn.write(d); });
       new ResizeObserver(fit).observe(g("wb-xterm"));
-      termLn("\x1b[32m终端就绪\x1b[0m：点右上角「运行」会在浏览器里启动 WebContainer，mount /frontend 并执行 npm install。");
+      termLn("运行日志就绪：通过「同时启动」触发 GitHub Actions。");
       return;
     } catch (_) { term = null; fitAddon = null; }
   }
@@ -6060,7 +6060,19 @@ function verifyLink(label, href) {
   const a = document.createElement("a"); a.href = href; a.target = "_blank"; a.rel = "noopener"; a.textContent = label; a.style.cssText = "display:inline-block;margin:8px 10px 0 0;color:#83d6a0;text-decoration:underline"; return a;
 }
 async function loadRunHistory() {
-  try { const r = await authFetch(GATEWAY + "/api/code/runs", {cache:"no-store"}), d = await r.json().catch(() => ({})); if (!r.ok || !d.ok) return; const res = g("wb-res"); if (!res) return; const box = document.createElement("details"); box.style.cssText = "margin-top:12px"; const sum = document.createElement("summary"); sum.textContent = "历史运行日志（" + (d.runs || []).length + "）"; box.appendChild(sum); (d.runs || []).slice(0, 20).forEach(x => { const b = document.createElement("button"); b.type="button"; b.className="sec"; b.style.cssText="margin:6px 6px 0 0;font-size:11px"; b.textContent=(x.kind === "deploy" ? "部署" : "验证")+" · "+(x.state || x.status || "未知")+" · "+String(x.run_id || "").slice(-12); b.onclick=async()=>{ const q=await authFetch(GATEWAY+"/api/code/logs?run_id="+encodeURIComponent(x.run_id),{cache:"no-store"}), j=await q.json().catch(()=>({})); if(j.ok) renderVerifyResult({...j,state:j.state||x.state,fromHistory:true}); else toast(j.msg||"读取日志失败"); }; box.appendChild(b); }); res.appendChild(box); } catch (_) {}
+  try {
+    const r=await authFetch(GATEWAY+"/api/code/runs",{cache:"no-store"}), d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok)return;
+    const history=g("wb-history"); if(!history)return; history.innerHTML="";
+    (d.runs||[]).slice(0,20).forEach(x=>{
+      const b=document.createElement("button"); b.type="button"; b.className="sec";
+      b.textContent=(x.kind==="deploy"?"Pages":x.kind==="worker"?"Worker":"验证")+" · "+(x.state||x.status||"未知")+" · "+String(x.run_id||"").slice(-12);
+      b.onclick=async()=>{const q=await authFetch(GATEWAY+"/api/code/logs?run_id="+encodeURIComponent(x.run_id),{cache:"no-store"}),j=await q.json().catch(()=>({}));if(j.ok)renderVerifyResult({...j,state:j.state||x.state,fromHistory:true});else toast(j.msg||"读取日志失败");};
+      history.appendChild(b);
+    });
+    const details=g("wb-runlogs"), summary=details&&details.querySelector("summary");
+    if(summary)summary.textContent="展开运行日志（历史 "+Math.min((d.runs||[]).length,20)+" 条 · Pages · Worker）";
+  } catch (_) {}
 }
 let pagesHealthProbe = {run_id:"", state:"idle", status:null, error:"", promise:null};
 let latestParallelData = null;
@@ -6280,7 +6292,7 @@ function attachParallelPreview() {
   target.searchParams.set("gateway", parallelBackendUrl);
   fr.dataset.live = "1"; fr.src = target.toString(); showTab("run");
 }
-function parallelLog(kind, text) { const pre = g(kind === "front" ? "wb-front-log" : "wb-back-log"); if (!pre) return; pre.textContent += stripAnsi(String(text || "")); pre.scrollTop = pre.scrollHeight; }
+function parallelLog(kind, text) { const pre = g(kind === "front" ? "wb-front-log" : "wb-back-log"); if (!pre) return; pre.textContent += stripAnsi(String(text || "")); pre.scrollTop = pre.scrollHeight; const logs=g("wb-runlogs"); if(logs) logs.open=true; }
 function pipeParallel(proc, kind) { proc.output.pipeTo(new WritableStream({write(d) { parallelLog(kind, d); }})).catch(() => {}); }
 async function collectProjectFiles(notes) {
   const frontend = await collectFiles(notes), files = {};
@@ -6325,7 +6337,7 @@ function renderChain(d) {
 async function runBoth() {
   const btn = g("wb-both"); if (!authToken) { toast("请先登录"); return; }
   if (btn) { btn.disabled = true; btn.textContent = "启动中…"; }
-  g("wb-parallel-logs").classList.add("on"); g("wb-front-log").textContent = ""; g("wb-back-log").textContent = "";
+  g("wb-runlogs").open = true; g("wb-front-log").textContent = ""; g("wb-back-log").textContent = "";
   showTab("run"); renderVerifyResult({ state: "running", submitted: false, local: true });
   renderChain({ started_at: new Date().toISOString(), state: "running", runs: [] });
   say("正在触发 GitHub Actions：前端 build + Worker deploy 并行跑 …");
@@ -6338,6 +6350,9 @@ async function runBoth() {
     const fl = (front.logs || []).join("\n"), bl = (back.logs || []).join("\n");
     g("wb-front-log").textContent = fl || (front.run_url ? "Pages build / deploy 排队中… " + front.run_url : "等待 GitHub 返回 Pages 部署日志…");
     g("wb-back-log").textContent = bl || (back.run_url ? "Worker deploy 排队中… " + back.run_url : "等待 GitHub 返回 Worker deploy 日志…");
+    const pagesLink=g("wb-pages-run-link"), workerLink=g("wb-worker-run-link");
+    if(pagesLink && front.run_id) pagesLink.href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/"+encodeURIComponent(front.run_id);
+    if(workerLink && back.run_id) workerLink.href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/"+encodeURIComponent(back.run_id);
     renderChain(d); renderVerifyResult({ ...d, deploy: true });
     if (front.conclusion === "success" && back.conclusion === "success" && front.run_id) void probePagesHealth(front.run_id);
   };
@@ -6436,11 +6451,9 @@ function closeWb() { document.body.classList.remove("wb-open"); g("wb").setAttri
 g("wb-open").addEventListener("click", openWb);
 g("wb-close").addEventListener("click", closeWb);
 g("wb-save").addEventListener("click", save);
-g("wb-run").addEventListener("click", run);
 g("wb-both").addEventListener("click", runBoth);
 g("wb-reload").addEventListener("click", () => { if (!ed) return; if (dirty && !confirm("重新读取会丢掉未保存的修改，继续？")) return; loadFile(); });
 g("wb-prev-refresh").addEventListener("click", renderPreview);
-g("wb-term-clear").addEventListener("click", () => { if (term) term.clear(); else { const pre = g("wb-xterm").querySelector("pre"); if (pre) pre.textContent = ""; } ["wb-front-log","wb-back-log"].forEach(id=>{const p=g(id);if(p)p.textContent="";}); });
 document.querySelectorAll("#wb .wb-tab").forEach(b => b.addEventListener("click", () => showTab(b.dataset.wbtab)));
 document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s" && document.body.classList.contains("wb-open")) { e.preventDefault(); save(); } });
 /* 登录框加关闭：右上角 × 或点框外都能关（开发台层级也已高于登录遮罩） */
