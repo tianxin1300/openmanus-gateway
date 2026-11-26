@@ -6120,7 +6120,7 @@ async function runRemoteVerify() {
   try {
     const ctl = new AbortController(); verifyAbort = ctl; const timeout = setTimeout(() => ctl.abort(), VERIFY_REQUEST_MS);
     try {
-      const start = await authFetch(GATEWAY + "/api/code/verify", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ref: REPO.branch}), signal: ctl.signal});
+      const start = await authFetch(GATEWAY + "/api/code/verify", {method: "POST", headers: {"Content-Type": "application/json", "Accept": "application/json"}, body: JSON.stringify({ref: REPO.branch}), signal: ctl.signal});
       const first = await start.json().catch(() => ({})); if (!start.ok || first.ok === false) throw new Error(first.msg || "无法启动验证");
       renderVerifyResult(first); say("验证已排队，正在等待 GitHub Actions …"); verifyTimer = setTimeout(poll, 2500);
     } finally { clearTimeout(timeout); if (verifyAbort === ctl) verifyAbort = null; }
