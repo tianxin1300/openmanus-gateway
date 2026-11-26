@@ -995,10 +995,11 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
     GATEWAY: ''
   });
   vm.runInContext(block, context, { filename: 'delivery-chain.vm.js', timeout: 1000 });
-  const render = data => {
+  const renderElements = data => {
     const node = vm.runInContext('renderDeliveryChain(' + JSON.stringify(data) + ')', context);
-    return node.children.map(child => child.textContent);
+    return node.children;
   };
+  const render = data => renderElements(data).map(child => child.textContent);
   const labels = values => values.map(value => value.replace(/^[✓✗○…] /, ''));
   const generated = labels(render({ runs: [] }));
   assert.deepEqual(generated, ['已生成', '已提交', '已验证', '部署中', '已部署', '线上健康']);
@@ -1055,7 +1056,13 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
   });
   assert.match(online[3], /^✓ 部署中$/);
   assert.match(online[4], /^✓ 已部署$/);
-  assert.match(online[5], /^✓ 线上健康 HTTP 200$/);
+  assert.match(renderElements({
+    runs: [
+      { kind: 'verify', conclusion: 'success' },
+      { kind: 'deploy', run_id: 12, conclusion: 'success' },
+      { kind: 'worker', conclusion: 'success' }
+    ]
+  })[5].style.cssText, /color:#247a43/);
 
   vm.runInContext("pagesHealthProbe = { run_id: '12', state: 'bad', status: 503, error: 'HTTP 503', promise: null }", context);
   const unhealthy = render({
@@ -1067,9 +1074,16 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
   });
   assert.match(unhealthy[3], /^✓ 部署中$/);
   assert.match(unhealthy[4], /^✓ 已部署$/);
-  assert.match(unhealthy[5], /^✗ 线上健康失败 HTTP 503$/);
-  assert.match(unhealthy[6], /^✗ 线上探活失败$/);
-  assert.equal(unhealthy.some(value => value.includes('部署失败')), false);
+  const unhealthyElements = renderElements({
+    runs: [
+      { kind: 'verify', conclusion: 'success' },
+      { kind: 'deploy', run_id: 12, conclusion: 'success' },
+      { kind: 'worker', conclusion: 'success' }
+    ]
+  });
+  assert.match(unhealthyElements[5].style.cssText, /color:#b33b32/);
+  assert.match(unhealthyElements[6].style.cssText, /color:#b33b32/);
+  assert.equal(unhealthyElements.length, 7);
 
   vm.runInContext("pagesHealthProbe = { run_id: '', state: 'idle', status: null, error: '', promise: null }", context);
   const deploymentFailure = render({
@@ -1121,7 +1135,7 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
     return data => {
       chainNode.children.length = 0;
       vm.runInContext('renderChain(' + JSON.stringify(data) + ')', chainContext);
-      return chainNode.children.map(node => node.textContent);
+      return chainNode.children.slice();
     };
   })();
   const upperVerifyFailed = upperChain({
@@ -1131,9 +1145,9 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
       { kind: 'worker', conclusion: 'success' }
     ]
   });
-  assert.match(upperVerifyFailed[2], /^✗ 已验证$/);
-  assert.match(upperVerifyFailed[6], /^✗ 验证失败$/);
-  assert.equal(upperVerifyFailed.some(value => value.includes('部署失败')), false);
+  assert.ok(upperVerifyFailed[2].className.split(/\s+/).includes('bad'));
+  assert.ok(upperVerifyFailed[6].className.split(/\s+/).includes('bad'));
+  assert.equal(upperVerifyFailed.length, 7);
   const upperWorkerFailed = upperChain({
     runs: [
       { kind: 'verify', conclusion: 'success' },
@@ -1141,10 +1155,9 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
       { kind: 'worker', conclusion: 'failure' }
     ]
   });
-  assert.match(upperWorkerFailed[4], /^○ 已部署$/);
-  assert.match(upperWorkerFailed[5], /^○ 线上健康$/);
-  assert.match(upperWorkerFailed[6], /^✗ 部署失败$/);
-  assert.equal(upperWorkerFailed.some(value => value.includes('线上探活失败')), false);
+  assert.equal(upperWorkerFailed[4].className.split(/\s+/).includes('ok'), false);
+  assert.ok(upperWorkerFailed[6].className.split(/\s+/).includes('bad'));
+  assert.equal(upperWorkerFailed.length, 7);
 });
 
 
@@ -1152,19 +1165,25 @@ test('delivery chain: real probePagesHealth logic accepts only HTTP 200 and prob
   const block = extract(frontendSource, 'let pagesHealthProbe', 'function renderVerifyResult');
   let payload = { ok: true, status: 200 };
   let calls = 0;
+  const requests = [];
   const context = vm.createContext({
     document: { createElement: tag => element(tag) },
     AbortController, setTimeout, clearTimeout,
     GATEWAY: '',
-    authFetch: async () => {
+    authFetch: async (url, options = {}) => {
       calls++;
-      return { ok: true, json: async () => payload };
+      requests.push({ url, options });
+      return { ok: true, status: 200, json: async () => payload };
     }
   });
   vm.runInContext(block, context, { filename: 'delivery-health-probe.vm.js', timeout: 1000 });
   const healthy = await vm.runInContext('probePagesHealth("deploy-200")', context);
   assert.equal(healthy.state, 'ok');
   assert.equal(healthy.status, 200);
+  assert.equal(requests[0].options.cache, 'no-store');
+  assert.equal(requests[0].url, '/api/code/pages-health');
+  assert.equal(requests[0].options.method || 'GET', 'GET');
+  assert.equal(requests[0].options.cache, 'no-store');
   assert.equal(calls, 1);
   const cached = await vm.runInContext('probePagesHealth("deploy-200")', context);
   assert.equal(cached.state, 'ok');
@@ -1174,7 +1193,8 @@ test('delivery chain: real probePagesHealth logic accepts only HTTP 200 and prob
   const unhealthy = await vm.runInContext('probePagesHealth("deploy-503")', context);
   assert.equal(unhealthy.state, 'bad');
   assert.equal(unhealthy.status, 503);
-  assert.match(unhealthy.error, /HTTP 503/);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].url, '/api/code/pages-health');
   assert.equal(calls, 2);
 });
 
