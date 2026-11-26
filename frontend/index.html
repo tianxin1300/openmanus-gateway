@@ -5767,6 +5767,12 @@ const bestPlace = (list, q) => {
 .wb-runlogs-title{flex:0 0 auto;padding:7px 9px;border:1px solid #3b4659;border-radius:7px;background:#252e3d;color:#dce4ef;font-size:12px;font-weight:700}
 #wb-runlogs .wb-logbox{min-height:0}
 @media(max-width:1100px){#wb-term{flex:0 0 min(34vh,220px);min-height:110px;max-height:55%}#wb-terminal{min-height:0}#wb-runlogs{min-height:0}#wb-terminal-command-form{padding-bottom:max(8px,env(safe-area-inset-bottom))}#wb-terminal-command{font-size:16px}}
+#wb-term-tabs button[aria-selected="true"]{background:#2a3445;border-color:#58749e;color:#fff}
+#wb-terminal-shortcuts{display:flex;flex:0 0 auto;flex-wrap:wrap;gap:5px;padding:6px 8px 0;background:#171c25}
+#wb-terminal-shortcuts button{min-width:36px;min-height:32px;padding:5px 9px;border:1px solid #3b4659;border-radius:7px;background:#2a3445;color:#e7edf7;font-size:11px;font-weight:650;box-shadow:none}
+#wb-terminal-shortcuts button:hover,#wb-terminal-shortcuts button[aria-pressed="true"]{background:#35445a;border-color:#58749e;color:#fff}
+#wb-terminal-shortcuts button:focus-visible{outline:2px solid #8db6f4;outline-offset:2px}
+@media(max-width:520px){#wb-terminal-shortcuts{gap:4px;padding:5px 6px 0}#wb-terminal-shortcuts button{flex:1 0 auto;min-width:34px;padding:5px 7px;font-size:10px}}
 </style>
 <!-- 开发台：全宽编辑器与统一运行日志；本地预览在独立全屏工作区显示 -->
 <div id="wb" role="dialog" aria-hidden="true" aria-label="开发台">
@@ -5806,6 +5812,11 @@ const bestPlace = (list, q) => {
         <button type="button" id="wb-terminal-layout" class="wb-touch-btn" aria-label="切换终端全屏" aria-pressed="false">全屏</button>
       </div>
       <pre id="wb-terminal-output" role="log" aria-live="polite">终端已就绪。输入命令后会立即显示在这里。</pre>
+      <div id="wb-terminal-shortcuts" role="toolbar" aria-label="终端快捷键">
+        <button type="button" data-terminal-key="escape">ESC</button><button type="button" data-terminal-key="tab">TAB</button><button type="button" data-terminal-key="ctrl" aria-pressed="false">CTRL</button>
+        <button type="button" data-terminal-key="up" aria-label="上方向键">↑</button><button type="button" data-terminal-key="down" aria-label="下方向键">↓</button><button type="button" data-terminal-key="left" aria-label="左方向键">←</button><button type="button" data-terminal-key="right" aria-label="右方向键">→</button>
+        <button type="button" data-terminal-key="ctrl-c">CTRL+C</button><button type="button" data-terminal-key="ctrl-d">CTRL+D</button><button type="button" data-terminal-key="clear">清屏</button>
+      </div>
       <form id="wb-terminal-command-form" autocomplete="off">
         <label class="wb-terminal-sr-only" for="wb-terminal-command">输入命令</label>
         <input id="wb-terminal-command" name="command" type="text" placeholder="输入命令…" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="send">
@@ -6543,6 +6554,57 @@ function appendTerminalCommand(command) {
   output.textContent = lines.slice(-300).join("\n");
   output.scrollTop = output.scrollHeight;
 }
+const terminalShortcuts = g("wb-terminal-shortcuts");
+let terminalCtrlPending = false;
+function insertTerminalInput(value) {
+  const input = g("wb-terminal-command");
+  input.focus();
+  const start = Number.isInteger(input.selectionStart) ? input.selectionStart : input.value.length;
+  const end = Number.isInteger(input.selectionEnd) ? input.selectionEnd : start;
+  input.setRangeText(value, start, end, "end");
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+g("wb-terminal-command").addEventListener("keydown", event => {
+  if (!terminalCtrlPending || !/^[a-z]$/i.test(event.key)) return;
+  event.preventDefault();
+  terminalCtrlPending = false;
+  terminalShortcuts.querySelector('[data-terminal-key="ctrl"]').setAttribute("aria-pressed", "false");
+  insertTerminalInput(String.fromCharCode(event.key.toUpperCase().charCodeAt(0) & 31));
+  g("wb-terminal-status").textContent = "CTRL+" + event.key.toUpperCase() + " 控制字符已插入";
+});
+terminalShortcuts.addEventListener("click", event => {
+  const button = event.target.closest("button[data-terminal-key]");
+  if (!button) return;
+  const key = button.dataset.terminalKey;
+  const sequences = { escape: "\u001b", tab: "\t", up: "\u001b[A", down: "\u001b[B", right: "\u001b[C", left: "\u001b[D" };
+  if (key === "clear") {
+    g("wb-terminal-output").textContent = "";
+    g("wb-terminal-status").textContent = "终端已清屏";
+    g("wb-terminal-command").focus();
+    return;
+  }
+  if (key === "ctrl") {
+    terminalCtrlPending = !terminalCtrlPending;
+    button.setAttribute("aria-pressed", String(terminalCtrlPending));
+    g("wb-terminal-status").textContent = terminalCtrlPending ? "CTRL 已启用：点选字母发送控制字符" : "CTRL 已关闭";
+    g("wb-terminal-command").focus();
+    return;
+  }
+  if (key === "ctrl-c" || key === "ctrl-d") {
+    insertTerminalInput(key === "ctrl-c" ? "\u0003" : "\u0004");
+    g("wb-terminal-status").textContent = key === "ctrl-c" ? "已插入 CTRL+C 控制字符" : "已插入 CTRL+D 控制字符";
+    return;
+  }
+  if (terminalCtrlPending) {
+    terminalCtrlPending = false;
+    terminalShortcuts.querySelector('[data-terminal-key="ctrl"]').setAttribute("aria-pressed", "false");
+    const char = key === "tab" ? "i" : key === "escape" ? "[" : key.length === 1 ? key : "";
+    if (char) insertTerminalInput(String.fromCharCode(char.toUpperCase().charCodeAt(0) & 31));
+    g("wb-terminal-status").textContent = "CTRL 控制字符已插入";
+    return;
+  }
+  if (Object.prototype.hasOwnProperty.call(sequences, key)) insertTerminalInput(sequences[key]);
+});
 g("wb-terminal-command-form").addEventListener("submit", event => {
   event.preventDefault();
   const input = g("wb-terminal-command"), command = String(input.value || "").trim();
