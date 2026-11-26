@@ -578,6 +578,9 @@ async function codeRunnerUpdate(env, user, record) {
   if (!record || !record.request_id) return;
   await codeRunnerCall(env, user, record.request_id, "update", record).catch(() => null);
 }
+async function codeRunnerLockCall(env, user, action, payload) {
+  return await codeRunnerCall(env, user, "__parallel_active__", action, payload).catch(() => null);
+}
 async function codeRunIndexLoad(env, user) { return env.KV ? (await env.KV.get(codeRunIndexKey(user), "json").catch(() => null) || []) : []; }
 async function codePersistRun(env, user, record) {
   if (!record) return record;
@@ -649,16 +652,46 @@ async function codeBothStart(env, user, body) {
   const repo = codeVerifyRepo(env), ref = codeVerifyRef(body && body.ref), requestId = "both-" + Date.now().toString(36) + "-" + rand(6);
   if (!ref) return { ok: false, msg: "ref 不合法：只允许分支名或 7-64 位 commit SHA" };
   if (!codeRepoOk(env, repo)) return { ok: false, msg: "部署仓库不在允许名单里" };
-  const now = new Date().toISOString(), runs = [];
+  const key = codeVerifyKey(user) + ":both";
+  // 先刷新上一次任务；只有明确结束后才允许新任务进入。
+  const previous = env.KV ? await env.KV.get(key, "json").catch(() => null) : null;
+  if (previous && previous.request_id) {
+    const checked = await codeBothStatus(env, user);
+    if (checked.ok && checked.state !== "success" && checked.state !== "failure") {
+      return { ok: false, msg: "已有同时启动任务正在运行，请等待它结束后再启动", active_request_id: previous.request_id, status: 409 };
+    }
+  }
+  const now = new Date().toISOString();
+  // Durable Object 对同一账号串行处理 claim，避免多标签页/连点并发创建重复部署。
+  const claimed = await codeRunnerLockCall(env, user, "claim", { request_id: requestId, repo, ref, started_at: now });
+  if (!claimed || !claimed.ok) {
+    return { ok: false, msg: claimed && claimed.msg || "并行任务锁不可用，未启动任何工作流", active_request_id: claimed && claimed.active && claimed.active.request_id, status: 409 };
+  }
+  const runs = [];
   for (const kind of ["deploy", "worker"]) {
     const workflow = kind === "worker" ? CODE_WORKER_DEPLOY_WORKFLOW : CODE_DEPLOY_WORKFLOW;
     const api = "https://api.github.com/repos/" + repo + "/actions/workflows/" + workflow + "/dispatches";
     const dispatched = await codeGhApi(env, api, { method: "POST", body: JSON.stringify({ ref, inputs: { request_id: requestId, ref } }), headers: { "Content-Type": "application/json" } });
-    if (!dispatched.ok) return { ok: false, msg: "无法启动" + (kind === "worker" ? "Worker deploy" : "Pages deploy") + "：" + dispatched.msg, status: dispatched.status };
+    if (!dispatched.ok) {
+      const message = "无法启动" + (kind === "worker" ? "Worker deploy" : "Pages deploy") + "：" + dispatched.msg;
+      runs.push({ kind, workflow, run_id: null, run_url: "", status: "completed", conclusion: "failure", head_sha: "", logs: [message], error_lines: [message], failed_step: "启动工作流", dispatch_error: message });
+      if (!runs.some((x) => x.status === "queued")) {
+        await codeRunnerLockCall(env, user, "release", { request_id: requestId });
+        return { ok: false, msg: message, status: dispatched.status };
+      }
+      const job = { request_id: requestId, repo, ref, kind: "both", workflow: CODE_VERIFY_WORKFLOW, started_at: now, updated_at: now, status: "in_progress", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions", preview_url: "https://zhineng-et5.pages.dev", error_lines: [message], logs: [message], failed_step: "启动工作流", runs };
+      if (env.KV) await env.KV.put(key, JSON.stringify(job), { expirationTtl: 86400 });
+      await codePersistRun(env, user, job);
+      return { ok: true, ...job, state: "running", message: message + "；已启动的另一项任务仍在运行，正在继续跟踪" };
+    }
     runs.push({ kind, workflow, run_id: null, run_url: "", status: "queued", conclusion: null, head_sha: "", logs: [], error_lines: [], failed_step: "" });
+    // 先落盘已成功派发的任务，避免 Worker 第二次 dispatch 失败时丢失 Pages 任务句柄。
+    const partial = { request_id: requestId, repo, ref, kind: "both", workflow: CODE_VERIFY_WORKFLOW, started_at: now, updated_at: now, status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions", preview_url: "https://zhineng-et5.pages.dev", error_lines: [], logs: [], runs: [...runs] };
+    if (env.KV) await env.KV.put(key, JSON.stringify(partial), { expirationTtl: 86400 });
+    await codePersistRun(env, user, partial);
   }
   const job = { request_id: requestId, repo, ref, kind: "both", workflow: CODE_VERIFY_WORKFLOW, started_at: now, updated_at: now, status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions", preview_url: "https://zhineng-et5.pages.dev", error_lines: [], logs: [], runs };
-  if (env.KV) await env.KV.put(codeVerifyKey(user) + ":both", JSON.stringify(job), { expirationTtl: 86400 });
+  if (env.KV) await env.KV.put(key, JSON.stringify(job), { expirationTtl: 86400 });
   await codePersistRun(env, user, job);
   return { ok: true, ...job, state: "queued", message: "已触发 Actions：前端 build 与 Worker deploy 并行跑" };
 }
@@ -669,6 +702,11 @@ async function codeBothStatus(env, user) {
   const repo = old.repo || codeVerifyRepo(env), base = "https://api.github.com/repos/" + repo;
   const runs = Array.isArray(old.runs) ? old.runs : [];
   for (const r of runs) {
+    if (r.dispatch_error) {
+      r.status = "completed"; r.conclusion = "failure";
+      r.error_lines = [r.dispatch_error]; r.logs = r.error_lines;
+      continue;
+    }
     if (!r.run_id) {
       const listed = await codeGhApi(env, base + "/actions/workflows/" + r.workflow + "/runs?event=workflow_dispatch&per_page=30");
       if (listed.ok) {
@@ -691,9 +729,10 @@ async function codeBothStatus(env, user) {
     }
     r.logs = Array.isArray(r.error_lines) ? r.error_lines : [];
   }
-  const failed = runs.find((r) => r.conclusion && r.conclusion !== "success");
+  const failed = runs.find((r) => r.dispatch_error || (r.conclusion && r.conclusion !== "success"));
   const running = runs.some((r) => !r.conclusion);
-  const state = failed ? "failure" : running ? "running" : "success";
+  // 有一项启动/执行失败，但另一项仍在跑时继续跟踪，不提前结束整个并行任务。
+  const state = running ? "running" : failed ? "failure" : "success";
   old.runs = runs; old.state = state; old.status = state === "running" ? "in_progress" : "completed";
   old.conclusion = state === "success" ? "success" : state === "failure" ? "failure" : null;
   old.failed_step = failed ? (failed.failed_step || "") : "";
@@ -702,6 +741,8 @@ async function codeBothStatus(env, user) {
   old.updated_at = new Date().toISOString();
   old.preview_url = old.preview_url || "https://zhineng-et5.pages.dev";
   if (env.KV) await env.KV.put(key, JSON.stringify(old), { expirationTtl: 86400 });
+  if (state === "success" || state === "failure") await codeRunnerLockCall(env, user, "release", { request_id: old.request_id });
+  else await codeRunnerLockCall(env, user, "touch", { request_id: old.request_id, updated_at: old.updated_at });
   await codePersistRun(env, user, old);
   return { ok: true, ...old, actions_url: old.run_url || ("https://github.com/" + repo + "/actions") };
 }
@@ -9344,6 +9385,26 @@ export class CodeRunnerDO {
     const action = new URL(request.url).pathname.replace(/^\//, "") || "state";
     if (request.method === "GET" || action === "state") return this.response({ ok: true, runner: await this.load() });
     const body = await request.json().catch(() => ({}));
+    if (action === "claim") {
+      const active = await this.storage.get("active");
+      if (active && active.request_id !== body.request_id) return this.response({ ok: false, msg: "已有并行任务占用运行锁", active });
+      await this.storage.put("active", { ...body, claimed_at: active && active.claimed_at || new Date().toISOString(), updated_at: new Date().toISOString() });
+      return this.response({ ok: true, active: await this.storage.get("active") });
+    }
+    if (action === "touch") {
+      const active = await this.storage.get("active");
+      if (!active || active.request_id !== body.request_id) return this.response({ ok: false, msg: "运行锁不属于当前任务" }, 409);
+      const next = { ...active, ...body, updated_at: new Date().toISOString() };
+      await this.storage.put("active", next);
+      return this.response({ ok: true, active: next });
+    }
+    if (action === "release") {
+      const active = await this.storage.get("active");
+      if (!active) return this.response({ ok: true, released: false });
+      if (active.request_id !== body.request_id) return this.response({ ok: false, msg: "运行锁不属于当前任务" }, 409);
+      await this.storage.delete("active");
+      return this.response({ ok: true, released: true });
+    }
     if (action === "update") { const current = { ...(await this.load() || {}), ...body, updated_at: new Date().toISOString() }; await this.storage.put("runner", current); return this.response({ ok: true, runner: current }); }
     if (action === "clear") { await this.storage.delete("runner"); return this.response({ ok: true }); }
     return this.response({ ok: false, msg: "未知 runner 操作" }, 404);
