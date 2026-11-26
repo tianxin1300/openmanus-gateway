@@ -373,7 +373,9 @@ test('CodeClaimDO alarm: GitHub 404 is treated as already deleted', async () => 
 });
 
 test('codeProject refuses to auto-discard an applying pending operation', () => {
-  const block = workerSource.slice(workerSource.indexOf('async function codeProject('), workerSource.indexOf('async function codePendingCreate('));
+  const start = workerSource.indexOf('async function codeProject(');
+  const end = workerSource.indexOf('\nasync function ', start + 1);
+  const block = workerSource.slice(start, end > start ? end : start + 5000);
   assert.match(block, /if \(\(previous\.status \|\| "awaiting_approval"\) === "applying"\)/);
   assert.match(block, /上一项修改正在执行接受操作/);
   assert.match(block, /if \(!discarded\.ok\) return/);
