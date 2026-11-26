@@ -1299,3 +1299,15 @@ test('devbench keeps the editor full-width and opens the independent preview in 
   assert.ok(frontendSource.includes('id="wb-res"'));
   assert.equal(frontendSource.includes('id="wb-runframe"'), false);
 });
+
+
+test("devbench standalone preview keeps a synced run-results panel and expandable logs", () => {
+  const match = /<script\\b(?=[^>]*\\bid=["']wb-devbench["'])[^>]*>([\\s\\S]*?)<\\/script\\s*>/i.exec(frontendSource);
+  assert.ok(match, "the wb-devbench script must exist");
+  assert.doesNotThrow(() => new vm.Script(match[1]), "the devbench script must parse");
+  assert.match(match[1], /local-preview-frame/);
+  assert.match(match[1], /local-run-result-content/);
+  assert.match(match[1], /syncLocalTaskPreview\\(\\)/);
+  assert.match(match[1], /g\\(["']wb-runlogs["']\\)\\.addEventListener\\(["']toggle["']/);
+  assert.match(frontendSource, /#wb-term\\.wb-runlogs-expanded/);
+});
