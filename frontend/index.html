@@ -669,10 +669,15 @@ button.om-ic-only .om-ic{margin:0;width:16px;height:16px}
   #wb-left{flex:0 0 clamp(150px,26vh,250px);width:100%;min-width:0;min-height:0;overflow:hidden;border-right:0;border-bottom:1px solid #1d4030}
   #wb-editor{width:100%;height:100%;min-height:0;overflow:hidden}
   #wb-editor textarea{overflow:auto}
-  #wb-right{flex:0 0 50%;max-height:50%;min-height:0;width:100%;overflow:hidden}
-  #wb-term{flex:0 0 clamp(150px,24vh,220px);min-height:0;overflow:hidden}
-  #wb-runlogs{flex:1 1 0;min-height:0;overflow:auto}
+  /* 预览/结果区压到原来的一半；日志不再撑满终端，展开只在自身滚动 */
+  #wb-right{flex:0 0 25%;max-height:25%;min-height:0;width:100%;overflow:hidden}
+  #wb-right .wb-pane{min-height:0;max-height:100%;overflow:auto}
+  #wb-res{min-height:0;max-height:100%;overflow:auto;overscroll-behavior:contain}
+  #wb-term{flex:0 0 clamp(150px,24vh,220px);min-height:0;max-height:50%;overflow:hidden}
+  #wb-runlogs{flex:0 1 auto;min-height:0;max-height:calc(50% - 28px);overflow:auto}
+  #wb-runlogs:not([open]){flex:0 0 auto;max-height:none;overflow:visible}
   #wb-runlogs .wb-logbox{min-height:0}
+  #wb-runlogs pre{max-height:72px;min-height:32px;overflow:auto}
 }
 </style></head>
 <body>
@@ -5968,7 +5973,7 @@ function localLog(message) {
   const box=g("wb-local-logbox"), pre=g("wb-local-log");
   if(box) box.hidden=false;
   if(pre){pre.textContent += String(message||"") + "\\n";pre.scrollTop=pre.scrollHeight;}
-  const logs=g("wb-runlogs"); if(logs) logs.open=true;
+  const logs=g("wb-runlogs"); if(logs) logs.open=false;
 }
 function localTree(files) {
   const root={};
@@ -6034,7 +6039,7 @@ async function runLocalTaskPreview(fileOverrides) {
   if(localWcPromise)return localWcPromise;
   if(localWcRunning)return;
   localWcPromise=(async()=>{
-    localWcRunning=true;showTab("run");g("wb-runlogs").open=true;
+    localWcRunning=true;showTab("run");g("wb-runlogs").open=false;
     const frame=g("wb-runframe");if(frame){frame.dataset.live="0";frame.removeAttribute("src");}
     g("wb-local-log").textContent="";g("wb-local-logbox").hidden=false;
     say("正在准备隐藏式 WebContainer 本地预览 …");
@@ -6337,7 +6342,7 @@ function renderChain(d) {
 async function runBoth() {
   const btn = g("wb-both"); if (!authToken) { toast("请先登录"); return; }
   if (btn) { btn.disabled = true; btn.textContent = "启动中…"; }
-  g("wb-runlogs").open = true; g("wb-front-log").textContent = ""; g("wb-back-log").textContent = "";
+  g("wb-runlogs").open = false; g("wb-front-log").textContent = ""; g("wb-back-log").textContent = "";
   showTab("run"); renderVerifyResult({ state: "running", submitted: false, local: true });
   renderChain({ started_at: new Date().toISOString(), state: "running", runs: [] });
   say("正在触发 GitHub Actions：前端 build + Worker deploy 并行跑 …");
