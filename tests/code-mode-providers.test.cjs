@@ -31,7 +31,7 @@ function loadCodePendingDiscard({ pending, deleteBranch, claimCall, kvDelete }) 
     env: null,
     console
   };
-  vm.runInNewContext(source + '\\nglobalThis.testDiscard = codePendingDiscard;', sandbox);
+  vm.runInNewContext(source + '\n' + 'globalThis.testDiscard = codePendingDiscard;', sandbox);
   return sandbox.testDiscard;
 }
 
@@ -41,7 +41,7 @@ function loadFrontendForceClear(stubs) {
   assert.ok(start >= 0 && end > start, 'frontend force-clear handlers must exist');
   const source = frontendStudioSource.slice(start, end);
   const sandbox = { api: stubs.api, busy: stubs.busy, say: stubs.say, hide: stubs.hide, toast: stubs.toast };
-  vm.runInNewContext(source + '\\nglobalThis.testForceClear = forceClear;', sandbox);
+  vm.runInNewContext(source + '\n' + 'globalThis.testForceClear = forceClear;', sandbox);
   return sandbox.testForceClear;
 }
 
