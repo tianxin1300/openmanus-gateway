@@ -862,7 +862,7 @@ test('local HTTP integration: frontend-style API request reaches the real Worker
 
 
 test('devbench has one Actions launch button and one expandable unified run log', () => {
-  assert.ok(frontendSource.includes('<button id="wb-both" class="sec" type="button" title="触发 GitHub Actions：前端 build 与 Worker deploy 两个 job 并行跑，日志并排显示">同时启动</button>'));
+  assert.ok(frontendSource.includes('<button id="wb-both" class="sec" type="button" title="触发 GitHub Actions：前端 build 与 Worker deploy 并行执行，日志收纳在统一运行日志">同时启动</button>'));
   assert.ok(!frontendSource.includes('<button id="wb-run"'));
   assert.ok(!frontendSource.includes('id="wb-parallel-logs"'));
   assert.ok(frontendSource.includes('<details id="wb-runlogs">'));
@@ -873,6 +873,9 @@ test('devbench has one Actions launch button and one expandable unified run log'
   assert.ok(frontendSource.includes('#wb-res{overflow:auto'));
   assert.ok(!frontendSource.includes('点右上角「运行」会在浏览器里启动 WebContainer'));
   assert.ok(!frontendSource.includes('g("wb-run").addEventListener'));
+  assert.ok(!frontendSource.includes("WebContainer"));
+  assert.ok(!frontendSource.includes("function initTerm"));
+  assert.ok(!frontendSource.includes("function run()"));
 });
 
 test('delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct', () => {
