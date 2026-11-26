@@ -27,7 +27,7 @@ function loadCodeClaimDO(deleteBranch) {
     CODE_PENDING_TTL_MS: 600000,
     codeDeleteBranch: deleteBranch,
     codePendingView: p => p,
-    Date, URL, Response, Request, console
+    Date: class FixedDate extends Date { static now() { return 1700000000000; } }, URL, Response, Request, console
   };
   vm.runInNewContext(classSource + '\\nglobalThis.TestCodeClaimDO = CodeClaimDO;', sandbox);
   return sandbox.TestCodeClaimDO;
@@ -286,7 +286,7 @@ test('CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-
   const DO = loadCodeClaimDO(async () => { events.push('github.delete'); return { ok: false, status: 500, msg: 'simulated GitHub failure' }; });
   const instance = new DO({ storage }, {});
   await instance.alarm();
-  assert.deepEqual(events, ['github.delete', 'alarm:' + (Date.now() + 60000)]);
+  assert.deepEqual(events, ['github.delete', 'alarm:1700000060000']);
   assert.equal(storage.value, value);
 });
 
