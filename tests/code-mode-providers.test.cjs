@@ -852,7 +852,7 @@ test('local HTTP integration: frontend-style API request reaches the real Worker
 
 
 
-test('local preview button keeps classic preview visible until server-ready and then toggles', async () => {
+test('local preview button opens the dedicated full-width view only after server-ready', async () => {
   const previewButton = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-local-preview")[^>]*>/g)];
   assert.equal(previewButton.length, 1);
 
@@ -1038,13 +1038,19 @@ test('delivery chain: real probePagesHealth logic accepts only HTTP 200 and prob
 });
 
 
-test('devbench keeps the classic live preview and result pane visible by default', () => {
-  assert.ok(!frontendSource.includes('#wb:not(.wb-local-preview-mode) #wb-right{display:none!important}'));
-  assert.ok(!frontendSource.includes('#wb:not(.wb-local-preview-mode) #wb-left{flex:1 1 100%!important;width:100%!important;border-right:0!important;border-bottom:0!important}'));
-  assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-right{display:flex!important}'));
-  assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-runframe{position:absolute!important;inset:0!important;display:block!important;'));
+test('devbench keeps the editor full-width and moves preview/results into the dedicated view', () => {
+  assert.ok(frontendSource.includes('#wb:not(.wb-local-preview-mode) #wb-right{display:none!important}'),
+    'the white preview/result pane must not sit beside the editor by default');
+  assert.ok(frontendSource.includes('#wb:not(.wb-local-preview-mode) #wb-left{flex:1 1 100%!important;width:100%!important;border-right:0!important;border-bottom:0!important}'),
+    'the editor must occupy the full development workspace by default');
+  assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-right{display:flex!important}'),
+    'the separate preview workspace must reveal the preview/result area');
+  assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-runframe{position:absolute!important;inset:0!important;display:block!important;'),
+    'the local server iframe must fill the separate preview workspace');
   assert.ok(frontendSource.includes('function renderPreview() { if (!ed) return; g("wb-preview").srcdoc = srcdocOf(ed.get()); }'));
+  assert.ok(frontendSource.includes('id="wb-preview"'));
   assert.ok(frontendSource.includes('id="wb-res"'));
+  assert.ok(frontendSource.includes('id="wb-runframe"'));
   assert.equal(frontendSource.includes('localStartupGuard'), false);
   assert.ok(frontendSource.includes('timeoutId=setTimeout(()=>resolve({timeout:true}),30000)'));
 });
