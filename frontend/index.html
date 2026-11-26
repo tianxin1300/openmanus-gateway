@@ -5621,6 +5621,12 @@ const bestPlace = (list, q) => {
 })();
 </script>
 <style>
+#wb-chain { display: none; gap: 6px; flex-wrap: wrap; align-items: center; padding: 6px 10px; background: #f7f9f6; border-bottom: 1px solid #e3e8e1; }
+#wb-chain.on { display: flex; }
+#wb-chain .wb-chain-step { padding: 4px 8px; font-size: 11px; border-radius: 8px; border: 1px solid transparent; background: #f1f4f0; color: #7a887d; white-space: nowrap; }
+#wb-chain .wb-chain-step.ok { color: #247a43; background: #e6f5e8; border-color: #bfe3c6; }
+#wb-chain .wb-chain-step.bad { color: #b33b32; background: #fde8e6; border-color: #f3c3bd; }
+#wb-chain .wb-chain-step.now { color: #8b6b16; background: #fdf6e3; border-color: #ecd9a0; }
 /* 开发台顶栏在手机上换行显示，避免「代码检测」等按钮被挤出屏幕 */
 @media (max-width: 1100px) {
   #wb { grid-template-rows: auto minmax(0, 1fr) 180px; }
@@ -5642,12 +5648,13 @@ const bestPlace = (list, q) => {
     <button id="wb-reload" class="sec" type="button" title="重新从 GitHub 读取 index.html（会丢掉未保存的修改）">重新读取</button>
     <button id="wb-save" type="button" title="把编辑器里的内容通过 MCP update_file 推到 GitHub main（Ctrl/Cmd+S）">保存到 GitHub</button>
     <button id="wb-run" type="button" title="在浏览器里启动 WebContainer：安装依赖，自动运行 test/build（如果有），再运行 dev 或 start">运行</button>
-    <button id="wb-both" class="sec" type="button" title="同时启动前端 npm run dev 和后端 wrangler dev，日志分开显示">同时启动</button>
+    <button id="wb-both" class="sec" type="button" title="触发 GitHub Actions：前端 build 与 Worker deploy 两个 job 并行跑，日志并排显示">同时启动</button>
     <button id="wb-ci" class="sec" type="button" title="触发 GitHub Actions：checkout → npm install → npm test → npm run build，并把结果回传到开发台">运行 / 验证</button>
     <button id="wb-deploy" class="sec" type="button" title="验证通过后构建并部署到 Cloudflare Pages">部署</button>
     <button id="wb-lint" type="button" title="代码检测：检查脚本语法、重复 id、$() 引用不到的 id、遗留 console.log" onclick="wbLint()">代码检测</button>
     <button id="wb-close" class="sec" type="button" aria-label="关闭开发台">×</button>
   </div>
+  <div id="wb-chain" aria-label="状态链"></div>
   <div id="wb-main">
     <div id="wb-left"><div id="wb-editor"></div></div>
     <div id="wb-right">
@@ -6059,6 +6066,7 @@ function renderVerifyResult(d) {
   const noun = d.deploy ? "部署" : "验证";
   const title = state === "success" ? noun + "完成" : state === "failure" ? noun + "失败" : state === "queued" ? noun + "排队中" : noun + "运行中";
   res.appendChild(renderDeliveryChain(d));
+  renderChain(d);
   const h = document.createElement("h4"); h.textContent = title; h.style.color = state === "success" ? "#247a43" : state === "failure" ? "#b33b32" : "#8b6b16"; res.appendChild(h);
   const p = document.createElement("pre"); p.textContent = state === "failure" ? ((d.failed_step ? "失败步骤：" + d.failed_step + "\n\n" : "") + ((d.error_lines || []).join("\n") || "GitHub 没有返回可提取的报错行。")) : "checkout ✓\nnpm install ✓\nnpm test " + (state === "success" ? "✓" : "…") + "\nnpm run build " + (state === "success" ? "✓" : "…"); res.appendChild(p);
   const links = document.createElement("div");
@@ -6217,10 +6225,74 @@ async function collectProjectFiles(notes) {
   pkg.scripts = pkg.scripts || {}; if (!pkg.scripts.dev) pkg.scripts.dev = "npx --yes serve -l 3000 frontend";
   files["package.json"] = JSON.stringify(pkg, null, 2); return files;
 }
+/* 状态链：已生成 → 已验证 → 已提交 → 部署中 → 线上健康 / 部署失败，全部读 Actions 状态 */
+function chainStep(text, cls) { const s = document.createElement("span"); s.className = "wb-chain-step" + (cls ? " " + cls : ""); s.textContent = text; return s; }
+function renderChain(d) {
+  const box = g("wb-chain"); if (!box) return;
+  const runs = (d && Array.isArray(d.runs)) ? d.runs : [];
+  const byKind = {}; runs.forEach((r) => { byKind[r.kind] = r; });
+  const verify = byKind.verify || (d && !d.deploy ? d : {}) || {};
+  const deploy = byKind.deploy || (d && d.deploy ? d : {}) || {};
+  const failed = !!(d && d.state === "failure");
+  const verified = verify.conclusion === "success";
+  const submitted = !!(d && (d.head_sha || d.submitted || deploy.run_id || verify.run_id));
+  const deploying = !!(deploy.run_id && !deploy.conclusion);
+  const online = deploy.conclusion === "success";
+  const steps = [
+    ["已生成", "ok"],
+    ["已验证", verified ? "ok" : (verify.conclusion ? "bad" : "")],
+    ["已提交", submitted ? "ok" : ""],
+    ["部署中", deploying ? "now" : (online ? "ok" : "")],
+    ["线上健康", online ? "ok" : (failed ? "bad" : "")]
+  ];
+  if (failed) steps.push(["部署失败", "bad"]);
+  box.innerHTML = "";
+  box.classList.toggle("on", !!(d && (d.started_at || runs.length || d.state)));
+  steps.forEach(([name, cls]) => box.appendChild(chainStep((cls === "ok" ? "✓ " : cls === "bad" ? "✗ " : cls === "now" ? "… " : "○ ") + name, cls)));
+  if (failed && d.failed_step) box.appendChild(chainStep("失败步骤：" + d.failed_step, "bad"));
+}
 async function runBoth() {
-  const btn=g("wb-both"); if (parallelRunning || !ed) return; parallelRunning=true; parallelProcs=[]; parallelFrontendUrl=""; parallelBackendUrl=""; if(btn){btn.disabled=true;btn.textContent="启动中…";} g("wb-parallel-logs").classList.add("on"); g("wb-front-log").textContent=""; g("wb-back-log").textContent=""; showTab("run"); renderVerifyResult({state:"running",submitted:false,local:true}); say("正在同时启动前端和后端 …");
-  try { if (!(await ensureWC())) throw new Error("WebContainer 不可用"); procs.forEach(p=>{try{p.kill()}catch(_){}}); procs=[]; const notes=[], files=await collectProjectFiles(notes); await wc.mount(toTree(files)); parallelLog("front","已 mount 项目，准备 npm install\n"); const install=await wc.spawn("npm",["install","--no-audit","--no-fund"]); parallelProcs.push(install); pipeParallel(install,"front"); const code=await install.exit; if(code!==0) throw new Error("npm install 失败，退出码 "+code); parallelLog("front","\n✓ npm install 完成\n"); const front=await wc.spawn("npm",["run","dev"]); const back=await wc.spawn("npx",["wrangler","dev","--local","--port","8787"]); parallelProcs.push(front,back); pipeParallel(front,"front"); pipeParallel(back,"back"); parallelLog("front","$ npm run dev\n"); parallelLog("back","$ npx wrangler dev --local --port 8787\n"); notes.forEach(n=>parallelLog("back","· "+n+"\n")); say("前后端已同时启动，日志已分栏显示");
-  } catch(e) { parallelLog("back","\n✗ "+(e.message||String(e))+"\n"); renderVerifyResult({state:"failure",error_lines:[e.message||String(e)],local:true}); say("同时启动失败，已显示报错",true); parallelRunning=false; if(btn){btn.disabled=false;btn.textContent="同时启动";} }
+  const btn = g("wb-both"); if (!authToken) { toast("请先登录"); return; }
+  if (btn) { btn.disabled = true; btn.textContent = "启动中…"; }
+  g("wb-parallel-logs").classList.add("on"); g("wb-front-log").textContent = ""; g("wb-back-log").textContent = "";
+  showTab("run"); renderVerifyResult({ state: "running", submitted: false, local: true });
+  renderChain({ started_at: new Date().toISOString(), state: "running", runs: [] });
+  say("正在触发 GitHub Actions：前端 build + Worker deploy 并行跑 …");
+  let timer = null, started = Date.now();
+  const finish = (bad, text) => { if (timer) clearTimeout(timer); if (btn) { btn.disabled = false; btn.textContent = "同时启动"; } say(text, bad); };
+  const paint = (d) => {
+    const runs = (d && Array.isArray(d.runs)) ? d.runs : [];
+    const front = runs.find((r) => r.kind !== "deploy") || {}, back = runs.find((r) => r.kind === "deploy") || {};
+    const fl = (front.logs || []).join("\n"), bl = (back.logs || []).join("\n");
+    g("wb-front-log").textContent = fl || (front.run_url ? "前端 build 排队中… " + front.run_url : "等待 GitHub 返回前端 build 日志…");
+    g("wb-back-log").textContent = bl || (back.run_url ? "Worker deploy 排队中… " + back.run_url : "等待 GitHub 返回 Worker deploy 日志…");
+    renderChain(d); renderVerifyResult({ ...d, deploy: true });
+  };
+  try {
+    const start = await authFetch(GATEWAY + "/api/code/both", { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify({ ref: REPO.branch }) });
+    let d = await start.json().catch(() => ({})); if (!start.ok || d.ok === false) throw new Error(d.msg || "无法启动并行任务");
+    paint({ ...d, state: "queued" });
+    const poll = async () => {
+      try {
+        if (Date.now() - started > VERIFY_MAX_MS) { finish(true, "并行任务超时，已恢复按钮"); return; }
+        const r = await authFetch(GATEWAY + "/api/code/both", { cache: "no-store", headers: { "Accept": "application/json" } }), j = await r.json().catch(() => ({}));
+        if (!r.ok || j.ok === false) throw new Error(j.msg || "读取并行任务状态失败");
+        paint(j);
+        if (j.state === "success") { finish(false, "前端 build 与 Worker deploy 都已完成，线上健康"); return; }
+        if (j.state === "failure") { finish(true, "并行任务失败，已显示失败那一步的日志"); return; }
+        timer = setTimeout(poll, 3500);
+      } catch (e) {
+        renderChain({ state: "failure", started_at: new Date().toISOString(), failed_step: "读取状态" });
+        renderVerifyResult({ state: "failure", error_lines: [e.message || String(e)], deploy: true });
+        finish(true, "并行任务状态读取失败，已恢复按钮");
+      }
+    };
+    timer = setTimeout(poll, 2500);
+  } catch (e) {
+    renderChain({ state: "failure", started_at: new Date().toISOString(), failed_step: "启动" });
+    renderVerifyResult({ state: "failure", error_lines: [e.message || String(e)], deploy: true });
+    finish(true, "并行任务启动失败，已恢复按钮");
+  }
 }
 async function run() {
   if (running || parallelRunning || !ed) return; running = true; g("wb-run").disabled = true; showTab("run");
