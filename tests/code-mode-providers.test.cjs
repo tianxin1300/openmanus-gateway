@@ -71,10 +71,14 @@ function loadCodeRunnerDO() {
   const classSource = workerSource.slice(start, end).replace(/^export /, '');
   const values = new Map();
   let transactionTail = Promise.resolve();
+  let alarmAt = null;
   const storage = {
     async get(key) { return values.has(key) ? values.get(key) : undefined; },
     async put(key, value) { values.set(key, structuredClone(value)); },
     async delete(key) { return values.delete(key); },
+    async setAlarm(value) { alarmAt = value; },
+    async getAlarm() { return alarmAt; },
+    async deleteAlarm() { alarmAt = null; },
     async transaction(callback) {
       const previous = transactionTail;
       let release;
@@ -90,7 +94,7 @@ function loadCodeRunnerDO() {
       } finally { release(); }
     }
   };
-  const sandbox = { URL, Response, Request, Date, structuredClone };
+  const sandbox = { URL, Response, Request, Date, structuredClone, fetch: async () => { throw new Error("unexpected fetch"); }, codeRunLogKey: id => "log:run:" + id, codeRunIndexKey: user => "code:runs:" + user, codeVerifyKey: user => "code:verify:" + user, codeVerifyErrorLines: value => String(value).split(/\\r?\\n/).filter(Boolean) };
   vm.runInNewContext(classSource + '\n' + 'globalThis.TestCodeRunnerDO = CodeRunnerDO;', sandbox);
   return { Runner: sandbox.TestCodeRunnerDO, storage };
 }
@@ -335,6 +339,46 @@ test('BUG-08: CodeRunnerDO serializes per-user parallel-run claims and owner-onl
   assert.equal(released.released, true);
   const retry = await call('claim', { request_id: secondId, ref: 'main' });
   assert.equal(retry.ok, true);
+});
+
+test('persistent runner watchdog polls GitHub and persists terminal state without browser polling', async () => {
+  const values = new Map();
+  const kv = {
+    async get(key, type) { const value = values.get(key); return type === 'json' && typeof value === 'string' ? JSON.parse(value) : value ?? null; },
+    async put(key, value) { values.set(key, value); }
+  };
+  const calls = [];
+  const responses = [
+    { ok: true, json: async () => ({ workflow_runs: [{ id: 101, name: 'deploy-project · both-abc', html_url: 'https://github.com/run/101' }] }) },
+    { ok: true, json: async () => ({ id: 101, status: 'completed', conclusion: 'success', html_url: 'https://github.com/run/101', head_sha: 'abc123' }) },
+    { ok: true, json: async () => ({ workflow_runs: [{ id: 202, name: 'deploy-worker · both-abc', html_url: 'https://github.com/run/202' }] }) },
+    { ok: true, json: async () => ({ id: 202, status: 'completed', conclusion: 'success', html_url: 'https://github.com/run/202', head_sha: 'abc123' }) }
+  ];
+  const fetchMock = async url => { calls.push(String(url)); return responses.shift() || { ok: true, json: async () => ({}) }; };
+  const releaseCalls = [];
+  const env = {
+    GH_PAT: 'test-token', KV: kv,
+    CODE_RUNNER: { idFromName: name => name, get: id => ({ fetch: async (url, options) => { releaseCalls.push({ id, url, body: JSON.parse(options.body) }); return new Response(JSON.stringify({ ok: true, released: true })); } }) }
+  };
+  const { Runner, storage } = loadCodeRunnerDO();
+  const runner = new Runner({ storage, fetch: fetchMock }, env);
+  await runner.fetch(new Request('https://runner/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+    request_id: 'both-abc', run_id: 'both-abc', owner_user: 'user-1', repo: 'owner/repo', kind: 'both', status: 'queued',
+    runs: [{ kind: 'deploy', workflow: 'deploy-project.yml', status: 'queued', conclusion: null }, { kind: 'worker', workflow: 'deploy-worker.yml', status: 'queued', conclusion: null }]
+  }) }));
+  assert.ok(await storage.getAlarm(), 'watchdog alarm scheduled without a browser request');
+  await runner.alarm();
+  const record = await runner.load();
+  assert.equal(record.state, 'success');
+  assert.equal(record.conclusion, 'success');
+  assert.equal(record.runs[0].run_id, '101');
+  assert.equal(record.runs[1].run_id, '202');
+  assert.equal(calls.length, 4);
+  assert.equal(releaseCalls.length, 1);
+  assert.equal(releaseCalls[0].body.request_id, 'both-abc');
+  assert.equal(await storage.getAlarm(), null);
+  const persisted = JSON.parse(values.get('code:verify:user-1:both'));
+  assert.equal(persisted.state, 'success');
 });
 
 test('BUG-08: parallel deploy preserves partial dispatch failures and holds lock until remaining run ends', () => {
