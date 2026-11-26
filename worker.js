@@ -8288,6 +8288,41 @@ async function handle(request, env, ctx) {
       return json({ ok: false, msg: lastStatus===402 ? "生图失败：Pollinations 免费额度用完了（402），HF 也没配好，去 Cloudflare 里配 HF_TOKEN 再试" : "生图失败："+(lastErr||"Pollinations 没返回图") }, 502);
     }
 
+    // ============ Safari 语音输入：录音上传后由 Groq Whisper 转写，不依赖 Web Speech API ============
+    if (path === "/api/transcribe" && request.method === "POST") {
+      const user = await userFromReq(request, env, url, "");
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      let form;
+      try { form = await request.formData(); } catch { return json({ ok: false, msg: "音频上传格式无效" }, 400); }
+      const audio = form.get("audio");
+      if (!audio || typeof audio.arrayBuffer !== "function" || !audio.size) return json({ ok: false, msg: "没有收到录音文件" }, 400);
+      if (audio.size > 20 * 1024 * 1024) return json({ ok: false, msg: "录音超过 20MB，请缩短录音时间" }, 413);
+      const keys = getKeys(env.GROQ_KEYS || env.GROQ_API_KEY);
+      if (!keys.length) return json({ ok: false, msg: "语音识别服务尚未配置，请在网关配置 GROQ_KEYS" }, 503);
+      const upstreamForm = new FormData();
+      upstreamForm.append("file", audio, String(audio.name || "voice.m4a"));
+      upstreamForm.append("model", "whisper-large-v3-turbo");
+      upstreamForm.append("language", "zh");
+      upstreamForm.append("response_format", "json");
+      let lastStatus = 0;
+      for (const key of keys) {
+        try {
+          const upstream = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+            method: "POST",
+            headers: { Authorization: "Bearer " + key },
+            body: upstreamForm,
+            signal: T(60000)
+          });
+          if (!upstream.ok) { lastStatus = upstream.status; if (upstream.status === 401 || upstream.status === 403 || upstream.status === 429 || upstream.status >= 500) continue; break; }
+          const result = await upstream.json().catch(() => null);
+          const transcript = String(result && result.text || "").trim();
+          if (!transcript) return json({ ok: false, msg: "没有识别到语音内容，请再录一次" }, 422);
+          return json({ ok: true, text: transcript });
+        } catch (_) { lastStatus = 502; }
+      }
+      return json({ ok: false, msg: lastStatus === 429 ? "语音识别服务繁忙，请稍后重试" : "语音识别暂时失败，请重试" }, 502);
+    }
+
     // ============ v69：朗读按钮用的云端女声（直接回 mp3，不落盘；失败时前端退回浏览器自带声音） ============
     if (path === "/api/tts" && request.method === "POST") {
       const b = await request.json().catch(() => ({}));
