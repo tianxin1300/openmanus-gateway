@@ -6371,7 +6371,6 @@ function renderChain(d) {
   box.classList.toggle("on", !!(d && (d.started_at || runs.length || d.state)));
   steps.forEach(([name, cls]) => box.appendChild(chainStep((cls === "ok" ? "✓ " : cls === "bad" ? "✗ " : cls === "now" ? "… " : "○ ") + name, cls)));
   if (failed && d.failed_step) box.appendChild(chainStep("失败步骤：" + d.failed_step, "bad"));
-  syncLocalTaskPreview();
 }
 async function runBoth() {
   const btn = g("wb-both"); if (!authToken) { toast("请先登录"); return; }
