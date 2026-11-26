@@ -1310,7 +1310,14 @@ test("devbench standalone preview keeps a synced run-results panel and expandabl
   assert.match(match[1], /local-run-result-content/);
   assert.match(match[1], /syncLocalTaskPreview\(\)/);
   assert.match(match[1], /g\(["']wb-runlogs["']\)\.addEventListener\(["']toggle["']/);
-  assert.match(frontendSource, /#wb-term\.wb-runlogs-expanded/);
+  assert.match(frontendSource, /id="wb-term-tabs" role="tablist"/);
+  assert.match(frontendSource, /id="wb-terminal-tab" role="tab" aria-controls="wb-terminal" aria-selected="true"/);
+  assert.match(frontendSource, /id="wb-runlogs-tab" role="tab" aria-controls="wb-runlogs" aria-selected="false"/);
+  assert.match(match[1], /function setTerminalPanel\(panel\)/);
+  assert.match(match[1], /setTerminalPanel\("terminal"\)/);
+  assert.match(match[1], /setTerminalPanel\("logs"\)/);
+  assert.match(frontendSource, /#wb-term\[data-panel="terminal"\] #wb-runlogs,#wb-term\[data-panel="logs"\] #wb-terminal\{display:none\}/);
+  assert.doesNotMatch(frontendSource, /wb-runlogs-expanded/);
 });
 
 
