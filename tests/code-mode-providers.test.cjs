@@ -1059,7 +1059,7 @@ test('editor wraps long lines and iPad visual viewport resizes the workbench abo
 
 test('terminal is a standalone command echo panel and Pages/Worker logs stay separate without WebContainer', () => {
   assert.match(frontendSource, /<section id="wb-terminal" aria-label="终端">[\s\S]*?<pre id="wb-terminal-output"/);
-  assert.match(frontendSource, /<form id="wb-terminal-command-form"[\s\S]*?<input id="wb-terminal-command"/);
+  assert.match(frontendSource, /<form id="wb-terminal-command-form"[\s\S]*?<textarea id="wb-terminal-command"/);
   assert.match(frontendSource, /<div id="wb-runlogs" aria-label="Pages 与 Worker 运行日志" hidden>[\s\S]*?id="wb-front-log"[\s\S]*?id="wb-back-log"/);
   assert.match(frontendSource, /data-terminal-key="ctrl-c"/);
   assert.match(frontendSource, /data-terminal-key="escape"/);
@@ -1390,7 +1390,7 @@ test('terminal panels and viewport behavior remain independently testable; termi
   assert.match(frontendSource, /id="wb-terminal-tab" role="tab" aria-controls="wb-terminal" aria-selected="true"/);
   assert.match(frontendSource, /id="wb-runlogs-tab" role="tab" aria-controls="wb-runlogs" aria-selected="false"/);
   assert.match(frontendSource, /<section id="wb-terminal" aria-label="终端">[\s\S]*?<pre id="wb-terminal-output"/);
-  assert.match(frontendSource, /<form id="wb-terminal-command-form"[\s\S]*?<input id="wb-terminal-command"/);
+  assert.match(frontendSource, /<form id="wb-terminal-command-form"[\s\S]*?<textarea id="wb-terminal-command"/);
   assert.match(frontendSource, /<div id="wb-runlogs" aria-label="Pages 与 Worker 运行日志" hidden>[\s\S]*?id="wb-front-log"[\s\S]*?id="wb-back-log"/);
   const script = /<script\b(?=[^>]*\bid=["']wb-devbench["'])[^>]*>([\s\S]*?)<\/script\s*>/i.exec(frontendSource)[1];
   assert.match(script, /function setTerminalPanel\(panel\)/);
