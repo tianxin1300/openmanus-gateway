@@ -1037,5 +1037,5 @@ test('devbench hides legacy preview/result cards until the dedicated local previ
   assert.ok(frontendSource.includes('#wb:not(.wb-local-preview-mode) #wb-left{flex:1 1 100%!important;width:100%!important;border-right:0!important;border-bottom:0!important}'));
   assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-right{display:flex!important}'));
   assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-runframe{position:absolute!important;inset:0!important;display:block!important;'));
-  assert.ok(frontendSource.includes('button.textContent = "返回开发台"'));
+  assert.ok(frontendSource.includes('button.textContent="返回开发台"'));
 });
