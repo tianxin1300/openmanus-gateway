@@ -197,14 +197,19 @@ test('Trae batch 1: isolated branches, history/rollback/preview, and file-level 
   assert.match(frontendSource, /失败重试/);
 });
 
-test('workbench starts frontend/backend together and renders the full delivery chain', () => {
+test('workbench simultaneous start triggers GitHub Actions and renders the full delivery chain', () => {
   assert.match(frontendSource, /id="wb-both"/);
-  assert.match(frontendSource, /npm\",\["run","dev"\]/);
-  assert.match(frontendSource, /wrangler","dev","--local","--port","8787/);
-  assert.match(frontendSource, /wb-front-log/);
-  assert.match(frontendSource, /wb-back-log/);
-  for (const label of ['已生成', '已验证', '已提交', '部署中', '线上健康', '部署失败']) assert.match(frontendSource, new RegExp(label));
-  assert.match(frontendSource, /renderDeliveryChain/);
+  assert.match(frontendSource, /async function runBoth\(\)/);
+  assert.match(frontendSource, /正在触发 GitHub Actions：前端 build \+ Worker deploy 并行跑/);
+  assert.match(frontendSource, /authFetch\(GATEWAY \+ "\/api\/code\/both", \{ method: "POST"/);
+  assert.match(frontendSource, /GitHub 返回前端 build 日志/);
+  assert.match(frontendSource, /GitHub 返回 Worker deploy 日志/);
+  assert.match(frontendSource, /j\.state === "success"/);
+  assert.match(frontendSource, /j\.state === "failure"/);
+  assert.match(frontendSource, /function renderDeliveryChain\(d\)/);
+  for (const label of ['已生成', '已验证', '已提交', '部署中', '线上健康']) {
+    assert.match(frontendSource, new RegExp(label));
+  }
 });
 
 test('P0-01: simultaneous WebContainer startup routes frontend API calls to its paired local Wrangler port', () => {
