@@ -5687,6 +5687,7 @@ const bestPlace = (list, q) => {
       <div id="wb-history" aria-label="历史运行日志"></div>
       <div class="wb-logbox"><div class="wb-logtitle">Pages 前端日志 · <a id="wb-pages-run-link" href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/45809262138" target="_blank" rel="noopener">打开 Pages Actions Run</a></div><pre id="wb-front-log"></pre></div>
       <div class="wb-logbox"><div class="wb-logtitle">Worker 后端日志 · <a id="wb-worker-run-link" href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/45809265485" target="_blank" rel="noopener">打开 Worker Actions Run</a></div><pre id="wb-back-log"></pre></div>
+      <div class="wb-logbox" id="wb-local-logbox" hidden><div class="wb-logtitle">本地任务预览 · WebContainer</div><pre id="wb-local-log"></pre></div>
     </details>
   </div>
 </div>
@@ -5702,6 +5703,8 @@ const MONACO_BASES = [
   "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min",
   "https://unpkg.com/monaco-editor@0.52.2/min"
 ];
+const WC_MODULES = ["https://esm.sh/@webcontainer/api@1", "https://cdn.jsdelivr.net/npm/@webcontainer/api@1/+esm"];
+const LOCAL_TEXT_EXT = /\.(html?|css|js|mjs|cjs|json|toml|md|txt|svg|ts|tsx|jsx|yml|yaml|xml|env|gitignore|npmrc)$/i;
 const g = id => document.getElementById(id);
 
 /*wb-pure-start*/
@@ -5767,6 +5770,7 @@ function parseRpc(ct, txt, id) {
 /*wb-pure-end*/
 /* ---------------- 状态 / 小工具 ---------------- */
 let ed = null, inited = false, dirty = false, curSha = null, prevTimer = null, srcLabel = "";
+let localWc = null, localWcModule = null, localWcRunning = false, localWcProcess = null, localWcReady = null, localWcPromise = null;
 function say(t, warn) { const el = g("wb-state"); if (!el) return; el.textContent = t || ""; el.className = warn ? "warn" : ""; el.title = t || ""; }
 function note(t) { try { if (typeof toast === "function") toast(t); } catch (_) {} }
 function withTimeout(p, ms, what) { let to; return Promise.race([p, new Promise((_, no) => { to = setTimeout(() => no(new Error(what + " 超时")), ms); })]).finally(() => clearTimeout(to)); }
@@ -5959,6 +5963,122 @@ function showTab(which) {
   g("wb-preview").classList.toggle("on", which === "prev");
   const frameMode = which === "run" && fr.dataset.live === "1";
   fr.classList.toggle("on", frameMode); res.classList.toggle("on", which === "run" && !frameMode);
+}
+function localLog(message) {
+  const box=g("wb-local-logbox"), pre=g("wb-local-log");
+  if(box) box.hidden=false;
+  if(pre){pre.textContent += String(message||"") + "\\n";pre.scrollTop=pre.scrollHeight;}
+  const logs=g("wb-runlogs"); if(logs) logs.open=true;
+}
+function localTree(files) {
+  const root={};
+  Object.keys(files).forEach(path=>{
+    const parts=path.split("/").filter(Boolean);let cur=root;
+    parts.forEach((part,i)=>{
+      if(i===parts.length-1)cur[part]={file:{contents:files[path]}};
+      else cur=(cur[part]=cur[part]||{directory:{}}).directory;
+    });
+  });
+  return root;
+}
+async function localFrontendFiles(notes) {
+  const paths=[],seen=new Set();
+  async function walk(path,depth){
+    let result;try{result=await mcpGet(path);}catch(e){notes.push("目录读取失败 "+path+"："+e.message);return false;}
+    if(!result.list)return false;
+    for(const entry of result.list){
+      const name=entry.name||String(entry.path||"").split("/").pop();if(!name)continue;
+      const full=entry.path||(path+"/"+name),type=String(entry.type||"").toLowerCase();
+      if(/dir|tree/.test(type)){if(depth<2)await walk(full,depth+1);continue;}
+      if(!seen.has(full)){seen.add(full);paths.push({path:full,size:entry.size});}
+    }
+    return true;
+  }
+  if(!(await walk(DIR,0))){notes.push("MCP 未返回 frontend 目录列表，仅加载 index.html");return [{path:FILE}];}
+  return paths;
+}
+async function collectLocalFiles(notes) {
+  const files={};let count=0;
+  for(const entry of await localFrontendFiles(notes)){
+    const rel=entry.path.replace(new RegExp("^"+DIR+"/"),"");
+    if(entry.path===FILE){files[rel]=ed.get();continue;}
+    if(!LOCAL_TEXT_EXT.test(rel)){notes.push("跳过 "+rel+"（非文本文件）");continue;}
+    if(entry.size&&entry.size>600000){notes.push("跳过 "+rel+"（超过 600KB）");continue;}
+    if(++count>40){notes.push("文件超过 40 个，剩余文件未加载");break;}
+    try{const item=await mcpGet(entry.path);if(typeof item.text==="string")files[rel]=item.text;else notes.push("跳过 "+rel+"（无文本内容）");}
+    catch(e){notes.push("跳过 "+rel+"："+e.message);}
+  }
+  if(!files["index.html"])files["index.html"]=ed.get();
+  return files;
+}
+async function ensureLocalWebContainer() {
+  if(localWc)return localWc;
+  if(!window.crossOriginIsolated)throw new Error("当前页面未启用跨源隔离（crossOriginIsolated=false）。WebContainer 需要 COOP: same-origin 与 COEP: credentialless（或 require-corp）响应头。");
+  localLog("加载 WebContainer API …");
+  let last;
+  for(const url of WC_MODULES){try{localWcModule=await withTimeout(import(url),25000,"加载 WebContainer API");break;}catch(e){last=e;}}
+  if(!localWcModule||!localWcModule.WebContainer)throw new Error("WebContainer API 加载失败："+(last&&last.message||"CDN 不可用"));
+  let coep="";
+  try{const response=await fetch(location.href.split("#")[0],{method:"HEAD",cache:"no-store"});coep=(response.headers.get("cross-origin-embedder-policy")||"").split(";")[0].trim();}catch(_){}
+  localLog("启动浏览器本地容器 …");
+  localWc=await withTimeout(localWcModule.WebContainer.boot(coep==="credentialless"?{coep:"credentialless"}:{}),60000,"WebContainer boot");
+  localWc.on("server-ready",(port,url)=>{
+    const frame=g("wb-runframe");if(frame){frame.dataset.live="1";frame.src=url;showTab("run");}
+    localLog("本地预览服务已就绪：端口 "+port);
+    if(localWcReady){localWcReady(url);localWcReady=null;}
+  });
+  localWc.on("error",error=>localLog("WebContainer 错误："+(error&&error.message||error)));
+  return localWc;
+}
+async function runLocalTaskPreview() {
+  if(localWcPromise)return localWcPromise;
+  if(localWcRunning)return;
+  localWcPromise=(async()=>{
+    localWcRunning=true;showTab("run");g("wb-runlogs").open=true;
+    const frame=g("wb-runframe");if(frame){frame.dataset.live="0";frame.removeAttribute("src");}
+    g("wb-local-log").textContent="";g("wb-local-logbox").hidden=false;
+    say("正在准备隐藏式 WebContainer 本地预览 …");
+    try{
+      localLog("读取任务文件 …");
+      const notes=[],files=await collectLocalFiles(notes);
+      if(!files["package.json"])files["package.json"]=JSON.stringify({name:"local-task-preview",private:true,scripts:{start:"npx --yes serve -l 3000 ."},dependencies:{serve:"^14.2.0"}},null,2);
+      const container=await ensureLocalWebContainer();
+      await container.mount(localTree(files));
+      localLog("已挂载 "+Object.keys(files).length+" 个文件："+Object.keys(files).join("、"));
+      notes.forEach(note=>localLog("提示："+note));
+      const install=await container.spawn("npm",["install","--no-audit","--no-fund"]);
+      const installOutput=[];install.output.pipeTo(new WritableStream({write(chunk){installOutput.push(String(chunk));localLog(String(chunk).trimEnd());}})).catch(()=>{});
+      const installCode=await withTimeout(install.exit,180000,"npm install");
+      if(installCode!==0)throw new Error("npm install 失败，退出码 "+installCode);
+      let pkg={};try{pkg=JSON.parse(files["package.json"]||"{}");}catch(_){}
+      const scripts=pkg.scripts||{};
+      for(const task of ["test","build"]){
+        if(!scripts[task])continue;
+        localLog("$ npm run "+task);
+        const proc=await container.spawn("npm",["run",task]);
+        proc.output.pipeTo(new WritableStream({write(chunk){localLog(String(chunk).trimEnd());}})).catch(()=>{});
+        const code=await withTimeout(proc.exit,120000,"npm run "+task);
+        if(code!==0)localLog("注意：npm run "+task+" 退出码 "+code+"，继续尝试启动预览服务");
+        else localLog("✓ npm run "+task+" 通过");
+      }
+      const startScript=scripts.dev?"dev":scripts.start?"start":"";
+      if(!startScript)throw new Error("package.json 没有 dev 或 start 脚本，无法启动本地预览服务");
+      localLog("$ npm run "+startScript);
+      const ready=new Promise(resolve=>{localWcReady=resolve;});
+      localWcProcess=await container.spawn("npm",["run",startScript]);
+      localWcProcess.output.pipeTo(new WritableStream({write(chunk){localLog(String(chunk).trimEnd());}})).catch(()=>{});
+      const url=await Promise.race([ready,new Promise(resolve=>setTimeout(()=>resolve(null),60000))]);
+      if(!url)throw new Error("服务启动 60 秒内没有监听端口");
+      say("本地预览已就绪（WebContainer）");
+      return url;
+    }catch(error){
+      localLog("本地预览失败："+(error&&error.message||error));
+      say("本地预览启动失败："+(error&&error.message||error),true);
+      const result=g("wb-res");if(result){result.innerHTML="";const title=document.createElement("h4");title.textContent="WebContainer 本地预览失败";const detail=document.createElement("pre");detail.textContent=String(error&&error.message||error);result.append(title,detail);showTab("run");}
+      throw error;
+    }finally{localWcRunning=false;localWcPromise=null;}
+  })();
+  return localWcPromise;
 }
 function card(title, body, bad) {
   const res = g("wb-res"); g("wb-runframe").dataset.live = "0"; res.innerHTML = "";
@@ -6276,6 +6396,16 @@ async function openWb() {
 }
 function closeWb() { document.body.classList.remove("wb-open"); g("wb").setAttribute("aria-hidden", "true"); amdOff(); }
 g("wb-open").addEventListener("click", openWb);
+async function openLocalTaskPreview() {
+  await openWb();
+  if(!ed)throw new Error("编辑器尚未就绪，无法准备本地预览");
+  return runLocalTaskPreview();
+}
+window.openLocalTaskPreview=openLocalTaskPreview;
+window.addEventListener("open-local-task-preview",()=>{void openLocalTaskPreview().catch(()=>{});});
+if(new URLSearchParams(location.search).get("webcontainer")==="1"){
+  window.addEventListener("load",()=>{void openLocalTaskPreview().catch(()=>{});},{once:true});
+}
 g("wb-close").addEventListener("click", closeWb);
 g("wb-save").addEventListener("click", save);
 g("wb-both").addEventListener("click", runBoth);
