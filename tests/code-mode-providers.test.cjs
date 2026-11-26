@@ -1310,7 +1310,7 @@ test("devbench standalone preview keeps independent terminal and run-log panels"
   assert.match(match[1], /local-run-result-content/);
   assert.match(match[1], /syncLocalTaskPreview\(\)/);
   assert.match(frontendSource, /<section id="wb-terminal" aria-label="终端">[\s\S]*?<pre id="wb-terminal-output"/);
-  assert.match(frontendSource, /<form id="wb-terminal-command-form"[\s\S]*?<input id="wb-terminal-command"[^>]*placeholder="输入命令/);
+  assert.match(frontendSource, /<form id="wb-terminal-command-form"[\s\S]*?<textarea id="wb-terminal-command"[^>]*placeholder="输入命令[\s\S]*?<\/textarea>/);
   assert.match(frontendSource, /<div id="wb-runlogs" aria-label="Pages 与 Worker 运行日志" hidden>[\s\S]*?id="wb-front-log"[\s\S]*?id="wb-back-log"/);
   assert.doesNotMatch(frontendSource, /<details id="wb-runlogs"/);
   assert.match(frontendSource, /id="wb-term-tabs" role="tablist"/);
@@ -1512,4 +1512,15 @@ test('mobile composer auto-grows and app plus terminal follow the visual viewpor
   assert.match(frontendSource, /inp\.style\.overflowY = inp\.scrollHeight > 180 \? "auto" : "hidden"/);
   assert.match(frontendSource, /#wb-term\{flex:0 0 min\(55%,240px\);min-height:160px;max-height:60%\}/);
   assert.match(frontendSource, /#wb-terminal-command\{font-size:16px\}/);
+});
+
+ 
+test('terminal command input auto-grows, wraps long commands, shrinks after clear, and keeps Enter-to-send', () => {
+  assert.match(frontendSource, /<textarea id="wb-terminal-command"[^>]*rows="1"/);
+  assert.match(frontendSource, /#wb-terminal-command\{[^}]*max-height:120px;[^}]*resize:none;[^}]*overflow-y:hidden;[^}]*white-space:pre-wrap/s);
+  assert.match(frontendSource, /function resizeTerminalCommandInput\(\)/);
+  assert.match(frontendSource, /Math\.min\(120, Math\.max\(40, terminalCommandInput\.scrollHeight\)\)/);
+  assert.match(frontendSource, /terminalCommandInput\.addEventListener\("input", resizeTerminalCommandInput\)/);
+  assert.match(frontendSource, /event\.key === "Enter" && !event\.shiftKey/);
+  assert.match(frontendSource, /resizeTerminalCommandInput\(\);[\s\S]*?命令已回显/);
 });
