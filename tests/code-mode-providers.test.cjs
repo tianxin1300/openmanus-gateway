@@ -1476,7 +1476,8 @@ test('ACCEPTANCE.md: ten code acceptance items each map to an executable npm tes
   for (const id of ids) {
     assert.ok(doc.includes(id), 'ACCEPTANCE.md must define ' + id);
     if (id === 'AUTO-04') {
-      assert.ok(!fs.readFileSync(__filename, 'utf8').includes("test('ACCEPTANCE AUTO-04:"), 'terminal sign-off must remain unpassed in ACCEPTANCE.md');
+      const auto04Prefix = 'test(' + "'ACCEPTANCE AUTO-04:";
+      assert.ok(!fs.readFileSync(__filename, 'utf8').includes(auto04Prefix), 'terminal sign-off must remain unpassed in ACCEPTANCE.md');
     } else {
       assert.ok(fs.readFileSync(__filename, 'utf8').includes("test('ACCEPTANCE " + id + ":"), 'must have a dedicated Node test for ' + id);
     }
