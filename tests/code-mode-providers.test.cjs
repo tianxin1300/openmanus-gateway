@@ -1453,6 +1453,6 @@ test('ACCEPTANCE.md: ten code acceptance items each map to an executable npm tes
   assert.match(doc, /npm test/);
   assert.ok(doc.includes('- **通过**：该项对应的专属 Node.js 自动化测试本次执行成功'));
   assert.match(doc, /测试失败、被跳过、未执行/);
-  assert.doesNotMatch(doc, /IPAD-0[1-4]|iPad 型号|iPadOS|录屏|截图证据|线上验收记录/);
+  assert.doesNotMatch(doc, /IPAD-0[1-4]|iPad|iPadOS|录屏|截图|线上验收记录/);
   assert.match(doc, /最终交付结论/);
 });
