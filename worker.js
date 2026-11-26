@@ -944,12 +944,12 @@ async function codeProject(env, user, proj, req, history, ui) {
   const tree = await codeFileTree(env, proj.repo, branch);
   if (!tree.ok) return { ok: false, reply: "❌ 读取仓库文件列表失败：" + tree.msg };
   const allPaths = tree.files.filter((p) => !codePathProtected(p));
-  const mentioned = [...new Set((String(req).match(/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9_.-]+/g) || []).map((p) => p.replace(/^\. \//, "").replace(/^\.\\//, "")))];
+  const mentioned = [...new Set(String(req).match(/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9_.-]+/g) || [])];
   let targets = [];
   for (const wanted of mentioned) {
     const matches = allPaths.filter((p) => p === wanted || p.endsWith("/" + wanted) || (!wanted.includes("/") && p.split("/").pop() === wanted));
     if (matches.length === 1) targets.push(matches[0]);
-    else if (matches.length > 1) return { ok: false, reply: "⚠️ 文件名「" + wanted + "」在仓库里有多个匹配，请提供完整路径：\\n" + matches.slice(0, 12).join("\\n") };
+    else if (matches.length > 1) return { ok: false, reply: "⚠️ 文件名「" + wanted + "」在仓库里有多个匹配，请提供完整路径：\\n" + matches.slice(0, 12).join("\n") };
   }
   if (!targets.length) targets = proj.files.filter((p) => allPaths.includes(p));
   targets = [...new Set(targets)].filter((p) => !codePathProtected(p));
