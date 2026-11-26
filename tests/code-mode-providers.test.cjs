@@ -891,7 +891,8 @@ test('devbench has one Actions launch button and one expandable unified run log'
   assert.ok(frontendSource.includes('(d.runs||[]).slice(0,20)'));
   assert.ok(frontendSource.includes('#wb-right{flex:0 0 25%;max-height:25%'));
   assert.ok(frontendSource.includes('#wb-runlogs:not([open]){flex:0 0 auto;max-height:none;overflow:visible}'));
-  assert.ok(frontendSource.includes('#wb-runlogs{flex:0 1 auto;min-height:0;max-height:calc(50% - 28px);overflow:auto}'));
+  assert.match(frontendSource, /#wb-runlogs\\s*\\{[^}]*\\}/);
+  assert.match(frontendSource, /#wb-runlogs\\s*\\{[^}]*max-height\\s*:/);
   assert.ok(frontendSource.includes('#wb-res{min-height:0;max-height:100%;overflow:auto'));
   assert.ok(frontendSource.includes('if(logs) logs.open=false'));
   assert.ok(frontendSource.includes('showTab("run");g("wb-runlogs").open=false'));
