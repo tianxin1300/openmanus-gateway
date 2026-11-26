@@ -5760,6 +5760,15 @@ const bestPlace = (list, q) => {
 #wb-local-error{display:block;flex:0 0 auto;min-width:0;max-width:100%;padding:6px 10px;background:#fff4d8!important;border:0;border-bottom:1px solid #e6cf91!important;color:#785713!important;font-size:12px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #wb-local-error[hidden]{display:none!important}
 #wb-local-error-summary{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* 本地预览独立工作区：临时收起编辑器与终端，让右侧预览独占内容区 */
+#wb.wb-local-preview-mode #wb-main{display:flex!important}
+#wb.wb-local-preview-mode #wb-left,
+#wb.wb-local-preview-mode #wb-term{display:none!important}
+#wb.wb-local-preview-mode #wb-right{display:flex!important;flex:1 1 100%!important;width:100%!important;max-width:none!important;min-width:0!important}
+#wb.wb-local-preview-mode #wb-right .wb-rhead{display:none!important}
+#wb.wb-local-preview-mode #wb-runframe.on{display:block!important;flex:1 1 auto!important;min-height:0!important}
+#wb.wb-local-preview-mode #wb-local-error{flex:0 0 auto!important}
 </style>
 <!-- 开发台：编辑器、实时预览/运行结果、统一运行日志；代码通过 GitHub Actions 执行 -->
 <div id="wb" role="dialog" aria-hidden="true" aria-label="开发台">
@@ -6593,6 +6602,8 @@ g("wb-open").addEventListener("click", openWb);
 async function openLocalTaskPreview(options) {
   await openWb();
   if(!ed)throw new Error("编辑器尚未就绪，无法准备本地预览");
+  g("wb").classList.add("wb-local-preview-mode");
+  const button=g("wb-local-preview");if(button)button.textContent="返回编辑";
   return runLocalTaskPreview(options&&options.files);
 }
 window.openLocalTaskPreview=openLocalTaskPreview;
@@ -6601,8 +6612,14 @@ g("wb-close").addEventListener("click", closeWb);
 g("wb-save").addEventListener("click", save);
 g("wb-both").addEventListener("click", runBoth);
 g("wb-local-preview").addEventListener("click", async () => {
-  const button = g("wb-local-preview"), alert = g("wb-local-error");
+  const button = g("wb-local-preview"), wb = g("wb");
+  if (wb.classList.contains("wb-local-preview-mode")) {
+    wb.classList.remove("wb-local-preview-mode");
+    button.textContent = "本地预览";
+    return;
+  }
   button.disabled = true;
+  const alert = g("wb-local-error");
   if (alert) { alert.hidden = true; g("wb-local-error-summary").textContent = ""; }
   try { await openLocalTaskPreview(); }
   catch (error) {
