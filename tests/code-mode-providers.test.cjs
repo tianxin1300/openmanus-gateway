@@ -847,7 +847,7 @@ test('local HTTP integration: frontend-style API request reaches the real Worker
       headers: { Accept: 'application/json' }
     });
     assert.equal(response.status, 200);
-    assert.match(response.headers.get('content-type') || '', /application\/json/i);
+    assert.ok(response.headers.get('content-type').includes('application/json'));
     const payload = await response.json();
     assert.equal(payload.ok, true);
     assert.ok(Array.isArray(payload.providers));
