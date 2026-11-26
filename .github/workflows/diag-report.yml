@@ -1,0 +1,52 @@
+name: diag-report
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - deploy-project
+      - deploy-worker
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+concurrency:
+  group: diag-report-main
+  cancel-in-progress: false
+
+jobs:
+  report:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      - name: Run diagnostic and refresh report
+        run: python3 diag_v110.py
+
+      - name: Report summary
+        if: always()
+        run: |
+          {
+            echo "## Diagnostic report refresh"
+            echo "- Trigger: ${{ github.event_name }}"
+            echo "- Result: ${{ job.status }}"
+            echo "- Report: diag/report.txt"
+          } >> "$GITHUB_STEP_SUMMARY"
