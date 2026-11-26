@@ -728,7 +728,7 @@ function codeVerifyRedact(text) {
 function codeVerifyErrorLines(text) {
   const lines = String(text || "").split(/\r?\n/).map((x) => x.trimEnd());
   const errorPattern = /(npm ERR!|error|failed|failure|exception|syntaxerror|exit code|✖|✗)/i;
-  const locationPattern = /(?:^|[\s("' ])(?:\.{0,2}\/)?[\w@.-]+(?:\/[\w@.-]+)*\.(?:[cm]?[jt]sx?|html?|css|json|ya?ml|py|sh)(?::\d+){1,2}\b|File ["'][^"']+["'], line \d+/i;
+  const locationPattern = /(?:^|[\s("'(/])(?:\.{0,2}\/)?[\w@.-]+(?:\/[\w@.-]+)*\.(?:[cm]?[jt]sx?|html?|css|json|ya?ml|py|sh)(?::\d+){1,2}\b|File ["'][^"']+["'], line \d+/i;
   const selected = new Set();
   lines.forEach((line, index) => {
     if (!line || (!errorPattern.test(line) && !locationPattern.test(line))) return;
