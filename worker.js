@@ -9386,24 +9386,34 @@ export class CodeRunnerDO {
     if (request.method === "GET" || action === "state") return this.response({ ok: true, runner: await this.load() });
     const body = await request.json().catch(() => ({}));
     if (action === "claim") {
-      const active = await this.storage.get("active");
-      if (active && active.request_id !== body.request_id) return this.response({ ok: false, msg: "已有并行任务占用运行锁", active });
-      await this.storage.put("active", { ...body, claimed_at: active && active.claimed_at || new Date().toISOString(), updated_at: new Date().toISOString() });
-      return this.response({ ok: true, active: await this.storage.get("active") });
+      const result = await this.storage.transaction(async (txn) => {
+        const active = await txn.get("active");
+        if (active && active.request_id !== body.request_id) return { ok: false, msg: "已有并行任务占用运行锁", active };
+        const next = { ...body, claimed_at: active && active.claimed_at || new Date().toISOString(), updated_at: new Date().toISOString() };
+        await txn.put("active", next);
+        return { ok: true, active: next };
+      });
+      return this.response(result, result.ok ? 200 : 409);
     }
     if (action === "touch") {
-      const active = await this.storage.get("active");
-      if (!active || active.request_id !== body.request_id) return this.response({ ok: false, msg: "运行锁不属于当前任务" }, 409);
-      const next = { ...active, ...body, updated_at: new Date().toISOString() };
-      await this.storage.put("active", next);
-      return this.response({ ok: true, active: next });
+      const result = await this.storage.transaction(async (txn) => {
+        const active = await txn.get("active");
+        if (!active || active.request_id !== body.request_id) return { ok: false, msg: "运行锁不属于当前任务" };
+        const next = { ...active, ...body, updated_at: new Date().toISOString() };
+        await txn.put("active", next);
+        return { ok: true, active: next };
+      });
+      return this.response(result, result.ok ? 200 : 409);
     }
     if (action === "release") {
-      const active = await this.storage.get("active");
-      if (!active) return this.response({ ok: true, released: false });
-      if (active.request_id !== body.request_id) return this.response({ ok: false, msg: "运行锁不属于当前任务" }, 409);
-      await this.storage.delete("active");
-      return this.response({ ok: true, released: true });
+      const result = await this.storage.transaction(async (txn) => {
+        const active = await txn.get("active");
+        if (!active) return { ok: true, released: false };
+        if (active.request_id !== body.request_id) return { ok: false, msg: "运行锁不属于当前任务" };
+        await txn.delete("active");
+        return { ok: true, released: true };
+      });
+      return this.response(result, result.ok ? 200 : 409);
     }
     if (action === "update") { const current = { ...(await this.load() || {}), ...body, updated_at: new Date().toISOString() }; await this.storage.put("runner", current); return this.response({ ok: true, runner: current }); }
     if (action === "clear") { await this.storage.delete("runner"); return this.response({ ok: true }); }
