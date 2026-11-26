@@ -730,6 +730,10 @@ async function codeUpdateFile(env, repo, path, text, message, branch, sha) {   /
   if (!r.ok) return { ok: false, msg: "GitHub 返回 " + r.status + "：" + String(j.message || "").slice(0, 120) };
   return { ok: true, url: (j.commit && j.commit.html_url) || "" };
 }
+function codePathProtected(path) {
+  const p = String(path || "");
+  return /(^|\\/)\\.git(?:\\/|$)|(^|\\/)\\.env(?:$|[.\\/])|_.key|_token_|_secret[^/]*$/i.test(p);
+}
 function codePushGuard(env, user, repo, path) {   // 返回空串 = 允许；否则是不能推的原因
   const owner = String(env.CODE_OWNER || env.AGENT_USER || "").trim();
   if (!env.GH_PAT) return "GH_PAT 没有配置";
@@ -737,8 +741,7 @@ function codePushGuard(env, user, repo, path) {   // 返回空串 = 允许；否
   if (String(user) !== owner) return "只有主人账号能推送";
   if (!codeRepoOk(env, repo)) return "仓库 " + repo + " 不在允许名单里（Worker 变量 CODE_REPOS，逗号分隔）";
   if (!codePathOk(path)) return "文件路径不合法";
-  if (/(^|\/)\.git(?:\/|$)|(^|\/)\.env/i.test(path)) return "敏感文件（.git/、.env）不让 AI 推送，请手动改";
-  if (env.CODE_PROTECT === "1" && /^worker\.js$/i.test(path)) return "worker.js 受保护（Worker 变量 CODE_PROTECT=1）；去掉这个变量才能推";
+  if (codePathProtected(path)) return "敏感文件（.git/、.env、_.key、_token_、_secret*）禁止修改";
   return "";
 }
 // 口令：消息里写 “@文件 owner/仓库:路径” 先读出当前文件给模型看；再写 “@推送” 才会把代码块推上去（不写不会推）
@@ -777,9 +780,7 @@ async function codeAssist(env, user, raw, history) {
     else if (cur && cur.text.length > CODE_PUSH_LIMIT) notes.push("⚠️ 没推送：原文件太大（" + cur.text.length + " 字），模型不能安全地整份重写");
     else if (cur && best.code.length < cur.text.length * 0.5) notes.push("⚠️ 没推送：新代码不到原文件的一半，疑似删掉了原有功能");
     else {
-      const up = await codeUpdateFile(env, d.repo, d.path, best.code.replace(/\s+$/, "") + "\n", "AI: " + d.text.replace(/\s+/g, " ").slice(0, 60), branch, cur ? cur.sha : "");
-      pushed = !!up.ok;
-      notes.push(up.ok ? "✅ 已推送到 " + d.repo + "@" + branch + "：" + d.path + (up.url ? "\n" + up.url : "") : "❌ 推送失败：" + up.msg);
+      notes.push("⚠️ 已阻止旧版直接推送：代码修改必须先生成改动预览，再由你点击「接受」后合并到 main；请使用代码模式的项目修改入口。");
     }
   }
   const finalReply = r.text + (notes.length ? "\n\n" + notes.join("\n") : "");
