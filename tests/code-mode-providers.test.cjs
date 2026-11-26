@@ -139,10 +139,11 @@ test('project isolation: code edits use a temporary branch before merging to the
   assert.doesNotMatch(workerSource, /codeUpdateFile\(env, pend\.repo, path, applied\.out\[path\], [\s\S]{0,160}branch = String\(env\.CODE_PUSH_BRANCH/);
 });
 
-test('web workbench: refuses unsafe save and no longer carries a local WebContainer runner', () => {
+test('web workbench: refuses unsafe save and keeps local preview opt-in only', () => {
   assert.match(frontendSource, /没有拿到文件基线 SHA，为避免覆盖线上改动/);
-  assert.doesNotMatch(frontendSource, /WebContainer/);
+  assert.match(frontendSource, /new URLSearchParams\(location\.search\)\.get\("webcontainer"\)==="1"/);
   assert.doesNotMatch(frontendSource, /function initTerm/);
+  assert.ok(!frontendSource.includes('id="wb-run"'));
   assert.ok(!frontendSource.includes("async function run()"));
 });
 
@@ -267,11 +268,13 @@ test('workbench simultaneous start triggers GitHub Actions and renders the full 
   }
 });
 
-test('P0-01: frontend accepts an explicit gateway URL and Actions runner does not boot a local WebContainer', () => {
+test('P0-01: frontend gateway stays explicit and WebContainer preview requires a hidden opt-in trigger', () => {
   assert.ok(frontendSource.includes('new URLSearchParams(location.search).get("gateway")'));
   assert.ok(frontendSource.includes("location.hostname.replace("));
   assert.ok(frontendSource.includes('authFetch(GATEWAY + "/api/code/both"'));
-  assert.doesNotMatch(frontendSource, /WebContainer/);
+  assert.ok(frontendSource.includes('new URLSearchParams(location.search).get("webcontainer")==="1"'));
+  assert.ok(frontendSource.includes("window.openLocalTaskPreview=openLocalTaskPreview"));
+  assert.ok(!frontendSource.includes('id="wb-run"'));
 });
 
 test('P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records', () => {
@@ -884,7 +887,6 @@ test('devbench has one Actions launch button and one expandable unified run log'
   assert.ok(frontendSource.includes('#wb-res{overflow:auto'));
   assert.ok(!frontendSource.includes('点右上角「运行」会在浏览器里启动 WebContainer'));
   assert.ok(!frontendSource.includes('g("wb-run").addEventListener'));
-  assert.ok(!frontendSource.includes("WebContainer"));
   assert.ok(!frontendSource.includes("function initTerm"));
   assert.ok(!frontendSource.includes("async function run() {"));
 });
