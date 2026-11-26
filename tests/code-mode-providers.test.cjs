@@ -363,10 +363,13 @@ test('persistent runner watchdog polls GitHub and persists terminal state withou
   const { Runner, storage } = loadCodeRunnerDO(fetchMock);
   const runner = new Runner({ storage }, env);
   await runner.fetch(new Request('https://runner/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-    request_id: 'both-abc', run_id: 'both-abc', owner_user: 'user-1', repo: 'owner/repo', kind: 'both', dispatching: false, status: 'queued',
+    request_id: 'both-abc', run_id: 'both-abc', owner_user: 'user-1', repo: 'owner/repo', kind: 'both', dispatching: true, started_at: new Date().toISOString(), status: 'queued',
     runs: [{ kind: 'deploy', workflow: 'deploy-project.yml', status: 'queued', conclusion: null }, { kind: 'worker', workflow: 'deploy-worker.yml', status: 'queued', conclusion: null }]
   }) }));
   assert.ok(await storage.getAlarm(), 'watchdog alarm scheduled without a browser request');
+  await runner.alarm();
+  assert.equal(calls.length, 0, 'watchdog must not finalize while the second workflow is still dispatching');
+  await runner.fetch(new Request('https://runner/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dispatching: false }) }));
   await runner.alarm();
   const record = await runner.load();
   assert.equal(record.state, 'success');
