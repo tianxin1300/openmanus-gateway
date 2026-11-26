@@ -932,8 +932,8 @@ function codePendingView(p) {
 const codeBalanceWarn = (a, b) => ["{}", "()", "[]"].filter((p) => { const d = (t) => t.split(p[0]).length - t.split(p[1]).length; return d(a) !== d(b); });
 const codeCut = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n) + "…（共 " + s.length + " 字）" : s; };
 async function codeProject(env, user, proj, req, history, ui) {
-  const branch = String(env.CODE_PUSH_BRANCH || "main"), deadline = Date.now() + 170000, tag = proj.names[0];
-  if (!req) return { ok: false, reply: "想改什么？比如：把顶栏某个按钮改成和旁边的按钮一个样式。（你现在在代码模式里，直接说就行。）" };
+  const branch = "main", deadline = Date.now() + 170000, tag = proj.names[0];
+  if (!req) return { ok: false, reply: "想改什么？请说明功能，或给出文件名 / 路径（例如 studio.js、tests/example.test.js）。（你现在在代码模式里，直接说就行。）" };
   if (!env.KV || !env.CODE_CLAIMS) return { ok: false, reply: "❌ 代码推送需要 CODE_CLAIMS Durable Object 绑定，未启用 KV 模拟锁" };
   const previous = await codePendingLoad(env, user);
   if (codePendingActive(previous)) {
@@ -941,16 +941,28 @@ async function codeProject(env, user, proj, req, history, ui) {
     const discarded = await codePendingDiscard(env, user, previous);
     console.log("[code] auto-discard on new message", JSON.stringify({ user: String(user).slice(0, 40), branch: previous.branch, branch_deleted: discarded.branch_deleted, branch_already_gone: discarded.branch_already_gone, cleared: discarded.cleared }));
   }
-  const bad0 = codePushGuard(env, user, proj.repo, proj.files[0]);
-  if (bad0) return { ok: false, reply: "⚠️ 不能改：" + bad0 };
+  const tree = await codeFileTree(env, proj.repo, branch);
+  if (!tree.ok) return { ok: false, reply: "❌ 读取仓库文件列表失败：" + tree.msg };
+  const allPaths = tree.files.filter((p) => !codePathProtected(p));
+  const mentioned = [...new Set((String(req).match(/[A-Za-z0-9_.-]+(?:\\/[A-Za-z0-9_.-]+)*\\.[A-Za-z0-9_.-]+/g) || []).map((p) => p.replace(/^\\.\\//, "")))];
+  let targets = [];
+  for (const wanted of mentioned) {
+    const matches = allPaths.filter((p) => p === wanted || p.endsWith("/" + wanted) || (!wanted.includes("/") && p.split("/").pop() === wanted));
+    if (matches.length === 1) targets.push(matches[0]);
+    else if (matches.length > 1) return { ok: false, reply: "⚠️ 文件名「" + wanted + "」在仓库里有多个匹配，请提供完整路径：\\n" + matches.slice(0, 12).join("\\n") };
+  }
+  if (!targets.length) targets = proj.files.filter((p) => allPaths.includes(p));
+  targets = [...new Set(targets)].filter((p) => !codePathProtected(p));
+  if (!targets.length) return { ok: false, reply: "❌ 没有定位到可修改文件。请给出仓库内的完整文件路径；受保护文件不能修改。" };
   const files = {}, baseSha = {};
-  for (const p of proj.files) {
+  for (const p of targets) {
+    const bad = codePushGuard(env, user, proj.repo, p);
+    if (bad) return { ok: false, reply: "⚠️ 不能改 " + p + "：" + bad };
     const g = await codeGetFile(env, proj.repo, p, branch);
     if (!g.ok) return { ok: false, reply: "❌ 读 " + proj.repo + " 的 " + p + " 失败：" + g.msg };
     if (g.exists) { files[p] = g.text; baseSha[p] = g.sha || ""; }
   }
-  if (!Object.keys(files).length) return { ok: false, reply: "❌ " + proj.repo + "@" + branch + " 里没找到 " + proj.files.join(" / ") };
-  // 对话记忆：之前的问答带给模型，找片段时也把前两句用户的话算进关键词（回答“蓝色”这种短句也能找回原来那段代码）
+  if (!Object.keys(files).length) return { ok: false, reply: "❌ 在 " + proj.repo + "@main 里没找到目标文件：" + targets.join(" / ") };
   const turns = (Array.isArray(history) ? history : []).filter((m) => m && (m.role === "user" || m.role === "assistant")).map((m) => ({ role: m.role, content: textOf(m.content).replace(/\s+/g, " ").trim().slice(0, 1200) })).filter((m) => m.content);
   while (turns.length && turns[turns.length - 1].role === "user") turns.pop();   // 末尾的用户话就是当前这句（req 里已有）
   const prior = turns.slice(-6), kwText = [req.slice(0, 300), ...prior.filter((m) => m.role === "user").slice(-2).map((m) => m.content.slice(0, 150))].join(" ");
