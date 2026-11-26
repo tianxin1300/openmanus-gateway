@@ -643,6 +643,67 @@ async function codeDeployStart(env, user, body) {
   return { ok: true, ...job, state: "queued", message: "部署已排队：验证通过后构建并部署到 Cloudflare Pages" };
 }
 async function codeDeployStatus(env, user) { return codeWorkflowStatus(env, user, codeVerifyKey(user) + ":deploy", CODE_DEPLOY_WORKFLOW, "deploy", "部署到 Cloudflare Pages"); }
+// 同时启动：一次触发两个 workflow（前端 build / Worker deploy），并行跑，日志与状态分别回传
+async function codeBothStart(env, user, body) {
+  const repo = codeVerifyRepo(env), ref = codeVerifyRef(body && body.ref), requestId = "both-" + Date.now().toString(36) + "-" + rand(6);
+  if (!ref) return { ok: false, msg: "ref 不合法：只允许分支名或 7-64 位 commit SHA" };
+  if (!codeRepoOk(env, repo)) return { ok: false, msg: "部署仓库不在允许名单里" };
+  const now = new Date().toISOString(), runs = [];
+  for (const kind of ["verify", "deploy"]) {
+    const workflow = kind === "deploy" ? CODE_DEPLOY_WORKFLOW : CODE_VERIFY_WORKFLOW;
+    const api = "https://api.github.com/repos/" + repo + "/actions/workflows/" + workflow + "/dispatches";
+    const dispatched = await codeGhApi(env, api, { method: "POST", body: JSON.stringify({ ref, inputs: { request_id: requestId, ref } }), headers: { "Content-Type": "application/json" } });
+    if (!dispatched.ok) return { ok: false, msg: "无法启动" + (kind === "deploy" ? "Worker deploy" : "前端 build") + "：" + dispatched.msg, status: dispatched.status };
+    runs.push({ kind, workflow, run_id: null, run_url: "", status: "queued", conclusion: null, head_sha: "", logs: [], error_lines: [], failed_step: "" });
+  }
+  const job = { request_id: requestId, repo, ref, kind: "both", workflow: CODE_VERIFY_WORKFLOW, started_at: now, updated_at: now, status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions", preview_url: "https://zhineng-et5.pages.dev", error_lines: [], logs: [], runs };
+  if (env.KV) await env.KV.put(codeVerifyKey(user) + ":both", JSON.stringify(job), { expirationTtl: 86400 });
+  await codePersistRun(env, user, job);
+  return { ok: true, ...job, state: "queued", message: "已触发 Actions：前端 build 与 Worker deploy 并行跑" };
+}
+async function codeBothStatus(env, user) {
+  const key = codeVerifyKey(user) + ":both";
+  const old = env.KV ? await env.KV.get(key, "json") : null;
+  if (!old) return { ok: false, msg: "没有找到并行任务，请先点击「同时启动」" };
+  const repo = old.repo || codeVerifyRepo(env), base = "https://api.github.com/repos/" + repo;
+  const runs = Array.isArray(old.runs) ? old.runs : [];
+  for (const r of runs) {
+    if (!r.run_id) {
+      const listed = await codeGhApi(env, base + "/actions/workflows/" + r.workflow + "/runs?event=workflow_dispatch&per_page=30");
+      if (listed.ok) {
+        const marker = (r.kind === "deploy" ? "deploy-project · " : "verify-project · ") + old.request_id;
+        const run = (listed.data && listed.data.workflow_runs || []).find((x) => x.name === marker);
+        if (run) { r.run_id = String(run.id); r.run_url = run.html_url || ""; }
+      }
+    }
+    if (!r.run_id) { r.status = r.status || "queued"; continue; }
+    const got = await codeGhApi(env, base + "/actions/runs/" + encodeURIComponent(String(r.run_id)));
+    if (got.ok && got.data) { r.status = got.data.status || r.status; r.conclusion = got.data.conclusion || null; r.run_url = got.data.html_url || r.run_url; r.head_sha = got.data.head_sha || r.head_sha; }
+    if (r.conclusion && r.conclusion !== "success") {
+      const jobs = await codeGhApi(env, base + "/actions/runs/" + encodeURIComponent(String(r.run_id)) + "/jobs?per_page=20");
+      const all = jobs.data && jobs.data.jobs || [], failed = all.find((x) => x.conclusion === "failure") || all[0];
+      if (failed) {
+        const log = await codeGhApi(env, base + "/actions/jobs/" + encodeURIComponent(String(failed.id)) + "/logs", { headers: { Accept: "text/plain" } });
+        r.error_lines = codeVerifyErrorLines(log.text || log.msg || "任务失败，但 GitHub 没有返回日志");
+        r.failed_step = (failed.steps || []).find((x) => x.conclusion === "failure")?.name || (r.kind === "deploy" ? "Worker deploy" : "前端 build");
+      }
+    }
+    r.logs = Array.isArray(r.error_lines) ? r.error_lines : [];
+  }
+  const failed = runs.find((r) => r.conclusion && r.conclusion !== "success");
+  const running = runs.some((r) => !r.conclusion);
+  const state = failed ? "failure" : running ? "running" : "success";
+  old.runs = runs; old.state = state; old.status = state === "running" ? "in_progress" : "completed";
+  old.conclusion = state === "success" ? "success" : state === "failure" ? "failure" : null;
+  old.failed_step = failed ? (failed.failed_step || "") : "";
+  old.error_lines = failed ? (failed.error_lines || []) : [];
+  old.logs = old.error_lines;
+  old.updated_at = new Date().toISOString();
+  old.preview_url = old.preview_url || "https://zhineng-et5.pages.dev";
+  if (env.KV) await env.KV.put(key, JSON.stringify(old), { expirationTtl: 86400 });
+  await codePersistRun(env, user, old);
+  return { ok: true, ...old, actions_url: old.run_url || ("https://github.com/" + repo + "/actions") };
+}
 
 async function codeVerifyStart(env, user, body) {
   const repo = codeVerifyRepo(env), ref = codeVerifyRef(body && body.ref), requestId = "verify-" + Date.now().toString(36) + "-" + rand(6);
@@ -8821,6 +8882,21 @@ async function handle(request, env, ctx) {
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
       const r = await codePendingDiscard(env, user);
       return json(r, r.ok ? 200 : (r.status || 502));
+    }
+
+    // ---- 同时启动：一次触发 Actions，前端 build 与 Worker deploy 并行跑 ----
+    if (path === "/api/code/both" && request.method === "POST") {
+      const b = await request.json().catch(() => ({}));
+      const user = await userFromReq(request, env, url, String(b.token || ""));
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeBothStart(env, user, { ref: b.ref });
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (path === "/api/code/both" && request.method === "GET") {
+      const user = await userFromReq(request, env, url, "");
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeBothStatus(env, user);
+      return json(r, r.ok ? 200 : 400);
     }
 
     // ---- v105：代码助手的预览面板接口（全部要登录）----
