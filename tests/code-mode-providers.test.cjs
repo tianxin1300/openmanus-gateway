@@ -1061,7 +1061,9 @@ test('terminal is a standalone command echo panel and Pages/Worker logs stay sep
   assert.match(frontendSource, /<section id="wb-terminal" aria-label="终端">[\s\S]*?<pre id="wb-terminal-output"/);
   assert.match(frontendSource, /<form id="wb-terminal-command-form"[\s\S]*?<input id="wb-terminal-command"/);
   assert.match(frontendSource, /<div id="wb-runlogs" aria-label="Pages 与 Worker 运行日志" hidden>[\s\S]*?id="wb-front-log"[\s\S]*?id="wb-back-log"/);
-  assert.doesNotMatch(frontendSource, /id="wb-terminal-input"|data-terminal-key|initInteractiveTerminal|spawn\("jsh"/);
+  assert.match(frontendSource, /data-terminal-key="ctrl-c"/);
+  assert.match(frontendSource, /data-terminal-key="escape"/);
+  assert.doesNotMatch(frontendSource, /id="wb-terminal-input"|initInteractiveTerminal|spawn\("jsh"/);
   assert.doesNotMatch(frontendSource, /xterm\.js|xterm\.css|WebContainer|WC_MODULES|localWc/);
 });
 
@@ -1479,4 +1481,19 @@ test('ACCEPTANCE.md: ten code acceptance items each map to an executable npm tes
   assert.match(doc, /测试失败、被跳过、未执行/);
   assert.doesNotMatch(doc, /IPAD-0[1-4]|iPad|iPadOS|录屏|截图|线上验收记录/);
   assert.match(doc, /最终交付结论/);
+});
+
+
+test('iOS Safari voice input uses MediaRecorder and authenticated server transcription, not Web Speech Recognition', () => {
+  assert.doesNotMatch(frontendSource, /SpeechRecognition|webkitSpeechRecognition/);
+  assert.match(frontendSource, /navigator\.mediaDevices\.getUserMedia/);
+  assert.match(frontendSource, /MediaRecorder/);
+  assert.match(frontendSource, /\/api\/transcribe/);
+  assert.match(frontendSource, /track\.stop\(\)/);
+  assert.match(workerSource, /path === "\/api\/transcribe"/);
+  assert.match(workerSource, /userFromReq\(request, env, url, ""\)/);
+  assert.match(workerSource, /whisper-large-v3-turbo/);
+  assert.match(workerSource, /audio\/transcriptions/);
+  assert.match(workerSource, /20 \* 1024 \* 1024/);
+  assert.match(workerSource, /GROQ_KEYS \|\| env\.GROQ_API_KEY/);
 });
