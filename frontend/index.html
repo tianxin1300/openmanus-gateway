@@ -5761,13 +5761,16 @@ const bestPlace = (list, q) => {
 #wb-local-error[hidden]{display:none!important}
 #wb-local-error-summary{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-/* 本地预览独立工作区：临时收起编辑器与终端，让右侧预览独占内容区 */
-#wb.wb-local-preview-mode #wb-main{display:flex!important}
+/* 本地预览独立工作区：隐藏编辑器、终端和状态链，预览 iframe 独占内容区 */
+#wb.wb-local-preview-mode #wb-chain,
 #wb.wb-local-preview-mode #wb-left,
 #wb.wb-local-preview-mode #wb-term{display:none!important}
-#wb.wb-local-preview-mode #wb-right{display:flex!important;flex:1 1 100%!important;width:100%!important;max-width:none!important;min-width:0!important}
-#wb.wb-local-preview-mode #wb-right .wb-rhead{display:none!important}
-#wb.wb-local-preview-mode #wb-runframe.on{display:block!important;flex:1 1 auto!important;min-height:0!important}
+#wb.wb-local-preview-mode #wb-main{display:flex!important;flex:1 1 0!important;min-height:0!important}
+#wb.wb-local-preview-mode #wb-right{display:flex!important;flex:1 1 100%!important;width:100%!important;height:100%!important;max-width:none!important;min-width:0!important;min-height:0!important}
+#wb.wb-local-preview-mode #wb-right .wb-rhead,
+#wb.wb-local-preview-mode #wb-preview,
+#wb.wb-local-preview-mode #wb-res{display:none!important}
+#wb.wb-local-preview-mode #wb-runframe{display:block!important;flex:1 1 auto!important;width:100%!important;min-height:0!important;border:0!important}
 #wb.wb-local-preview-mode #wb-local-error{flex:0 0 auto!important}
 </style>
 <!-- 开发台：编辑器、实时预览/运行结果、统一运行日志；代码通过 GitHub Actions 执行 -->
@@ -6277,7 +6280,7 @@ async function runLocalTaskPreview(fileOverrides) {
       say("本地预览启动失败："+(error&&error.message||error),true);
       const alert=g("wb-local-error"), summary=g("wb-local-error-summary");
       if(alert&&summary){summary.textContent="本地预览启动失败："+String(error&&error.message||error);alert.hidden=false;}
-      showTab("prev");
+      showTab("run");
       throw error;
     }finally{localWcRunning=false;localWcPromise=null;}
   })();
@@ -6603,7 +6606,7 @@ async function openLocalTaskPreview(options) {
   await openWb();
   if(!ed)throw new Error("编辑器尚未就绪，无法准备本地预览");
   g("wb").classList.add("wb-local-preview-mode");
-  const button=g("wb-local-preview");if(button)button.textContent="返回编辑";
+  const button=g("wb-local-preview");if(button)button.textContent="返回开发台";
   return runLocalTaskPreview(options&&options.files);
 }
 window.openLocalTaskPreview=openLocalTaskPreview;
