@@ -6226,8 +6226,7 @@ async function ensureLocalWebContainer() {
   localLog("启动浏览器本地容器 …");
   localWc=await withTimeout(localWcModule.WebContainer.boot(coep==="credentialless"?{coep:"credentialless"}:{}),60000,"WebContainer boot");
   localWc.on("server-ready",(port,url)=>{
-    clearTimeout(localStartupGuard);localStartupGuard=null;
-    const frame=g("wb-runframe");if(frame&&frame.dataset.localFallback!=="1"){frame.dataset.live="1";frame.dataset.localReady="0";frame.dataset.localFallback="0";frame.onload=()=>{if(frame.dataset.localFallback==="1")return;clearTimeout(localPreviewGuard);localPreviewGuard=setTimeout(()=>{if(frame.dataset.localReady!=="1"&&frame.dataset.localFallback!=="1")fallbackToPagesPreview(frame);},5000);};frame.src=url;showTab("run");clearTimeout(localPreviewGuard);localPreviewGuard=setTimeout(()=>{if(frame.dataset.localReady!=="1"&&frame.dataset.localFallback!=="1")fallbackToPagesPreview(frame);},15000);}
+    const frame=g("wb-runframe");if(frame&&frame.dataset.localFallback!=="1"){frame.dataset.live="1";frame.dataset.localReady="0";frame.dataset.localFallback="0";const wb=g("wb");if(wb)wb.classList.add("wb-local-preview-mode");const button=g("wb-local-preview");if(button)button.textContent="返回开发台";frame.onload=()=>{if(frame.dataset.localFallback==="1")return;clearTimeout(localPreviewGuard);localPreviewGuard=setTimeout(()=>{if(frame.dataset.localReady!=="1"&&frame.dataset.localFallback!=="1")fallbackToPagesPreview(frame);},5000);};frame.src=url;showTab("run");clearTimeout(localPreviewGuard);localPreviewGuard=setTimeout(()=>{if(frame.dataset.localReady!=="1"&&frame.dataset.localFallback!=="1")fallbackToPagesPreview(frame);},15000);}
     localLog("本地预览服务已就绪：端口 "+port);
     if(localWcReady){localWcReady(url);localWcReady=null;}
   });
@@ -6279,12 +6278,12 @@ async function runLocalTaskPreview(fileOverrides) {
       const serverResult=await Promise.race([
         ready.then(url=>({url})),
         localWcProcess.exit.then(code=>({exitCode:code})),
-        new Promise(resolve=>{timeoutId=setTimeout(()=>resolve({timeout:true}),60000);})
+        new Promise(resolve=>{timeoutId=setTimeout(()=>resolve({timeout:true}),30000);})
       ]);
       clearTimeout(timeoutId);
       localWcReady=null;
       if(!serverResult.url){
-        if(serverResult.timeout)throw new Error("npm run dev 失败了：60 秒内没有监听端口");
+        if(serverResult.timeout)throw new Error("npm run dev 失败了：30 秒内没有监听端口");
         throw new Error("npm run dev 失败了：进程退出，退出码 "+serverResult.exitCode);
       }
       if(g("wb-runframe").dataset.localFallback!=="1")say("本地预览服务已启动");
@@ -6301,10 +6300,10 @@ async function runLocalTaskPreview(fileOverrides) {
   })();
   return localWcPromise;
 }
-let localPreviewGuard=null,localStartupGuard=null;
+let localPreviewGuard=null;
 function fallbackToPagesPreview(frame){
   if(frame&&frame.dataset.localFallback==="1")return;
-  clearTimeout(localPreviewGuard);clearTimeout(localStartupGuard);localStartupGuard=null;
+  clearTimeout(localPreviewGuard);
   if(frame){frame.dataset.localFallback="1";frame.dataset.live="0";frame.dataset.localReady="0";frame.onload=null;frame.removeAttribute("src");frame.style.display="none";}
   const wb=g("wb");if(wb){wb.classList.remove("wb-local-preview-mode");wb.classList.add("wb-local-preview-fallback");}
   const button=g("wb-local-preview");if(button)button.textContent="本地预览";
@@ -6638,8 +6637,6 @@ async function openLocalTaskPreview(options) {
   const previewFrame=g("wb-runframe");
   if(previewFrame&&previewFrame.dataset.localFallback==="1")return;
   if(!ed)throw new Error("编辑器尚未就绪，无法准备本地预览");
-  g("wb").classList.add("wb-local-preview-mode");
-  const button=g("wb-local-preview");if(button)button.textContent="返回开发台";
   return runLocalTaskPreview(options&&options.files);
 }
 window.openLocalTaskPreview=openLocalTaskPreview;
@@ -6659,10 +6656,9 @@ g("wb-local-preview").addEventListener("click", async () => {
   button.disabled = true;
   const alert = g("wb-local-error");
   if (alert) alert.hidden = true;
-  say("");clearTimeout(localStartupGuard);
+  say("");
   const startupFrame=g("wb-runframe");
   if(startupFrame){startupFrame.dataset.localFallback="0";startupFrame.dataset.localReady="0";}
-  localStartupGuard=setTimeout(()=>fallbackToPagesPreview(g("wb-runframe")),30000);
   try { await openLocalTaskPreview(); }
   catch (_) {
     const frame=g("wb-runframe");
