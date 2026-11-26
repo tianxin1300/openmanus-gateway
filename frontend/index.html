@@ -5774,10 +5774,15 @@ const bestPlace = (list, q) => {
 #wb.wb-local-preview-mode #wb-res{display:none!important}
 #wb.wb-local-preview-mode #wb-runframe{position:absolute!important;inset:0!important;display:block!important;flex:none!important;width:100%!important;height:100%!important;min-height:0!important;max-height:none!important;border:0!important}
 #wb.wb-local-preview-mode #wb-local-error{position:absolute!important;z-index:2!important;top:0!important;left:0!important;right:0!important;flex:none!important;max-width:100%!important;overflow:hidden!important}
-/* 编辑器视图不显示旧的实时预览/运行结果白框；点“本地预览”后才进入独立全屏预览工作区 */
+/* 编辑器视图不显示旧预览；本地预览失败时彻底退出预览，只保留编辑器 */
 #wb:not(.wb-local-preview-mode) #wb-right{display:none!important}
 #wb:not(.wb-local-preview-mode) #wb-left{flex:1 1 100%!important;width:100%!important;border-right:0!important;border-bottom:0!important}
 #wb.wb-local-preview-mode #wb-right{display:flex!important}
+#wb.wb-local-preview-fallback #wb-chain,
+#wb.wb-local-preview-fallback #wb-right,
+#wb.wb-local-preview-fallback #wb-term{display:none!important}
+#wb.wb-local-preview-fallback #wb-main{display:flex!important;flex:1 1 0!important;height:0!important;min-height:0!important;overflow:hidden!important}
+#wb.wb-local-preview-fallback #wb-left{display:block!important;flex:1 1 100%!important;width:100%!important;min-width:0!important;min-height:0!important;border:0!important}
 
 </style>
 <!-- 开发台：全宽编辑器与统一运行日志；本地预览在独立全屏工作区显示 -->
@@ -6303,15 +6308,14 @@ async function runLocalTaskPreview(fileOverrides) {
   return localWcPromise;
 }
 let localPreviewGuard=null,localStartupGuard=null;
-const DEPLOYED_PAGES_PREVIEW="https://zhineng-et5.pages.dev";
 function fallbackToPagesPreview(frame){
-  if(!frame||frame.dataset.localFallback==="1")return;
+  if(frame&&frame.dataset.localFallback==="1")return;
   clearTimeout(localPreviewGuard);clearTimeout(localStartupGuard);localStartupGuard=null;
-  frame.dataset.localFallback="1";frame.dataset.live="0";frame.dataset.localReady="0";
-  const wb=g("wb");if(wb)wb.classList.add("wb-local-preview-mode");
-  const button=g("wb-local-preview");if(button)button.textContent="返回开发台";
+  if(frame){frame.dataset.localFallback="1";frame.dataset.live="0";frame.dataset.localReady="0";frame.onload=null;frame.removeAttribute("src");frame.style.display="none";}
+  const wb=g("wb");if(wb){wb.classList.remove("wb-local-preview-mode");wb.classList.add("wb-local-preview-fallback");}
+  const button=g("wb-local-preview");if(button)button.textContent="本地预览";
   const alert=g("wb-local-error");if(alert)alert.hidden=true;
-  say("");frame.onload=null;frame.src=DEPLOYED_PAGES_PREVIEW;showTab("run");
+  say("");
 }
 window.addEventListener("message",event=>{
   const frame=g("wb-runframe");
@@ -6654,6 +6658,8 @@ g("wb-local-preview").addEventListener("click", async () => {
     button.textContent = "本地预览";
     return;
   }
+  wb.classList.remove("wb-local-preview-fallback");
+  const previousFrame=g("wb-runframe");if(previousFrame){previousFrame.style.display="";previousFrame.dataset.localFallback="0";}
   button.disabled = true;
   const alert = g("wb-local-error");
   if (alert) alert.hidden = true;
