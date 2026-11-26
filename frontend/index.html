@@ -5774,15 +5774,9 @@ const bestPlace = (list, q) => {
 #wb.wb-local-preview-mode #wb-res{display:none!important}
 #wb.wb-local-preview-mode #wb-runframe{position:absolute!important;inset:0!important;display:block!important;flex:none!important;width:100%!important;height:100%!important;min-height:0!important;max-height:none!important;border:0!important}
 #wb.wb-local-preview-mode #wb-local-error{position:absolute!important;z-index:2!important;top:0!important;left:0!important;right:0!important;flex:none!important;max-width:100%!important;overflow:hidden!important}
-/* 编辑器视图不显示旧预览；本地预览失败时彻底退出预览，只保留编辑器 */
-#wb:not(.wb-local-preview-mode) #wb-right{display:none!important}
-#wb:not(.wb-local-preview-mode) #wb-left{flex:1 1 100%!important;width:100%!important;border-right:0!important;border-bottom:0!important}
+/* 默认恢复旧版：编辑器、实时预览、运行结果和运行日志同时可见。
+   只有主动进入 WebContainer 本地预览时，才切换为独立全屏预览。 */
 #wb.wb-local-preview-mode #wb-right{display:flex!important}
-#wb.wb-local-preview-fallback #wb-chain,
-#wb.wb-local-preview-fallback #wb-right,
-#wb.wb-local-preview-fallback #wb-term{display:none!important}
-#wb.wb-local-preview-fallback #wb-main{display:flex!important;flex:1 1 0!important;height:0!important;min-height:0!important;overflow:hidden!important}
-#wb.wb-local-preview-fallback #wb-left{display:block!important;flex:1 1 100%!important;width:100%!important;min-width:0!important;min-height:0!important;border:0!important}
 
 </style>
 <!-- 开发台：全宽编辑器与统一运行日志；本地预览在独立全屏工作区显示 -->
