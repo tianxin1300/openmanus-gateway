@@ -688,11 +688,11 @@ async function codeBothStart(env, user, body) {
     }
     runs.push({ kind, workflow, run_id: null, run_url: "", status: "queued", conclusion: null, head_sha: "", logs: [], error_lines: [], failed_step: "" });
     // 先落盘已成功派发的任务，避免 Worker 第二次 dispatch 失败时丢失 Pages 任务句柄。
-    const partial = { request_id: requestId, repo, ref, kind: "both", workflow: CODE_VERIFY_WORKFLOW, started_at: now, updated_at: now, status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions", preview_url: "https://zhineng-et5.pages.dev", error_lines: [], logs: [], runs: [...runs] };
+    const partial = { request_id: requestId, repo, ref, kind: "both", workflow: CODE_VERIFY_WORKFLOW, dispatching: true, started_at: now, updated_at: now, status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions", preview_url: "https://zhineng-et5.pages.dev", error_lines: [], logs: [], runs: [...runs] };
     if (env.KV) await env.KV.put(key, JSON.stringify(partial), { expirationTtl: 86400 });
     await codePersistRun(env, user, partial);
   }
-  const job = { request_id: requestId, repo, ref, kind: "both", workflow: CODE_VERIFY_WORKFLOW, started_at: now, updated_at: now, status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions", preview_url: "https://zhineng-et5.pages.dev", error_lines: [], logs: [], runs };
+  const job = { request_id: requestId, repo, ref, kind: "both", workflow: CODE_VERIFY_WORKFLOW, dispatching: false, started_at: now, updated_at: now, status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions", preview_url: "https://zhineng-et5.pages.dev", error_lines: [], logs: [], runs };
   if (env.KV) await env.KV.put(key, JSON.stringify(job), { expirationTtl: 86400 });
   await codePersistRun(env, user, job);
   return { ok: true, ...job, state: "queued", message: "已触发 Actions：前端 build 与 Worker deploy 并行跑" };
@@ -9424,6 +9424,7 @@ export class CodeRunnerDO {
   async alarm() {
     const record = await this.load();
     if (!record || record.kind !== "both" || !record.owner_user || !record.repo || !Array.isArray(record.runs)) return;
+    if (record.dispatching) { await this.scheduleWatch(); return; }
     const token = this.env.GH_PAT;
     if (!token) {
       record.watch_error = "GH_PAT 未配置，后台状态监控无法查询 GitHub";
@@ -9538,7 +9539,7 @@ export class CodeRunnerDO {
     if (action === "update") {
       const current = { ...(await this.load() || {}), ...body, updated_at: new Date().toISOString() };
       await this.storage.put("runner", current);
-      if (current.kind === "both" && current.state !== "success" && current.state !== "failure") await this.scheduleWatch();
+      if (current.kind === "both" && current.state !== "success" && current.state !== "failure" && !current.dispatching) await this.scheduleWatch();
       return this.response({ ok: true, runner: current });
     }
     if (action === "clear") {
