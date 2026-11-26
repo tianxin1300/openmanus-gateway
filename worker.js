@@ -560,6 +560,7 @@ async function codeRollback(env, user, body) {
   return { ok: true, ...rec, reply: "已回滚到 " + item.previous_sha.slice(0, 12) };
 }
 const CODE_DEPLOY_WORKFLOW = "deploy-project.yml";
+const CODE_WORKER_DEPLOY_WORKFLOW = "deploy-worker.yml";
 const codeRunLogKey = (runId) => "log:run:" + String(runId || "").replace(/[^A-Za-z0-9._:-]/g, "-").slice(0, 180);
 const codeRunIndexKey = (user) => "code:runs:" + String(user || "").slice(0, 160);
 function codeRunnerNamespace(env) { return env.CODE_RUNNER || env.RUNNER || null; }
@@ -607,7 +608,7 @@ async function codeWorkflowStatus(env, user, keyName, workflow, kind, message) {
   if (!old.run_id) {
     const listed = await codeGhApi(env, base + "/actions/workflows/" + workflow + "/runs?event=workflow_dispatch&per_page=30");
     if (listed.ok) {
-      const marker = (kind === "deploy" ? "deploy-project · " : "verify-project · ") + old.request_id;
+      const marker = (kind === "worker" ? "deploy-worker · " : kind === "deploy" ? "deploy-project · " : "verify-project · ") + old.request_id;
       const run = (listed.data && listed.data.workflow_runs || []).find((x) => x.name === marker);
       if (run) { old.run_id = String(run.id); old.run_url = run.html_url || ""; }
     }
@@ -649,11 +650,11 @@ async function codeBothStart(env, user, body) {
   if (!ref) return { ok: false, msg: "ref 不合法：只允许分支名或 7-64 位 commit SHA" };
   if (!codeRepoOk(env, repo)) return { ok: false, msg: "部署仓库不在允许名单里" };
   const now = new Date().toISOString(), runs = [];
-  for (const kind of ["verify", "deploy"]) {
-    const workflow = kind === "deploy" ? CODE_DEPLOY_WORKFLOW : CODE_VERIFY_WORKFLOW;
+  for (const kind of ["deploy", "worker"]) {
+    const workflow = kind === "worker" ? CODE_WORKER_DEPLOY_WORKFLOW : CODE_DEPLOY_WORKFLOW;
     const api = "https://api.github.com/repos/" + repo + "/actions/workflows/" + workflow + "/dispatches";
     const dispatched = await codeGhApi(env, api, { method: "POST", body: JSON.stringify({ ref, inputs: { request_id: requestId, ref } }), headers: { "Content-Type": "application/json" } });
-    if (!dispatched.ok) return { ok: false, msg: "无法启动" + (kind === "deploy" ? "Worker deploy" : "前端 build") + "：" + dispatched.msg, status: dispatched.status };
+    if (!dispatched.ok) return { ok: false, msg: "无法启动" + (kind === "worker" ? "Worker deploy" : "Pages deploy") + "：" + dispatched.msg, status: dispatched.status };
     runs.push({ kind, workflow, run_id: null, run_url: "", status: "queued", conclusion: null, head_sha: "", logs: [], error_lines: [], failed_step: "" });
   }
   const job = { request_id: requestId, repo, ref, kind: "both", workflow: CODE_VERIFY_WORKFLOW, started_at: now, updated_at: now, status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions", preview_url: "https://zhineng-et5.pages.dev", error_lines: [], logs: [], runs };
@@ -671,7 +672,7 @@ async function codeBothStatus(env, user) {
     if (!r.run_id) {
       const listed = await codeGhApi(env, base + "/actions/workflows/" + r.workflow + "/runs?event=workflow_dispatch&per_page=30");
       if (listed.ok) {
-        const marker = (r.kind === "deploy" ? "deploy-project · " : "verify-project · ") + old.request_id;
+        const marker = (r.kind === "worker" ? "deploy-worker · " : "deploy-project · ") + old.request_id;
         const run = (listed.data && listed.data.workflow_runs || []).find((x) => x.name === marker);
         if (run) { r.run_id = String(run.id); r.run_url = run.html_url || ""; }
       }
@@ -685,7 +686,7 @@ async function codeBothStatus(env, user) {
       if (failed) {
         const log = await codeGhApi(env, base + "/actions/jobs/" + encodeURIComponent(String(failed.id)) + "/logs", { headers: { Accept: "text/plain" } });
         r.error_lines = codeVerifyErrorLines(log.text || log.msg || "任务失败，但 GitHub 没有返回日志");
-        r.failed_step = (failed.steps || []).find((x) => x.conclusion === "failure")?.name || (r.kind === "deploy" ? "Worker deploy" : "前端 build");
+        r.failed_step = (failed.steps || []).find((x) => x.conclusion === "failure")?.name || (r.kind === "worker" ? "Worker deploy" : "Pages deploy");
       }
     }
     r.logs = Array.isArray(r.error_lines) ? r.error_lines : [];
