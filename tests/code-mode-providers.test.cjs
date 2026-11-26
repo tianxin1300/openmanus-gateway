@@ -202,7 +202,7 @@ test('workbench simultaneous start triggers GitHub Actions and renders the full 
   assert.match(frontendSource, /async function runBoth\(\)/);
   assert.match(frontendSource, /正在触发 GitHub Actions：前端 build \+ Worker deploy 并行跑/);
   assert.match(frontendSource, /authFetch\(GATEWAY \+ "\/api\/code\/both", \{ method: "POST"/);
-  assert.match(frontendSource, /GitHub 返回前端 build 日志/);
+  assert.match(frontendSource, /GitHub 返回 Pages 部署日志/);
   assert.match(frontendSource, /GitHub 返回 Worker deploy 日志/);
   assert.match(frontendSource, /j\.state === "success"/);
   assert.match(frontendSource, /j\.state === "failure"/);
