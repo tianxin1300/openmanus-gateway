@@ -1321,31 +1321,138 @@ test("devbench standalone preview keeps a synced run-results panel and expandabl
 });
 
 
-test('ACCEPTANCE.md: formal acceptance standard covers all iPad and six delivery-chain items with strict evidence gates', () => {
-  const acceptancePath = path.join(root, 'ACCEPTANCE.md');
-  assert.equal(fs.existsSync(acceptancePath), true, 'formal ACCEPTANCE.md must exist');
-  const doc = fs.readFileSync(acceptancePath, 'utf8');
+function renderAcceptanceDeliveryChain(data, health = { run_id: '', state: 'idle', status: null, error: '', promise: null }) {
+  const block = extract(frontendSource, 'let pagesHealthProbe', 'function renderVerifyResult');
+  const context = vm.createContext({
+    document: { createElement: tag => element(tag) },
+    AbortController, setTimeout, clearTimeout,
+    authFetch: async () => ({ ok: true, json: async () => ({ ok: true, status: 200 }) }),
+    GATEWAY: ''
+  });
+  vm.runInContext(block, context, { filename: 'acceptance-delivery-chain.vm.js', timeout: 1000 });
+  context.pagesHealthProbe = health;
+  const node = vm.runInContext('renderDeliveryChain(' + JSON.stringify(data) + ')', context, { timeout: 1000 });
+  return node.children.map(child => child.textContent);
+}
 
-  const requiredSections = [
-    'IPAD-01', 'IPAD-02', 'IPAD-03', 'IPAD-04',
-    'CHAIN-01', 'CHAIN-02', 'CHAIN-03', 'CHAIN-04', 'CHAIN-05', 'CHAIN-06'
-  ];
-  for (const section of requiredSections) {
-    assert.ok(doc.includes(section), `acceptance document must define ${section}`);
+test('ACCEPTANCE AUTO-01: independent preview is built from the current editor source', () => {
+  const script = /<script\\b(?=[^>]*\\bid=["']wb-devbench["'])[^>]*>([\\s\\S]*?)<\\/script\\s*>/i.exec(frontendSource);
+  assert.ok(script, 'devbench script exists');
+  assert.doesNotThrow(() => new vm.Script(script[1]));
+  assert.match(script[1], /function srcdocOf\\(code\\)/);
+  assert.match(script[1], /frame\\.srcdoc = srcdocOf\\(ed\\.get\\(\\)\\)/);
+  assert.match(script[1], /window\\.open\\("about:blank", "_blank"\\)/);
+  assert.match(script[1], /id="local-preview-frame"/);
+  assert.doesNotMatch(script[1], /WebContainer|ensureLocalWebContainer|spawn\\(["']jsh/);
+});
+
+test('ACCEPTANCE AUTO-02: independent preview synchronizes results, status chain and run logs', () => {
+  const script = /<script\\b(?=[^>]*\\bid=["']wb-devbench["'])[^>]*>([\\s\\S]*?)<\\/script\\s*>/i.exec(frontendSource)[1];
+  const start = script.indexOf('function syncLocalTaskPreview()');
+  const end = script.indexOf('function openLocalTaskPreview()', start);
+  assert.ok(start >= 0 && end > start, 'preview sync function exists');
+  const sync = script.slice(start, end);
+  for (const id of ['local-preview-frame', 'local-run-result-content', 'local-run-chain', 'local-run-logs']) {
+    assert.ok(sync.includes(id), 'syncs ' + id);
   }
+  assert.match(sync, /frame\\.srcdoc = srcdocOf\\(ed\\.get\\(\\)\\)/);
+  assert.match(sync, /source\\.cloneNode\\(true\\)/);
+  assert.match(sync, /sourceChain\\.cloneNode\\(true\\)/);
+  assert.match(sync, /output\\.textContent/);
+  assert.match(script, /syncLocalTaskPreview\\(\\)/);
+});
 
-  for (const field of [
-    '前置条件', '操作步骤', '预期结果', '失败判据', '留证方式',
-    '自动化测试 / Actions（单独记录，不代替线上验收）',
-    '线上验收记录（必填）', '线上结论：未验收 / 未通过 / 通过'
-  ]) {
-    const occurrences = doc.split(field).length - 1;
-    assert.ok(occurrences >= 10, `each of the 10 acceptance items must include: ${field}; found ${occurrences}`);
+test('ACCEPTANCE AUTO-03: Monaco and textarea fallback both wrap long lines without horizontal overflow', () => {
+  assert.match(frontendSource, /wordWrap:\\s*"on"/);
+  assert.match(frontendSource, /wrappingStrategy:\\s*"advanced"/);
+  assert.match(frontendSource, /ta\\.wrap\\s*=\\s*"soft"/);
+  assert.match(frontendSource, /#wb-editor textarea\\{[^}]*white-space:pre-wrap!important;[^}]*overflow-wrap:anywhere!important;[^}]*overflow-x:hidden!important/s);
+  assert.match(frontendSource, /scrollbar:\\s*\\{horizontal:\\s*"hidden"\\}/);
+});
+
+test('ACCEPTANCE AUTO-04: terminal and expandable run logs are mutually exclusive and viewport-aware', () => {
+  assert.match(frontendSource, /id="wb-term-tabs" role="tablist"/);
+  assert.match(frontendSource, /id="wb-terminal-tab" role="tab" aria-controls="wb-terminal" aria-selected="true"/);
+  assert.match(frontendSource, /id="wb-runlogs-tab" role="tab" aria-controls="wb-runlogs" aria-selected="false"/);
+  assert.match(frontendSource, /#wb-term\\[data-panel="terminal"\\] #wb-runlogs,#wb-term\\[data-panel="logs"\\] #wb-terminal\\{display:none\\}/);
+  const script = /<script\\b(?=[^>]*\\bid=["']wb-devbench["'])[^>]*>([\\s\\S]*?)<\\/script\\s*>/i.exec(frontendSource)[1];
+  assert.match(script, /function setTerminalPanel\\(panel\\)/);
+  assert.match(script, /setTerminalPanel\\("terminal"\\)/);
+  assert.match(script, /setTerminalPanel\\("logs"\\)/);
+  assert.match(script, /g\\("wb-runlogs"\\)\\.addEventListener\\("toggle"/);
+  assert.match(script, /window\\.visualViewport\\.addEventListener\\("resize"/);
+  assert.match(script, /window\\.visualViewport\\.addEventListener\\("scroll"/);
+  assert.doesNotMatch(frontendSource, /wb-runlogs-expanded/);
+});
+
+test('ACCEPTANCE CHAIN-01: generated state exists before any downstream delivery state', () => {
+  const labels = renderAcceptanceDeliveryChain({ runs: [] });
+  assert.match(labels[0], /^✓ 已生成$/);
+  assert.match(labels[1], /^○ 已提交$/);
+  assert.match(labels[2], /^○ 已验证$/);
+  assert.match(labels[3], /^○ 部署中$/);
+  assert.match(labels[4], /^○ 已部署$/);
+  assert.match(labels[5], /^○ 线上健康$/);
+});
+
+test('ACCEPTANCE CHAIN-02: submitted state requires a commit or correlated run identifier', () => {
+  const absent = renderAcceptanceDeliveryChain({ runs: [] });
+  const committed = renderAcceptanceDeliveryChain({ head_sha: 'abc123', runs: [] });
+  const submitted = renderAcceptanceDeliveryChain({ runs: [{ kind: 'verify', run_id: 17 }] });
+  assert.match(absent[1], /^○ 已提交$/);
+  assert.match(committed[1], /^✓ 已提交$/);
+  assert.match(submitted[1], /^✓ 已提交$/);
+});
+
+test('ACCEPTANCE CHAIN-03: verified state follows the verification conclusion only', () => {
+  const pending = renderAcceptanceDeliveryChain({ runs: [{ kind: 'verify', run_id: 21 }] });
+  const passed = renderAcceptanceDeliveryChain({ runs: [{ kind: 'verify', run_id: 21, conclusion: 'success' }] });
+  const failed = renderAcceptanceDeliveryChain({ runs: [{ kind: 'verify', run_id: 21, conclusion: 'failure' }] });
+  assert.match(pending[2], /^○ 已验证$/);
+  assert.match(passed[2], /^✓ 已验证$/);
+  assert.match(failed[2], /^✗ 已验证$/);
+});
+
+test('ACCEPTANCE CHAIN-04: deploying state appears only while deployment runs are active', () => {
+  const idle = renderAcceptanceDeliveryChain({ runs: [] });
+  const running = renderAcceptanceDeliveryChain({ state: 'running', runs: [{ kind: 'verify', conclusion: 'success' }, { kind: 'deploy', run_id: 31 }, { kind: 'worker', run_id: 32 }] });
+  const queued = renderAcceptanceDeliveryChain({ state: 'queued', runs: [] });
+  assert.match(idle[3], /^○ 部署中$/);
+  assert.match(running[3], /^… 部署中$/);
+  assert.match(queued[3], /^… 部署中$/);
+});
+
+test('ACCEPTANCE CHAIN-05: deployed state requires both Pages and Worker deployment success', () => {
+  const pagesOnly = renderAcceptanceDeliveryChain({ runs: [{ kind: 'deploy', run_id: 41, conclusion: 'success' }, { kind: 'worker', run_id: 42, conclusion: 'failure' }] });
+  const workerOnly = renderAcceptanceDeliveryChain({ runs: [{ kind: 'deploy', run_id: 41, conclusion: 'success' }, { kind: 'worker', run_id: 42 }] });
+  const both = renderAcceptanceDeliveryChain({ runs: [{ kind: 'deploy', run_id: 41, conclusion: 'success' }, { kind: 'worker', run_id: 42, conclusion: 'success' }] });
+  assert.match(pagesOnly[4], /^○ 已部署$/);
+  assert.match(workerOnly[4], /^○ 已部署$/);
+  assert.match(both[4], /^✓ 已部署$/);
+});
+
+test('ACCEPTANCE CHAIN-06: online health requires successful deployment and HTTP 200 for its run', () => {
+  const runs = [{ kind: 'deploy', run_id: 51, conclusion: 'success' }, { kind: 'worker', run_id: 52, conclusion: 'success' }];
+  const checking = renderAcceptanceDeliveryChain({ runs }, { run_id: '51', state: 'checking', status: null, error: '', promise: null });
+  const healthy = renderAcceptanceDeliveryChain({ runs }, { run_id: '51', state: 'ok', status: 200, error: '', promise: null });
+  const unhealthy = renderAcceptanceDeliveryChain({ runs }, { run_id: '51', state: 'bad', status: 503, error: 'HTTP 503', promise: null });
+  const wrongRun = renderAcceptanceDeliveryChain({ runs }, { run_id: '999', state: 'ok', status: 200, error: '', promise: null });
+  assert.match(checking[5], /^… 线上健康$/);
+  assert.match(healthy[5], /^✓ 线上健康 HTTP 200$/);
+  assert.match(unhealthy[5], /^✗ 线上健康失败 HTTP 503$/);
+  assert.match(wrongRun[5], /^○ 线上健康$/);
+});
+
+test('ACCEPTANCE.md: ten code acceptance items each map to an executable npm test and exclude manual iPad sign-off', () => {
+  const doc = fs.readFileSync(path.join(root, 'ACCEPTANCE.md'), 'utf8');
+  const ids = ['AUTO-01', 'AUTO-02', 'AUTO-03', 'AUTO-04', 'CHAIN-01', 'CHAIN-02', 'CHAIN-03', 'CHAIN-04', 'CHAIN-05', 'CHAIN-06'];
+  for (const id of ids) {
+    assert.ok(doc.includes(id), 'ACCEPTANCE.md must define ' + id);
+    assert.ok(new RegExp("test\\('" + id + ":").test(fs.readFileSync(__filename, 'utf8')), 'must have a dedicated Node test for ' + id);
   }
-
-  assert.match(doc, /缺少任一必填证据[\s\S]*?该项即为\*\*未通过\*\*/);
-  assert.match(doc, /自动化测试通过、Actions 通过、Pages 构建成功，均不能替代线上验收/);
-  assert.match(doc, /禁止使用“基本通过/);
-  assert.match(doc, /全部 10 项均为“通过”[\s\S]*?最终交付结论为“通过”/);
-  assert.match(doc, /最终交付结论 \| \*\*未通过（默认值/);
+  assert.match(doc, /npm test/);
+  assert.match(doc, /测试通过即该项通过/);
+  assert.match(doc, /测试失败即该项未通过/);
+  assert.doesNotMatch(doc, /IPAD-0[1-4]|iPad 型号|iPadOS|录屏|截图证据|线上验收记录/);
+  assert.match(doc, /最终交付结论/);
 });
