@@ -5660,7 +5660,7 @@ const bestPlace = (list, q) => {
     <span class="sp"></span>
     <button id="wb-reload" class="sec" type="button" title="重新从 GitHub 读取 index.html（会丢掉未保存的修改）">重新读取</button>
     <button id="wb-save" type="button" title="把编辑器里的内容通过 MCP update_file 推到 GitHub main（Ctrl/Cmd+S）">保存到 GitHub</button>
-    <button id="wb-both" class="sec" type="button" title="触发 GitHub Actions：前端 build 与 Worker deploy 两个 job 并行跑，日志并排显示">同时启动</button>
+    <button id="wb-both" class="sec" type="button" title="触发 GitHub Actions：前端 build 与 Worker deploy 并行执行，日志收纳在统一运行日志">同时启动</button>
     <button id="wb-ci" class="sec" type="button" title="触发 GitHub Actions：checkout → npm install → npm test → npm run build，并把结果回传到开发台">运行 / 验证</button>
     <button id="wb-deploy" class="sec" type="button" title="验证通过后构建并部署到 Cloudflare Pages">部署</button>
     <button id="wb-lint" type="button" title="代码检测：检查脚本语法、重复 id、$() 引用不到的 id、遗留 console.log" onclick="wbLint()">代码检测</button>
