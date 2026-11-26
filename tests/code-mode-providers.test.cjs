@@ -139,11 +139,11 @@ test('project isolation: code edits use a temporary branch before merging to the
   assert.doesNotMatch(workerSource, /codeUpdateFile\(env, pend\.repo, path, applied\.out\[path\], [\s\S]{0,160}branch = String\(env\.CODE_PUSH_BRANCH/);
 });
 
-test('web workbench: refuses unsafe save and recognizes dev/test/build scripts', () => {
+test('web workbench: refuses unsafe save and no longer carries a local WebContainer runner', () => {
   assert.match(frontendSource, /没有拿到文件基线 SHA，为避免覆盖线上改动/);
-  assert.match(frontendSource, /const scripts = pkg && pkg\.scripts \|\| \{\}/);
-  assert.match(frontendSource, /\["test", "build"\]/);
-  assert.match(frontendSource, /scripts\.dev \? "dev" : scripts\.start \? "start"/);
+  assert.doesNotMatch(frontendSource, /WebContainer/);
+  assert.doesNotMatch(frontendSource, /function initTerm/);
+  assert.doesNotMatch(frontendSource, /async function run\\(\\)/);
 });
 
 test('remote verification: reuses a dispatchable workflow and returns status fields', () => {
@@ -166,7 +166,7 @@ test('remote verification UI: green success, red failures, and no invented previ
   assert.match(frontendSource, /验证失败/);
   assert.match(frontendSource, /d\.error_lines/);
   assert.match(frontendSource, /verifyLink\("打开项目预览", d\.preview_url\)/);
-  assert.match(frontendSource, /没有配置真实公网预览部署地址/);
+  assert.match(frontendSource, /没有配置预览地址/);
   assert.doesNotMatch(frontendSource, /window\.open\("https:\/\/github\.com\/" \+ REPO\.owner \+ "\/" \+ REPO\.repo \+ "\/actions"/);
 });
 
@@ -267,12 +267,11 @@ test('workbench simultaneous start triggers GitHub Actions and renders the full 
   }
 });
 
-test('P0-01: simultaneous WebContainer startup routes frontend API calls to its paired local Wrangler port', () => {
-  assert.match(frontendSource, /new URLSearchParams\(location\.search\)\.get\("gateway"\)/);
-  assert.match(frontendSource, /location\.hostname\.replace\(\/\^3000\(\?=--\|-\)\/, "8787"\)/);
-  assert.match(frontendSource, /parallelBackendUrl = url/);
-  assert.match(frontendSource, /target\.searchParams\.set\("gateway", parallelBackendUrl\)/);
-  assert.match(frontendSource, /Number\(port\) === 8787/);
+test('P0-01: frontend accepts an explicit gateway URL and Actions runner does not boot a local WebContainer', () => {
+  assert.match(frontendSource, /new URLSearchParams\\(location\\.search\\)\\.get\\("gateway"\\)/);
+  assert.match(frontendSource, /location\\.hostname\\.replace\\(/);
+  assert.match(frontendSource, /authFetch\\(GATEWAY \\+ "\\/api\\/code\\/both"/);
+  assert.doesNotMatch(frontendSource, /WebContainer/);
 });
 
 test('P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records', () => {
