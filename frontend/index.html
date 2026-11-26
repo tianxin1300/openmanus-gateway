@@ -6702,6 +6702,14 @@ function insertTerminalInput(value) {
   input.setRangeText(value, start, end, "end");
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
+g("wb-terminal-command").addEventListener("keydown", event => {
+  if (!terminalCtrlPending || !/^[a-z]$/i.test(event.key)) return;
+  event.preventDefault();
+  terminalCtrlPending = false;
+  terminalShortcuts.querySelector('[data-terminal-key="ctrl"]').setAttribute("aria-pressed", "false");
+  insertTerminalInput(String.fromCharCode(event.key.toUpperCase().charCodeAt(0) & 31));
+  g("wb-terminal-status").textContent = "CTRL+" + event.key.toUpperCase() + " 控制字符已插入";
+});
 terminalShortcuts.addEventListener("click", event => {
   const button = event.target.closest("button[data-terminal-key]");
   if (!button) return;
