@@ -1041,47 +1041,30 @@ test('local HTTP integration: frontend-style API request reaches the real Worker
 
 
 
-test('local preview button opens the dedicated full-width view only after server-ready', async () => {
-  const previewButton = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-local-preview")[^>]*>/g)];
-  assert.equal(previewButton.length, 1);
+test('standalone preview uses the current editor srcdoc without WebContainer', () => {
+  assert.match(frontendSource, /function openLocalTaskPreview\(\)/);
+  assert.match(frontendSource, /window\.open\("about:blank", "_blank"/);
+  assert.match(frontendSource, /frame\.srcdoc = srcdocOf\(ed\.get\(\)\)/);
+  assert.doesNotMatch(frontendSource, /WC_MODULES|ensureLocalWebContainer|WebContainer\.boot|server-ready|localWc/);
+  assert.doesNotMatch(frontendSource, /wb-local-logbox|wb-local-log|wb-runframe|wb-local-error/);
+});
 
-  const handlerMatch = frontendSource.match(/g\("wb-local-preview"\)\.addEventListener\("click", async \(\) => \{([\s\S]*?)\n\}\);/);
-  assert.ok(handlerMatch);
+test('editor wraps long lines and iPad visual viewport resizes the workbench above the keyboard', () => {
+  assert.match(frontendSource, /wordWrap:\s*"on"/);
+  assert.match(frontendSource, /white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word/);
+  assert.match(frontendSource, /visualViewport/);
+  assert.match(frontendSource, /--wb-visual-height/);
+  assert.match(frontendSource, /--wb-visual-top/);
+});
 
-  const activeClasses = new Set();
-  const button = { disabled: false, textContent: '' };
-  const alert = { hidden: true };
-  const wb = {
-    classList: {
-      contains: name => activeClasses.has(name),
-      add: name => activeClasses.add(name),
-      remove: name => activeClasses.delete(name)
-    }
-  };
-  const nodes = { 'wb-local-preview': button, wb, 'wb-local-error': alert };
-  const sandbox = {
-    g: id => nodes[id],
-    openLocalTaskPreview: async () => {},
-    clearTimeout: () => {},
-    say: () => {},
-    String
-  };
-  const click = vm.runInNewContext('(async () => {' + handlerMatch[1] + '\n})', sandbox);
-
-  await click();
-  assert.equal(activeClasses.has('wb-local-preview-mode'), false, 'startup must leave the classic preview visible');
-  assert.equal(button.disabled, false);
-
-  const readyHandler = frontendSource.match(/localWc\.on\("server-ready",\s*\(port,url\)=>\{([\s\S]*?)\n\s*localLog/);
-  assert.ok(readyHandler, 'WebContainer server-ready handler must exist');
-  assert.ok(readyHandler[1].includes('wb-local-preview-mode'), 'fullscreen mode starts only after the server is ready');
-  assert.ok(readyHandler[1].includes('button.textContent="返回开发台"'));
-
-  activeClasses.add('wb-local-preview-mode');
-  button.textContent = '返回开发台';
-  await click();
-  assert.equal(activeClasses.has('wb-local-preview-mode'), false);
-  assert.equal(button.textContent, '本地预览');
+test('terminal remains as a Pages and Worker log console without a WebContainer shell', () => {
+  assert.match(frontendSource, /id="wb-terminal"/);
+  assert.match(frontendSource, /id="wb-terminal-output"/);
+  assert.match(frontendSource, /id="wb-front-log"/);
+  assert.match(frontendSource, /id="wb-back-log"/);
+  assert.match(frontendSource, /\[Pages\].*\[Worker\]/s);
+  assert.doesNotMatch(frontendSource, /id="wb-terminal-input"|data-terminal-key|initInteractiveTerminal|spawn\("jsh"/);
+  assert.doesNotMatch(frontendSource, /xterm\.js|xterm\.css|WebContainer|WC_MODULES|localWc/);
 });
 
 test('devbench exposes one launch button, one run log and a terminal', () => {
@@ -1308,19 +1291,11 @@ test('delivery chain: real probePagesHealth logic accepts only HTTP 200 and prob
 });
 
 
-test('devbench keeps the editor full-width and moves preview/results into the dedicated view', () => {
-  assert.ok(frontendSource.includes('#wb:not(.wb-local-preview-mode) #wb-right{display:none!important}'),
-    'the white preview/result pane must not sit beside the editor by default');
-  assert.ok(frontendSource.includes('#wb:not(.wb-local-preview-mode) #wb-left{flex:1 1 100%!important;width:100%!important;border-right:0!important;border-bottom:0!important}'),
-    'the editor must occupy the full development workspace by default');
-  assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-right{display:flex!important}'),
-    'the separate preview workspace must reveal the preview/result area');
-  assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-runframe{position:absolute!important;inset:0!important;display:block!important;'),
-    'the local server iframe must fill the separate preview workspace');
-  assert.ok(frontendSource.includes('function renderPreview() { if (!ed) return; g("wb-preview").srcdoc = srcdocOf(ed.get()); }'));
+test('devbench keeps the editor full-width and opens the independent preview in a separate page', () => {
+  assert.ok(frontendSource.includes('#wb:not(.wb-local-preview-mode) #wb-right{display:none!important}') === false);
+  assert.ok(frontendSource.includes('#wb:not(.wb-local-preview-mode) #wb-left{flex:1 1 100%!important;width:100%!important;border-right:0!important;border-bottom:0!important}') === false);
+  assert.ok(frontendSource.includes('frame.srcdoc = srcdocOf(ed.get())'));
   assert.ok(frontendSource.includes('id="wb-preview"'));
   assert.ok(frontendSource.includes('id="wb-res"'));
-  assert.ok(frontendSource.includes('id="wb-runframe"'));
-  assert.equal(frontendSource.includes('localStartupGuard'), false);
-  assert.ok(frontendSource.includes('timeoutId=setTimeout(()=>resolve({timeout:true}),30000)'));
+  assert.equal(frontendSource.includes('id="wb-runframe"'), false);
 });
