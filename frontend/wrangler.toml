@@ -1,6 +1,3 @@
 name = "zhineng-et5"
 compatibility_date = "2025-01-01"
-
-[pages_build_config]
-build_command = ""
-destination_dir = "/"
+pages_build_output_dir = "."
