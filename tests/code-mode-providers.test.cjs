@@ -1061,7 +1061,9 @@ test('terminal is a standalone command echo panel and Pages/Worker logs stay sep
   assert.match(frontendSource, /<section id="wb-terminal" aria-label="终端">[\s\S]*?<pre id="wb-terminal-output"/);
   assert.match(frontendSource, /<form id="wb-terminal-command-form"[\s\S]*?<input id="wb-terminal-command"/);
   assert.match(frontendSource, /<div id="wb-runlogs" aria-label="Pages 与 Worker 运行日志" hidden>[\s\S]*?id="wb-front-log"[\s\S]*?id="wb-back-log"/);
-  assert.doesNotMatch(frontendSource, /id="wb-terminal-input"|data-terminal-key|initInteractiveTerminal|spawn\("jsh"/);
+  assert.match(frontendSource, /data-terminal-key="ctrl-c"/);
+  assert.match(frontendSource, /data-terminal-key="escape"/);
+  assert.doesNotMatch(frontendSource, /id="wb-terminal-input"|initInteractiveTerminal|spawn\("jsh"/);
   assert.doesNotMatch(frontendSource, /xterm\.js|xterm\.css|WebContainer|WC_MODULES|localWc/);
 });
 
