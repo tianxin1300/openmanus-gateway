@@ -683,7 +683,9 @@ button.om-ic-only .om-ic{margin:0;width:16px;height:16px}
   #wb-res{min-height:0;max-height:100%;overflow:auto;overscroll-behavior:contain}
   #wb-term{flex:0 0 max(214px,calc(30vh + 34px));flex-shrink:0;min-height:214px;max-height:65%;overflow:hidden}
   #wb-runlogs{flex:0 0 34px;min-height:34px;max-height:34px;overflow:hidden}
-  #wb-runlogs[open]{flex:0 1 auto;max-height:min(50%,calc(100% - 180px));min-height:34px;overflow:auto}
+  #wb-term.wb-runlogs-expanded{flex-basis:min(42vh,380px)}
+  #wb-runlogs[open]{flex:0 1 auto;max-height:calc(100% - 90px);min-height:34px;overflow:auto}
+  #wb-terminal{min-height:90px}
   #wb-terminal{flex:1 1 0;min-height:180px}
   #wb-terminal.wb-terminal-fullscreen{z-index:10050}
   #wb-runlogs .wb-logbox{min-height:0}
@@ -6059,7 +6061,7 @@ function srcdocOf(code) {   // 复用主页面预览用的 ART_PROBE（报错回
   const m = /<head[^>]*>/i.exec(code); if (!m) return probe + code;
   const at = m.index + m[0].length; return code.slice(0, at) + probe + code.slice(at);
 }
-function renderPreview() { if (!ed) return; g("wb-preview").srcdoc = srcdocOf(ed.get()); }
+function renderPreview() { if (!ed) return; g("wb-preview").srcdoc = srcdocOf(ed.get()); syncLocalTaskPreview(); }
 function showTab(which) {
   document.querySelectorAll("#wb .wb-tab").forEach(b => b.classList.toggle("on", b.dataset.wbtab === which));
   const res = g("wb-res");
@@ -6267,7 +6269,7 @@ function renderVerifyResult(d) {
   const preview = verifyLink("打开项目预览", d.preview_url); if (preview) links.appendChild(preview);
   if (state === "failure") { const retry = document.createElement("button"); retry.type = "button"; retry.textContent = "失败重试"; retry.className = "sec"; retry.style.cssText = "margin-top:8px"; retry.onclick = runRemoteVerify; links.appendChild(retry); }
   if (state === "success" && !d.preview_url) { const tip = document.createElement("div"); tip.textContent = "验证已通过，但当前没有配置预览地址；可在下方运行日志中打开 Pages / Worker Actions Run。"; tip.style.cssText = "margin-top:10px;color:#7a887d;font-size:12px"; links.appendChild(tip); }
-  res.appendChild(links); showTab("run"); if (!d.fromHistory) loadRunHistory();
+  res.appendChild(links); showTab("run"); syncLocalTaskPreview(); if (!d.fromHistory) loadRunHistory();
 }
 async function runRemoteVerify() {
   const ciBtn = g("wb-ci");
@@ -6368,6 +6370,7 @@ function renderChain(d) {
   box.classList.toggle("on", !!(d && (d.started_at || runs.length || d.state)));
   steps.forEach(([name, cls]) => box.appendChild(chainStep((cls === "ok" ? "✓ " : cls === "bad" ? "✗ " : cls === "now" ? "… " : "○ ") + name, cls)));
   if (failed && d.failed_step) box.appendChild(chainStep("失败步骤：" + d.failed_step, "bad"));
+  syncLocalTaskPreview();
 }
 async function runBoth() {
   const btn = g("wb-both"); if (!authToken) { toast("请先登录"); return; }
@@ -6446,16 +6449,41 @@ async function openWb() {
 }
 function closeWb() { document.body.classList.remove("wb-open"); g("wb").setAttribute("aria-hidden", "true"); amdOff(); }
 g("wb-open").addEventListener("click", openWb);
+let localPreviewWindow = null;
+function syncLocalTaskPreview() {
+  const win = localPreviewWindow;
+  if (!win || win.closed) { localPreviewWindow = null; return; }
+  try {
+    const doc = win.document;
+    const frame = doc.getElementById("local-preview-frame");
+    const results = doc.getElementById("local-run-result-content");
+    const chain = doc.getElementById("local-run-chain");
+    const logs = doc.getElementById("local-run-logs");
+    if (frame && ed) frame.srcdoc = srcdocOf(ed.get());
+    if (results) {
+      const source = g("wb-res");
+      results.replaceChildren(...(source ? [source.cloneNode(true)] : []));
+      if (source) {
+        const sourceButtons = source.querySelectorAll("button");
+        results.querySelectorAll("button").forEach((button, index) => {
+          if (sourceButtons[index]) button.addEventListener("click", () => sourceButtons[index].click());
+        });
+      }
+    }
+    if (chain) { const sourceChain = g("wb-chain"); chain.replaceChildren(...(sourceChain ? [sourceChain.cloneNode(true)] : [])); }
+    if (logs) { const output = g("wb-terminal-output"); logs.textContent = output ? output.textContent : "等待运行输出…"; }
+  } catch (error) { /* A preview tab may be closing while a result update arrives. */ }
+}
 function openLocalTaskPreview() {
   if (!ed) throw new Error("编辑器尚未就绪，无法打开预览");
   const previewWindow = window.open("about:blank", "_blank");
   if (!previewWindow) { say("浏览器拦截了预览新窗口，请允许弹出窗口", true); return false; }
+  localPreviewWindow = previewWindow;
   const doc = previewWindow.document;
   doc.open();
-  doc.write("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>OpenManus 独立预览</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{display:block;width:100%;height:100%;border:0}</style></head><body><iframe title='当前代码预览' sandbox='allow-scripts allow-forms allow-modals allow-popups allow-downloads'></iframe></body></html>");
+  doc.write("<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><title>OpenManus 独立预览与运行结果</title><style>*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#eef2f6;color:#253044}.workspace{height:100dvh;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) minmax(180px,34%);gap:8px;padding:8px}.panel{min-height:0;overflow:hidden;background:#fff;border:1px solid #dce3ec;border-radius:10px;display:flex;flex-direction:column}.panel-head{flex:0 0 38px;display:flex;align-items:center;padding:0 12px;background:#f5f7fa;border-bottom:1px solid #e1e6ee;font-size:13px;font-weight:700}.panel-body{flex:1;min-height:0;overflow:auto;padding:10px}#local-preview-frame{display:block;width:100%;height:100%;min-height:0;border:0;background:#fff}#local-run-result-content pre{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}#local-run-chain{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}#local-run-chain .wb-chain-step{padding:4px 7px;border-radius:6px;background:#eef2f7;font-size:11px}#local-run-chain .ok{color:#236c3b;background:#e8f5eb}#local-run-chain .bad{color:#a52c2c;background:#fbecec}#local-run-logs{margin-top:8px;padding:8px;background:#17202d;color:#e5edf8;border-radius:7px;font:11px/1.5 ui-monospace,monospace;white-space:pre-wrap;overflow:auto;max-height:110px}@media(max-width:700px){.workspace{grid-template-rows:minmax(0,1fr) minmax(190px,40%);padding:5px;gap:5px}.panel{border-radius:8px}}</style></head><body><main class='workspace'><section class='panel' aria-label='本地预览区域'><header class='panel-head'>本地预览</header><iframe id='local-preview-frame' title='当前代码预览' sandbox='allow-scripts allow-forms allow-modals allow-popups allow-downloads'></iframe></section><section class='panel' aria-label='运行结果区域'><header class='panel-head'>运行结果与日志</header><div class='panel-body'><div id='local-run-chain'></div><div id='local-run-result-content'><div>等待运行结果…</div></div><pre id='local-run-logs'>等待 Pages / Worker 运行输出…</pre></div></section></main></body></html>");
   doc.close();
-  const frame = doc.querySelector("iframe");
-  frame.srcdoc = srcdocOf(ed.get());
+  syncLocalTaskPreview();
   return true;
 }
 window.openLocalTaskPreview = openLocalTaskPreview;
