@@ -1145,8 +1145,8 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
       { kind: 'worker', conclusion: 'success' }
     ]
   });
-  assert.ok(upperVerifyFailed[2].className.split(/\\s+/).includes('bad'));
-  assert.ok(upperVerifyFailed[6].className.split(/\\s+/).includes('bad'));
+  assert.ok(upperVerifyFailed[2].className.split(/\s+/).includes('bad'));
+  assert.ok(upperVerifyFailed[6].className.split(/\s+/).includes('bad'));
   assert.equal(upperVerifyFailed.length, 7);
   const upperWorkerFailed = upperChain({
     runs: [
@@ -1155,8 +1155,8 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
       { kind: 'worker', conclusion: 'failure' }
     ]
   });
-  assert.equal(upperWorkerFailed[4].className.split(/\\s+/).includes('ok'), false);
-  assert.ok(upperWorkerFailed[6].className.split(/\\s+/).includes('bad'));
+  assert.equal(upperWorkerFailed[4].className.split(/\s+/).includes('ok'), false);
+  assert.ok(upperWorkerFailed[6].className.split(/\s+/).includes('bad'));
   assert.equal(upperWorkerFailed.length, 7);
 });
 
@@ -1173,13 +1173,14 @@ test('delivery chain: real probePagesHealth logic accepts only HTTP 200 and prob
     authFetch: async (url, options = {}) => {
       calls++;
       requests.push({ url, options });
-      return { ok: true, json: async () => payload };
+      return { ok: true, status: 200, json: async () => payload };
     }
   });
   vm.runInContext(block, context, { filename: 'delivery-health-probe.vm.js', timeout: 1000 });
   const healthy = await vm.runInContext('probePagesHealth("deploy-200")', context);
   assert.equal(healthy.state, 'ok');
   assert.equal(healthy.status, 200);
+  assert.equal(requests[0].options.cache, 'no-store');
   assert.equal(requests[0].url, '/api/code/pages-health');
   assert.equal(requests[0].options.method || 'GET', 'GET');
   assert.equal(requests[0].options.cache, 'no-store');
