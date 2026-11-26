@@ -6436,9 +6436,10 @@ function renderDeliveryChain(d) {
   const runs = Array.isArray(d.runs) ? d.runs : [];
   const deploy = runs.find((r) => r.kind === "deploy") || (d.deploy ? d : {});
   const worker = runs.find((r) => r.kind === "worker") || {};
+  const verify = runs.find((r) => r.kind === "verify");
   const health = pagesHealthFor(deploy);
-  const failed = d.state === "failure" || deploy.conclusion === "failure" || worker.conclusion === "failure";
-  const verified = runs.some((r) => (r.kind === "verify" || r.kind === "deploy") && r.conclusion === "success") || (!runs.length && d.conclusion === "success");
+  const failed = d.state === "failure" || [deploy, worker].some((r) => r.conclusion && r.conclusion !== "success");
+  const verified = verify ? verify.conclusion === "success" : (deploy.conclusion === "success" || (!runs.length && d.conclusion === "success"));
   const submitted = !!(d.head_sha || d.submitted || deploy.run_id || worker.run_id || (runs.find((r) => r.kind === "verify") || {}).run_id);
   const deployed = deploy.conclusion === "success" && worker.conclusion === "success";
   const deploying = d.state === "queued" || d.state === "running" || !!((deploy.run_id && !deploy.conclusion) || (worker.run_id && !worker.conclusion));
@@ -6541,15 +6542,15 @@ function renderChain(d) {
   const byKind = {}; runs.forEach((r) => { byKind[r.kind] = r; });
   const verify = byKind.verify || (d && !d.deploy ? d : {}) || {};
   const deploy = byKind.deploy || (d && d.deploy ? d : {}) || {};
-  const failed = !!(d && d.state === "failure") || deploy.conclusion === "failure";
-  const verified = verify.conclusion === "success" || (byKind.deploy && byKind.deploy.conclusion === "success");
+  const failed = !!(d && d.state === "failure") || [deploy, worker].some((r) => r.conclusion && r.conclusion !== "success");
+  const verified = byKind.verify ? verify.conclusion === "success" : (byKind.deploy && deploy.conclusion === "success");
   const submitted = !!(d && (d.head_sha || d.submitted || deploy.run_id || verify.run_id));
   const worker = byKind.worker || {};
   const deploying = d.state === "queued" || d.state === "running" || !!((deploy.run_id && !deploy.conclusion) || (worker.run_id && !worker.conclusion));
   const deployed = deploy.conclusion === "success" && worker.conclusion === "success";
   const health = pagesHealthFor(deploy);
   const online = deployed && health.state === "ok" && health.status === 200;
-  const healthFailed = deploy.conclusion === "failure" || worker.conclusion === "failure" || (deployed && health.state === "bad");
+  const healthFailed = deployed && health.state === "bad";
   const steps = [
     ["已生成", "ok"],
     ["已提交", submitted ? "ok" : ""],
@@ -6558,6 +6559,7 @@ function renderChain(d) {
     ["已部署", deployed ? "ok" : ""],
     [online ? "线上健康 HTTP 200" : "线上健康", online ? "ok" : (healthFailed ? "bad" : (health.state === "checking" ? "now" : ""))]
   ];
+  if (byKind.verify && verify.conclusion && verify.conclusion !== "success") steps.push(["验证失败", "bad"]);
   if (failed) steps.push(["部署失败", "bad"]);
   else if (healthFailed) steps.push(["线上探活失败", "bad"]);
   box.innerHTML = "";
