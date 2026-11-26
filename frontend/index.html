@@ -6095,7 +6095,7 @@ function renderDeliveryChain(d) {
   const deploy = runs.find((r) => r.kind === "deploy") || (d.deploy ? d : {});
   const health = pagesHealthFor(deploy);
   const failed = d.state === "failure" || deploy.conclusion === "failure";
-  const verified = runs.some((r) => r.kind === "verify" && r.conclusion === "success") || (!runs.length && d.conclusion === "success");
+  const verified = runs.some((r) => (r.kind === "verify" || r.kind === "deploy") && r.conclusion === "success") || (!runs.length && d.conclusion === "success");
   const submitted = !!(d.head_sha || d.submitted || deploy.run_id || (runs.find((r) => r.kind === "verify") || {}).run_id);
   const deployed = deploy.conclusion === "success" || (!runs.length && d.deploy && d.state === "success");
   const deploying = !!(deploy.run_id && !deploy.conclusion);
@@ -6282,7 +6282,7 @@ function renderChain(d) {
   const verify = byKind.verify || (d && !d.deploy ? d : {}) || {};
   const deploy = byKind.deploy || (d && d.deploy ? d : {}) || {};
   const failed = !!(d && d.state === "failure") || deploy.conclusion === "failure";
-  const verified = verify.conclusion === "success";
+  const verified = verify.conclusion === "success" || (byKind.deploy && byKind.deploy.conclusion === "success");
   const submitted = !!(d && (d.head_sha || d.submitted || deploy.run_id || verify.run_id));
   const deploying = !!(deploy.run_id && !deploy.conclusion);
   const deployed = deploy.conclusion === "success";
@@ -6314,13 +6314,13 @@ async function runBoth() {
   const finish = (bad, text) => { if (timer) clearTimeout(timer); if (btn) { btn.disabled = false; btn.textContent = "同时启动"; } say(text, bad); };
   const paint = (d) => {
     const runs = (d && Array.isArray(d.runs)) ? d.runs : [];
-    const front = runs.find((r) => r.kind !== "deploy") || {}, back = runs.find((r) => r.kind === "deploy") || {};
+    const front = runs.find((r) => r.kind === "deploy") || {}, back = runs.find((r) => r.kind === "worker") || {};
     latestParallelData = d;
     const fl = (front.logs || []).join("\n"), bl = (back.logs || []).join("\n");
-    g("wb-front-log").textContent = fl || (front.run_url ? "前端 build 排队中… " + front.run_url : "等待 GitHub 返回前端 build 日志…");
+    g("wb-front-log").textContent = fl || (front.run_url ? "Pages build / deploy 排队中… " + front.run_url : "等待 GitHub 返回 Pages 部署日志…");
     g("wb-back-log").textContent = bl || (back.run_url ? "Worker deploy 排队中… " + back.run_url : "等待 GitHub 返回 Worker deploy 日志…");
     renderChain(d); renderVerifyResult({ ...d, deploy: true });
-    if (back.conclusion === "success" && back.run_id) void probePagesHealth(back.run_id);
+    if (front.conclusion === "success" && front.run_id) void probePagesHealth(front.run_id);
   };
   try {
     const start = await authFetch(GATEWAY + "/api/code/both", { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify({ ref: REPO.branch }) });
