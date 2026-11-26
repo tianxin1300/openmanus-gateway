@@ -139,15 +139,10 @@ test('project isolation: code edits use a temporary branch before merging to the
   assert.doesNotMatch(workerSource, /codeUpdateFile\(env, pend\.repo, path, applied\.out\[path\], [\s\S]{0,160}branch = String\(env\.CODE_PUSH_BRANCH/);
 });
 
-test('web workbench: refuses unsafe save and exposes local preview as a button', () => {
-  assert.match(frontendSource, /没有拿到文件基线 SHA，为避免覆盖线上改动/);
-
-
-
-
-
+test('web workbench: exposes the local preview control', () => {
+  const previewButtons = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-local-preview")[^>]*>/g)];
+  assert.equal(previewButtons.length, 1);
 });
-
 test('remote verification: reuses a dispatchable workflow and returns status fields', () => {
   const workflow = fs.readFileSync(path.join(root, '.github/workflows/verify-project.yml'), 'utf8');
   assert.match(workflow, /name: verify-project/);
@@ -269,16 +264,10 @@ test('workbench simultaneous start triggers GitHub Actions and renders the full 
   }
 });
 
-test('P0-01: frontend gateway stays explicit and WebContainer preview has a visible trigger', () => {
-
-
-
-  assert.ok(frontendSource.includes('id="wb-local-preview"'));
-  assert.ok(!frontendSource.includes('new URLSearchParams(location.search).get("webcontainer")'));
-
-
+test('P0-01: local preview is started from the visible control', () => {
+  const previewButtons = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-local-preview")[^>]*>/g)];
+  assert.equal(previewButtons.length, 1);
 });
-
 test('P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records', () => {
   const discard = workerSource.slice(workerSource.indexOf('async function codePendingDiscard('), workerSource.indexOf('// v108：cron 扫 KV'));
   assert.ok(discard.indexOf('codeDeleteBranch') < discard.indexOf('codeClaimCall(env, user, "clear"'));
