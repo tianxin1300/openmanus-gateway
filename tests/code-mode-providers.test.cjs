@@ -869,6 +869,9 @@ test('WebContainer local preview is opt-in and hidden behind query or AI trigger
   assert.ok(frontendSource.includes('open-local-task-preview'));
   assert.ok(frontendSource.includes('WebContainer.boot'));
   assert.ok(frontendSource.includes('container.mount(localTree(files))'));
+  assert.ok(frontendSource.includes("Object.entries(fileOverrides)"));
+  assert.ok(frontendSource.includes("event.detail||{}"));
+  assert.ok(frontendSource.includes("String.fromCharCode(92)"));
   assert.ok(frontendSource.includes('id="wb-local-logbox" hidden'));
   assert.ok(frontendSource.includes('id="wb-runframe"'));
   assert.ok(!frontendSource.includes('id="wb-run"'));
