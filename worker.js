@@ -8885,7 +8885,18 @@ async function handle(request, env, ctx) {
       return json(r, r.ok ? 200 : (r.status || 502));
     }
 
-    // ---- 同时启动：一次触发 Actions，前端 build 与 Worker deploy 并行跑 ----
+    if (path === "/api/code/pages-health" && request.method === "GET") {
+      const user = await userFromReq(request, env, url, "");
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      try {
+        const response = await fetch("https://zhineng-et5.pages.dev/", { method: "GET", cache: "no-store", redirect: "follow", headers: { "Accept": "text/html" }, signal: T(15000) });
+        return json({ ok: true, status: response.status, checked_at: new Date().toISOString(), url: "https://zhineng-et5.pages.dev/" }, 200);
+      } catch (e) {
+        return json({ ok: false, msg: "Pages 线上探活请求失败：" + (e && e.message || String(e)), checked_at: new Date().toISOString() }, 502);
+      }
+    }
+
+    // ---- 同时启动：一次触发 Pages 与 Worker 部署工作流 ----
     if (path === "/api/code/both" && request.method === "POST") {
       const b = await request.json().catch(() => ({}));
       const user = await userFromReq(request, env, url, String(b.token || ""));
