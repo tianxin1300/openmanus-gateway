@@ -209,7 +209,7 @@ test('workbench starts frontend/backend together and renders the full delivery c
 
 test('P0-01: simultaneous WebContainer startup routes frontend API calls to its paired local Wrangler port', () => {
   assert.match(frontendSource, /new URLSearchParams\(location\.search\)\.get\("gateway"\)/);
-  assert.match(frontendSource, /location\.hostname\.replace\(\/\^3000-\/, "8787-"\)/);
+  assert.match(frontendSource, /location\.hostname\.replace\(\/\^3000\(\?=--\|-\)\/, "8787"\)/);
   assert.match(frontendSource, /parallelBackendUrl = url/);
   assert.match(frontendSource, /target\.searchParams\.set\("gateway", parallelBackendUrl\)/);
   assert.match(frontendSource, /Number\(port\) === 8787/);
