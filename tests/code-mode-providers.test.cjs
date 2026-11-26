@@ -64,6 +64,37 @@ function loadCodeClaimDO(deleteBranch) {
   return sandbox.TestCodeClaimDO;
 }
 
+function loadCodeRunnerDO() {
+  const start = workerSource.indexOf('export class CodeRunnerDO');
+  const end = workerSource.indexOf('export default WORKER_DEFAULT', start);
+  assert.ok(start >= 0 && end > start, 'CodeRunnerDO source must exist');
+  const classSource = workerSource.slice(start, end).replace(/^export /, '');
+  const values = new Map();
+  let transactionTail = Promise.resolve();
+  const storage = {
+    async get(key) { return values.has(key) ? values.get(key) : undefined; },
+    async put(key, value) { values.set(key, structuredClone(value)); },
+    async delete(key) { return values.delete(key); },
+    async transaction(callback) {
+      const previous = transactionTail;
+      let release;
+      transactionTail = new Promise(resolve => { release = resolve; });
+      await previous;
+      try {
+        const txn = {
+          async get(key) { return values.has(key) ? values.get(key) : undefined; },
+          async put(key, value) { values.set(key, structuredClone(value)); },
+          async delete(key) { return values.delete(key); }
+        };
+        return await callback(txn);
+      } finally { release(); }
+    }
+  };
+  const sandbox = { URL, Response, Request, Date, structuredClone };
+  vm.runInNewContext(classSource + '\n' + 'globalThis.TestCodeRunnerDO = CodeRunnerDO;', sandbox);
+  return { Runner: sandbox.TestCodeRunnerDO, storage };
+}
+
 
 test('worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists', () => {
   const expectedGroq = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
@@ -273,6 +304,50 @@ test('Trae batch 1: isolated branches, history/rollback/preview, and file-level 
   assert.match(studioSource, /我的/);
   assert.match(studioSource, /他的/);
   assert.match(frontendSource, /失败重试/);
+});
+
+test('BUG-08: CodeRunnerDO serializes per-user parallel-run claims and owner-only release', async () => {
+  const { Runner, storage } = loadCodeRunnerDO();
+  const runner = new Runner({ storage });
+  const call = async (action, body) => {
+    const response = await runner.fetch(new Request('https://runner/' + action, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    }));
+    return response.json();
+  };
+  const concurrent = await Promise.all([
+    call('claim', { request_id: 'both-a', ref: 'main' }),
+    call('claim', { request_id: 'both-b', ref: 'main' })
+  ]);
+  assert.equal(concurrent.filter(result => result.ok).length, 1);
+  const first = concurrent.find(result => result.ok);
+  const loser = concurrent.find(result => !result.ok);
+  assert.ok(['both-a', 'both-b'].includes(first.active.request_id));
+  assert.equal(loser.active.request_id, first.active.request_id);
+  const secondId = first.active.request_id === 'both-a' ? 'both-b' : 'both-a';
+  const wrongRelease = await call('release', { request_id: secondId });
+  assert.equal(wrongRelease.ok, false);
+  const touched = await call('touch', { request_id: first.active.request_id, stage: 'polling' });
+  assert.equal(touched.ok, true);
+  assert.equal(touched.active.stage, 'polling');
+  const released = await call('release', { request_id: first.active.request_id });
+  assert.equal(released.ok, true);
+  assert.equal(released.released, true);
+  const retry = await call('claim', { request_id: secondId, ref: 'main' });
+  assert.equal(retry.ok, true);
+});
+
+test('BUG-08: parallel deploy preserves partial dispatch failures and holds lock until remaining run ends', () => {
+  const start = workerSource.slice(workerSource.indexOf('async function codeBothStart('), workerSource.indexOf('async function codeBothStatus('));
+  const status = workerSource.slice(workerSource.indexOf('async function codeBothStatus('), workerSource.indexOf('async function codeVerifyStart('));
+  assert.match(start, /codeRunnerLockCall\(env, user, "claim"/);
+  assert.ok(start.indexOf('"claim"') < start.indexOf('"/dispatches"'));
+  assert.match(start, /dispatch_error/);
+  assert.match(start, /已启动的另一项任务仍在运行/);
+  assert.match(status, /if \(r\.dispatch_error\)/);
+  assert.match(status, /const state = running \? "running" : failed \? "failure" : "success"/);
+  assert.match(status, /state === "success" \|\| state === "failure"[\s\S]*"release"/);
+  assert.match(status, /"touch"/);
 });
 
 test('workbench simultaneous start triggers GitHub Actions and renders the full delivery chain', () => {
