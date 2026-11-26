@@ -912,6 +912,12 @@ test('devbench has one Actions launch button and one expandable unified run log'
 
   assert.match(frontendSource, /#wb-main\\s*\\{[^}]*min-height:0[^}]*overflow:hidden/);
   assert.ok(frontendSource.includes('id="wb-terminal" aria-label="WebContainer 终端输出"'));
+  const terminalCss = frontendSource.match(/#wb-terminal\\s*\\{[^}]*\\}[\\s\\S]*?#wb-terminal-output\\s*\\{[^}]*\\}/);
+  assert.ok(terminalCss, "terminal visual theme CSS exists");
+  assert.match(terminalCss[0], /background:#171b24/, "terminal uses neutral charcoal, not green");
+  assert.match(terminalCss[0], /#426fbd/, "terminal send action uses restrained blue");
+  assert.doesNotMatch(terminalCss[0], /#(?:07140d|10291f|193c2a|28764a|8cc9a0)/i,
+    "terminal theme must not reintroduce the rejected deep-green palette");
   assert.ok(frontendSource.includes('id="wb-xterm" role="region"'));
   assert.ok(frontendSource.includes('id="wb-terminal-input"'));
   assert.ok(frontendSource.includes('id="wb-terminal-send"'));
