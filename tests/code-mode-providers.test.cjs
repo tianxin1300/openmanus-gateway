@@ -886,7 +886,7 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
     document: { createElement: tag => element(tag) },
     g: id => id === 'wb-chain' ? chainNode : null
   });
-  vm.runInContext(block + '\\n' + chainBlock, chainContext,
+  vm.runInContext(block + String.fromCharCode(10) + chainBlock, chainContext,
     { filename: 'upper-delivery-chain.vm.js', timeout: 1000 });
   vm.runInContext('renderChain({ runs: [] })', chainContext);
   assert.deepEqual(chainNode.children.map(node => node.textContent.replace(/^[✓✗○…] /, '')),
