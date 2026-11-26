@@ -208,7 +208,7 @@ test('workbench simultaneous start triggers GitHub Actions and renders the full 
   assert.match(frontendSource, /j\.state === "failure"/);
   assert.match(frontendSource, /function renderDeliveryChain\(d\)/);
   assert.match(frontendSource, /authFetch\(GATEWAY \+ "\/api\/code\/pages-health"/);
-  assert.match(frontendSource, /response\.status === 200/);
+  assert.match(frontendSource, /result\.status === 200/);
   assert.match(frontendSource, /new AbortController\(\)/);
   assert.match(frontendSource, /线上探活超时（15 秒）/);
   assert.match(frontendSource, /health\.state === "ok" && health\.status === 200/);
