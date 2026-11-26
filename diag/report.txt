@@ -1,6 +1,8 @@
-诊断时间(UTC): 2026-11-26T17:43:25+00:00
+诊断时间(UTC): 2026-11-26T17:49:41+00:00
 
 == 最近 12 个提交 ==
+153a82c fix: protect applying pending operations from auto-discard
+6d59891 diag: refresh current project report
 fa0cb86 diag: refresh current project report
 d301350 test: enforce dedicated preview workspace layout
 386f16d fix: move preview and results into dedicated workspace
@@ -11,67 +13,65 @@ d301350 test: enforce dedicated preview workspace layout
 4f1c77c fix: keep classic preview visible while WebContainer starts
 bd7891f diag: refresh current project report
 78a255a fix: restore classic editor preview and result panes
-f229160 diag: refresh current project report
-beb1c2d fix: prevent late WebContainer startup from reopening preview
 
 == 文件 ==
 .:
-total 1060
-drwxr-xr-x 11 runner runner   4096 Nov 26 17:43 .
-drwxr-xr-x  3 runner runner   4096 Nov 26 17:43 ..
-drwxr-xr-x  7 runner runner   4096 Nov 26 17:43 .git
-drwxr-xr-x  3 runner runner   4096 Nov 26 17:43 .github
--rw-r--r--  1 runner runner    724 Nov 26 17:43 apply_v106.py
--rw-r--r--  1 runner runner   2686 Nov 26 17:43 apply_v107.py
--rw-r--r--  1 runner runner   4017 Nov 26 17:43 apply_v108.py
--rw-r--r--  1 runner runner   4249 Nov 26 17:43 apply_v109.py
--rw-r--r--  1 runner runner   2497 Nov 26 17:43 dev-run.yml
-drwxr-xr-x  2 runner runner   4096 Nov 26 17:43 diag
--rw-r--r--  1 runner runner   7037 Nov 26 17:43 diag_v110.py
-drwxr-xr-x  3 runner runner   4096 Nov 26 17:43 frontend
--rw-r--r--  1 runner runner    197 Nov 26 17:43 package-lock.json
--rw-r--r--  1 runner runner    338 Nov 26 17:43 package.json
--rw-r--r--  1 runner runner  23105 Nov 26 17:43 studio.js
-drwxr-xr-x  2 runner runner   4096 Nov 26 17:43 tests
-drwxr-xr-x  2 runner runner   4096 Nov 26 17:43 v106
-drwxr-xr-x  2 runner runner   4096 Nov 26 17:43 v107
-drwxr-xr-x  2 runner runner   4096 Nov 26 17:43 v108
-drwxr-xr-x  2 runner runner   4096 Nov 26 17:43 v109
--rw-r--r--  1 runner runner 969919 Nov 26 17:43 worker.js
--rw-r--r--  1 runner runner    512 Nov 26 17:43 wrangler.toml
+total 1064
+drwxr-xr-x 11 runner runner   4096 Nov 26 17:49 .
+drwxr-xr-x  3 runner runner   4096 Nov 26 17:49 ..
+drwxr-xr-x  7 runner runner   4096 Nov 26 17:49 .git
+drwxr-xr-x  3 runner runner   4096 Nov 26 17:49 .github
+-rw-r--r--  1 runner runner    724 Nov 26 17:49 apply_v106.py
+-rw-r--r--  1 runner runner   2686 Nov 26 17:49 apply_v107.py
+-rw-r--r--  1 runner runner   4017 Nov 26 17:49 apply_v108.py
+-rw-r--r--  1 runner runner   4249 Nov 26 17:49 apply_v109.py
+-rw-r--r--  1 runner runner   2497 Nov 26 17:49 dev-run.yml
+drwxr-xr-x  2 runner runner   4096 Nov 26 17:49 diag
+-rw-r--r--  1 runner runner   7037 Nov 26 17:49 diag_v110.py
+drwxr-xr-x  3 runner runner   4096 Nov 26 17:49 frontend
+-rw-r--r--  1 runner runner    197 Nov 26 17:49 package-lock.json
+-rw-r--r--  1 runner runner    338 Nov 26 17:49 package.json
+-rw-r--r--  1 runner runner  23105 Nov 26 17:49 studio.js
+drwxr-xr-x  2 runner runner   4096 Nov 26 17:49 tests
+drwxr-xr-x  2 runner runner   4096 Nov 26 17:49 v106
+drwxr-xr-x  2 runner runner   4096 Nov 26 17:49 v107
+drwxr-xr-x  2 runner runner   4096 Nov 26 17:49 v108
+drwxr-xr-x  2 runner runner   4096 Nov 26 17:49 v109
+-rw-r--r--  1 runner runner 973520 Nov 26 17:49 worker.js
+-rw-r--r--  1 runner runner    512 Nov 26 17:49 wrangler.toml
 
 .github/workflows:
 total 32
-drwxr-xr-x 2 runner runner 4096 Nov 26 17:43 .
-drwxr-xr-x 3 runner runner 4096 Nov 26 17:43 ..
--rw-r--r-- 1 runner runner 2454 Nov 26 17:43 apply-v105.yml
--rw-r--r-- 1 runner runner 2724 Nov 26 17:43 deploy-project.yml
--rw-r--r-- 1 runner runner 3075 Nov 26 17:43 deploy-worker.yml
--rw-r--r-- 1 runner runner 1295 Nov 26 17:43 diag-report.yml
--rw-r--r-- 1 runner runner  679 Nov 26 17:43 test-project.yml
--rw-r--r-- 1 runner runner 2558 Nov 26 17:43 verify-project.yml
+drwxr-xr-x 2 runner runner 4096 Nov 26 17:49 .
+drwxr-xr-x 3 runner runner 4096 Nov 26 17:49 ..
+-rw-r--r-- 1 runner runner 2454 Nov 26 17:49 apply-v105.yml
+-rw-r--r-- 1 runner runner 2724 Nov 26 17:49 deploy-project.yml
+-rw-r--r-- 1 runner runner 3075 Nov 26 17:49 deploy-worker.yml
+-rw-r--r-- 1 runner runner 1295 Nov 26 17:49 diag-report.yml
+-rw-r--r-- 1 runner runner  679 Nov 26 17:49 test-project.yml
+-rw-r--r-- 1 runner runner 2558 Nov 26 17:49 verify-project.yml
 
 frontend:
 total 852
-drwxr-xr-x  3 runner runner   4096 Nov 26 17:43 .
-drwxr-xr-x 11 runner runner   4096 Nov 26 17:43 ..
--rw-r--r--  1 runner runner     90 Nov 26 17:43 _headers
--rw-r--r--  1 runner runner  20601 Nov 26 17:43 devrun.js
--rw-r--r--  1 runner runner 620839 Nov 26 17:43 index.html
--rw-r--r--  1 runner runner 161913 Nov 26 17:43 openmanus_frontend_file_v99l 2.zip
--rw-r--r--  1 runner runner  21927 Nov 26 17:43 studio.js
--rw-r--r--  1 runner runner  12533 Nov 26 17:43 tasks.js
-drwxr-xr-x  2 runner runner   4096 Nov 26 17:43 vendor
--rw-r--r--  1 runner runner     80 Nov 26 17:43 wrangler.toml
+drwxr-xr-x  3 runner runner   4096 Nov 26 17:49 .
+drwxr-xr-x 11 runner runner   4096 Nov 26 17:49 ..
+-rw-r--r--  1 runner runner     90 Nov 26 17:49 _headers
+-rw-r--r--  1 runner runner  20601 Nov 26 17:49 devrun.js
+-rw-r--r--  1 runner runner 620839 Nov 26 17:49 index.html
+-rw-r--r--  1 runner runner 161913 Nov 26 17:49 openmanus_frontend_file_v99l 2.zip
+-rw-r--r--  1 runner runner  21927 Nov 26 17:49 studio.js
+-rw-r--r--  1 runner runner  12533 Nov 26 17:49 tasks.js
+drwxr-xr-x  2 runner runner   4096 Nov 26 17:49 vendor
+-rw-r--r--  1 runner runner     80 Nov 26 17:49 wrangler.toml
 
 tests:
 total 64
-drwxr-xr-x  2 runner runner  4096 Nov 26 17:43 .
-drwxr-xr-x 11 runner runner  4096 Nov 26 17:43 ..
--rw-r--r--  1 runner runner 54115 Nov 26 17:43 code-mode-providers.test.cjs
+drwxr-xr-x  2 runner runner  4096 Nov 26 17:49 .
+drwxr-xr-x 11 runner runner  4096 Nov 26 17:49 ..
+-rw-r--r--  1 runner runner 54115 Nov 26 17:49 code-mode-providers.test.cjs
 
 == worker.js ==
-969919 字节, 9304 行, CRLF=False
+973520 字节, 9345 行, CRLF=False
 -- 前 10 行 --
 // openmanus-gateway v99y：一个脑子。飞书消息不再自己猜意图，直接调前端同一个 runWorkChat（同一份 WORK_SYSTEM_PROMPT / 同一个模型轮换 / 同一张 FS_TOOLS）。选哪个工具完全由模型自己定：代码里没有关键词分流、没有白名单、没有预调工具，只给任务结构（工具表 + 会话态 + 多轮循环 + 最终自由文本）。删掉飞书先猜意图那层 / 关键…
 // v100：新增「代码助手」（CODE_SYSTEM_PROMPT / codeLLM / codeAssist，OpenRouter 免费代码模型 → Groq llama-3.3-70b 兜底；可经 GitHub REST 读写文件）。其余代码一行没改。
@@ -235,8 +235,8 @@ async function codeConfirm(env, user, yes, input = {}) {
 -- 含 code:pend: 的行 --
 942: const p = await env.KV.get("code:pend:" + user, "json").catch(() => null);
 948: await env.KV.delete("code:pend:" + user).catch(() => {});
-978: try { await env.KV.delete("code:pend:" + user); }
-992: const page = await env.KV.list({ prefix: "code:pend:", cursor });
+985: try { await env.KV.delete("code:pend:" + user); }
+999: const page = await env.KV.list({ prefix: "code:pend:", cursor });
 
 == frontend/index.html ==
 620839 字节, 6704 行, CRLF=False
@@ -306,59 +306,119 @@ crons = ["0 0 * * *"]
 
 == npm test（node --test tests/*.cjs） ==
 node v22.23.5
-退出码 0
-✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (3.122569ms)
-✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.445831ms)
-✔ editor delivery: pending work is resumable and deployment state is not overstated (0.453976ms)
-✔ project isolation: code edits use a temporary branch before merging to the base branch (0.578157ms)
-✔ web workbench: exposes the local preview control (0.458625ms)
-✔ remote verification: reuses a dispatchable workflow and returns status fields (0.493079ms)
-✔ remote verification UI: green success, red failures, and no invented preview URL (0.959337ms)
-✔ BUG-01: protected media and files never put the login token in URLs or media bodies (0.888405ms)
-✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (1.005363ms)
-✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.755281ms)
-✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (1.07863ms)
-✔ workbench simultaneous start triggers GitHub Actions and renders the full delivery chain (2.35575ms)
-✔ P0-01: local preview is started from the visible control (0.356605ms)
-✔ P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records (2.143384ms)
-✔ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (1.279805ms)
+退出码 1
+✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (1.860666ms)
+✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.292731ms)
+✔ editor delivery: pending work is resumable and deployment state is not overstated (0.268515ms)
+✔ project isolation: code edits use a temporary branch before merging to the base branch (0.399312ms)
+✔ web workbench: exposes the local preview control (0.297078ms)
+✔ remote verification: reuses a dispatchable workflow and returns status fields (0.325911ms)
+✔ remote verification UI: green success, red failures, and no invented preview URL (0.640786ms)
+✔ BUG-01: protected media and files never put the login token in URLs or media bodies (0.630851ms)
+✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (0.677632ms)
+✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.274312ms)
+✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (0.767027ms)
+✔ workbench simultaneous start triggers GitHub Actions and renders the full delivery chain (1.706323ms)
+✔ P0-01: local preview is started from the visible control (0.244268ms)
+✖ P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records (1.36564ms)
+✖ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (0.911915ms)
 [code] pending expiry branch deletion failed; claim retained simulated GitHub failure
-✔ force-clear: frontend keeps preview panel visible and reports failure (18.99597ms)
-✔ CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim (43.897585ms)
-✔ CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry (1.348543ms)
-✔ CodeClaimDO alarm: GitHub 404 is treated as already deleted (1.039658ms)
-✔ persistent runner, KV logs and Pages deployment are wired end to end (2.295107ms)
-✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (1.546762ms)
-✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (2.283917ms)
-✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (1.063622ms)
-✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (1.121119ms)
-✔ codeLLM: OpenRouter network errors also never fall back to Toter (1.168437ms)
-✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (1.054415ms)
-✔ codeLLM: first usable custom model succeeds without attempting later models (1.024169ms)
-✔ codeLLM: retains the Groq target loop after OpenRouter (1.098997ms)
-✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (1.098587ms)
-✔ frontend: without studio initialization, ordinary-chat providers remain available (2.467999ms)
-✔ frontend: code mode shows provider-specific code models and hides Toter aliases (1.236564ms)
-✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (3.05911ms)
-✔ frontend: switching off code mode restores buttons and preserves chat model choice (1.537766ms)
-✔ studio.js: syncToggle re-renders providers when code mode changes (1.183395ms)
-✔ studio.js: omStudio state is exposed before eager init (1.122051ms)
-✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (0.954399ms)
-✔ frontend/studio.js: omStudio state is exposed before eager init (0.947105ms)
-✔ local HTTP integration: frontend-style API request reaches the real Worker /api/models route (131.042407ms)
-✔ local preview button opens the dedicated full-width view only after server-ready (2.632246ms)
-✔ devbench exposes one launch button, one run log and a terminal (1.81899ms)
-✔ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (6.865013ms)
-✔ delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once (2.464793ms)
-✔ devbench keeps the editor full-width and moves preview/results into the dedicated view (1.634045ms)
+✔ force-clear: frontend keeps preview panel visible and reports failure (7.804738ms)
+✔ CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim (38.589727ms)
+✔ CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry (0.967649ms)
+✔ CodeClaimDO alarm: GitHub 404 is treated as already deleted (0.720146ms)
+✔ persistent runner, KV logs and Pages deployment are wired end to end (1.750039ms)
+✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (2.024202ms)
+✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (0.919336ms)
+✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (0.7426ms)
+✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (0.778273ms)
+✔ codeLLM: OpenRouter network errors also never fall back to Toter (0.796621ms)
+✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (0.726996ms)
+✔ codeLLM: first usable custom model succeeds without attempting later models (0.728719ms)
+✔ codeLLM: retains the Groq target loop after OpenRouter (0.734087ms)
+✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (0.767137ms)
+✔ frontend: without studio initialization, ordinary-chat providers remain available (1.547283ms)
+✔ frontend: code mode shows provider-specific code models and hides Toter aliases (0.924093ms)
+✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (2.156572ms)
+✔ frontend: switching off code mode restores buttons and preserves chat model choice (1.521033ms)
+✔ studio.js: syncToggle re-renders providers when code mode changes (1.123584ms)
+✔ studio.js: omStudio state is exposed before eager init (1.111576ms)
+✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (0.939536ms)
+✔ frontend/studio.js: omStudio state is exposed before eager init (0.909952ms)
+✔ local HTTP integration: frontend-style API request reaches the real Worker /api/models route (83.255186ms)
+✔ local preview button opens the dedicated full-width view only after server-ready (1.361152ms)
+✔ devbench exposes one launch button, one run log and a terminal (1.233861ms)
+✔ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (3.191642ms)
+✔ delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once (1.533252ms)
+✔ devbench keeps the editor full-width and moves preview/results into the dedicated view (1.023454ms)
 ℹ tests 43
 ℹ suites 0
-ℹ pass 43
-ℹ fail 0
+ℹ pass 41
+ℹ fail 2
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 344.5702
+ℹ duration_ms 233.857956
+
+✖ failing tests:
+
+test at tests/code-mode-providers.test.cjs:271:1
+✖ P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records (1.36564ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /if \(p && p\.repo && p\.branch && !branch\.ok && !branchGone\)/. Input:
+  
+  'async function codePendingDiscard(env, user, pending) {\n' +
+    '  const p = pending || (await codePendingLoad(env, user));\n' +
+    '  if (!p) return { ok: true, branch_deleted: false, cleared: true, skipped: true };\n' +
+    '  const state = await codeClaimState(env, user);\n' +
+    '  if (!state.ok) return { ok: false, status: 503, cleared: false, msg: state.msg || "无法读取待处理状态", reply: "无法确认旧操作状态，已停止清理；原记录保留。" };\n' +
+    '  if (!state.pending || state.pending.id !== p.id) return { ok: false, status: 409, cleared: false, msg: "待处理修改已变化，拒绝清理过期快照", reply: "待处理修改状态已变化，未执行清理；请刷新后重试。" };\n' +
+    '  const pendingId = String(state.pending.id), version = Number(state.version);\n' +
+    '  const locked = await codeClaimCall(env, user, "discard", { pending_id: pendingId, version });\n' +
+    '  if (!locked.ok) return { ok: false, status: locked.status || 409, cleared: false, msg: locked.msg || "待处理操作正在执行", reply: locked.msg || "这项修改正在执行接受操作，未被清除。" };\n' +
+    '  let branch = { ok: true, skipped: true };\n' +
+    '  if (p.repo && p.branch) branch = await codeDeleteBranch(env, p.repo, p.branch);\n' +
+    '  const branchGone = !!(branch && branch.status === 404);\n' +
+    '  if (p.repo && p.branch && !branch.ok && !branchGone) {\n' +
+    '    await codeClaimCall(env, user, "discard-release", { pending_id: pendingId, version }).catch(() => {});\n' +
+    '    return { ok: false, branch_deleted: false, cleared: false, status: branch.status || 502,\n' +
+    '      msg: "GitHub 临时分支删除失败，待处理记录已保留：" + (branch.msg || "未知错误"),\n' +
+    '      reply: "清空失败：GitHub 临时分支删除失败，待处理记录未清除。" };\n' +
+    '  }\n' +
+    '  const cleared = await codeClaimCall(env, user, "clear", { pending_id: pendingId, version });\n' +
+    '  if (!cleared.ok) return { ok: false, branch_deleted: !!branch.ok, branch_already_gone: branchGone, cleared: false,\n' +
+    '    status: 503, msg: cleared.msg || "Durable Object 清理失败", reply: "临时分支已处理，但待处理记录清除失败；请重试。" };\n' +
+    '  if (env.KV) {\n' +
+    '    try { await env.KV.delete("code:pend:" + user); }\n' +
+    '    catch (e) { return { ok: false, branch_deleted: !!branch.ok, branch_already_gone: branchGone, cleared: false,\n' +
+    '      status: 503, msg: "KV 清理失败：" + (e && e.message || e), reply: "临时分支已处理，但旧待处理记录清除失败；请重试。" }; }\n' +
+    '  }\n' +
+    '  return { ok: true, branch_deleted: !!branch.ok, branch_already_gone: branchGone, cleared: true,\n' +
+    '    reply: "已丢弃：GitHub 临时分支已删除，待处理记录已清空。" };\n' +
+    '}\n' +
+    '\n'
+  
+      at TestContext.<anonymous> (/home/runner/work/openmanus-gateway/openmanus-gateway/tests/code-mode-providers.test.cjs:274:10)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+      at Test.postRun (node:internal/test_runner/test:1173:19)
+      at Test.run (node:internal/test_runner/test:1101:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:744:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'async function codePendingDiscard(env, user, pending) {\n  const p = pending || (await codePendingLoad(env, user));\n  if (!p) return { ok: true, branch_deleted: false, cleared: true, skipped: true };\n  const state = await codeClaimState(env, user);\n  if (!state.ok) return { ok: false, status: 503, cleared: false, msg: state.msg || "无法读取待处理状态", reply: "无法确认旧操作状态，已停止清理；原记录保留。" };\n  if (!state.pending || state.pending.id !== p.id) return { ok: false, status: 409, cleared: false, msg: "待处理修改已变化，拒绝清理过期快照", reply: "待处理修改状态已变化，未执行清理；请刷新后重试。" };\n  const pendingId = String(state.pending.id), version = Number(state.version);\n  const locked = await codeClaimCall(env, user, "discard", { pending_id: pendingId, version });\n  if (!locked.ok) return { ok: false, status: locked.status || 409, cleared: false, msg: locked.msg || "待处理操作正在执行", reply: locked.msg || "这项修改正在执行接受操作，未被清除。" };\n  let branch = { ok: true, skipped: true };\n  if (p.repo && p.branch) branch = await codeDeleteBranch(env, p.repo, p.branch);\n  const branchGone = !!(branch && branch.status === 404);\n  if (p.repo && p.branch && !branch.ok && !branchGone) {\n    await codeClaimCall(env, user, "discard-release", { pending_id: pendingId, version }).catch(() => {});\n    return { ok: false, branch_deleted: false, cleared: false, status: branch.status || 502,\n      msg: "GitHub 临时分支删除失败，待处理记录已保留：" + (branch.msg || "未知错误"),\n      reply: "清空失败：GitHub 临时分支删除失败，待处理记录未清除。" };\n  }\n  const cleared = await codeClaimCall(env, user, "clear", { pending_id: pendingId, version });\n  if (!cleared.ok) return { ok: false, branch_deleted: !!branch.ok, branch_already_gone: branchGone, cleared: false,\n    status: 503, msg: cleared.msg || "Durable Object 清理失败", reply: "临时分支已处理，但待处理记录清除失败；请重试。" };\n  if (env.KV) {\n    try { await env.KV.delete("code:pend:" + user); }\n    catch (e) { return { ok: false, branch_deleted: !!branch.ok, branch_already_gone: branchGone, cleared: false,\n      status: 503, msg: "KV 清理失败：" + (e && e.message || e), reply: "临时分支已处理，但旧待处理记录清除失败；请重试。" }; }\n  }\n  return { ok: true, branch_deleted: !!branch.ok, branch_already_gone: branchGone, cleared: true,\n    reply: "已丢弃：GitHub 临时分支已删除，待处理记录已清空。" };\n}\n\n',
+    expected: /if \(p && p\.repo && p\.branch && !branch\.ok && !branchGone\)/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at tests/code-mode-providers.test.cjs:284:1
+✖ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (0.911915ms)
+  ReferenceError: codeClaimState is not defined
+      at codePendingDiscard (evalmachine.<anonymous>:4:17)
+      at async TestContext.<anonymous> (/home/runner/work/openmanus-gateway/openmanus-gateway/tests/code-mode-providers.test.cjs:295:18)
+      at async Test.run (node:internal/test_runner/test:1054:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
 
 == npm run build ==
 退出码 0
