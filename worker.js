@@ -949,7 +949,7 @@ async function codeProject(env, user, proj, req, history, ui) {
   for (const wanted of mentioned) {
     const matches = allPaths.filter((p) => p === wanted || p.endsWith("/" + wanted) || (!wanted.includes("/") && p.split("/").pop() === wanted));
     if (matches.length === 1) targets.push(matches[0]);
-    else if (matches.length > 1) return { ok: false, reply: "⚠️ 文件名「" + wanted + "」在仓库里有多个匹配，请提供完整路径：\\n" + matches.slice(0, 12).join("\n") };
+    else if (matches.length > 1) return { ok: false, reply: "⚠️ 文件名「" + wanted + "」在仓库里有多个匹配，请提供完整路径：\n" + matches.slice(0, 12).join("\n") };
   }
   if (!targets.length) targets = proj.files.filter((p) => allPaths.includes(p));
   targets = [...new Set(targets)].filter((p) => !codePathProtected(p));
