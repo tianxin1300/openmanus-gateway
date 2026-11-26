@@ -6091,12 +6091,12 @@ async function initEditor() {
     const m = monaco.editor.create(box, {value: "", language: "html", theme: "vs-dark", automaticLayout: true, minimap: {enabled: false}, fontSize: 12, tabSize: 2, scrollBeyondLastLine: false, wordWrap: "off"});
     m.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save());
     m.onDidChangeModelContent(() => cbs.forEach(f => f()));
-    ed = {get: () => m.getValue(), set: v => m.setValue(v), on: f => cbs.push(f), kind: "monaco"};
+    ed = {get: () => m.getValue(), set: v => m.setValue(v), revealLine: line => { m.revealLineInCenter(line); m.setPosition({lineNumber: line, column: 1}); m.focus(); }, on: f => cbs.push(f), kind: "monaco"};
   } catch (e) {
     const ta = document.createElement("textarea"); ta.spellcheck = false; box.innerHTML = ""; box.appendChild(ta);
     ta.addEventListener("input", () => cbs.forEach(f => f()));
     ta.addEventListener("keydown", ev => { if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); save(); } });
-    ed = {get: () => ta.value, set: v => { ta.value = v; }, on: f => cbs.push(f), kind: "textarea"};
+    ed = {get: () => ta.value, set: v => { ta.value = v; }, revealLine: line => { const rows = ta.value.split("\n"); const start = rows.slice(0, Math.max(0, line - 1)).reduce((n, row) => n + row.length + 1, 0); ta.focus(); ta.setSelectionRange(start, start + (rows[line - 1] || "").length); ta.scrollTop = Math.max(0, (line - 1) * 18); }, on: f => cbs.push(f), kind: "textarea"};
     say("Monaco 没加载出来（" + e.message + "），先用普通文本框编辑", true);
   }
   ed.on(() => { dirty = true; if (!/^Monaco|文本框/.test(g("wb-state").textContent)) say("有未保存的修改"); clearTimeout(prevTimer); prevTimer = setTimeout(renderPreview, 900); });
@@ -6453,6 +6453,56 @@ function renderDeliveryChain(d) {
   else if (healthFailed) steps.push({name:"线上探活失败", bad:true});
   steps.forEach((x) => { const b=document.createElement("button"); b.type="button"; b.textContent=(x.ok ? "✓ " : x.bad ? "✗ " : x.now ? "… " : "○ ")+x.name; b.className="sec"; b.style.cssText="padding:5px 8px;font-size:11px;border-radius:8px;color:"+(x.ok ? "#247a43" : x.bad ? "#b33b32" : "#7a887d")+";background:"+(x.ok ? "#e6f5e8" : x.bad ? "#fde8e6" : "#f1f4f0"); if (x.bad) b.onclick=()=>{ const pre=res.parentElement && res.parentElement.querySelector("pre"); if(pre) pre.scrollIntoView({behavior:"smooth",block:"nearest"}); }; res.appendChild(b); }); return res;
 }
+function verifyErrorLocation(raw) {
+  const line = String(raw || "");
+  const patterns = [
+    /(?:^|[\s("'(/])((?:\.{0,2}\/)?[\w@.-]+(?:\/[\w@.-]+)*\.(?:[cm]?[jt]sx?|html?|css|json|ya?ml|py|sh)):(\d+)(?::(\d+))?\b/i,
+    /File ["']([^"']+)["'], line (\d+)/i,
+    /((?:[A-Za-z]:)?[^()\s]+\.(?:[cm]?[jt]sx?|html?|css|json|ya?ml|py|sh))\((\d+),(\d+)\)/i
+  ];
+  for (const re of patterns) {
+    const m = re.exec(line);
+    if (m) {
+      let path = m[1].replace(/^\.\//, "").replace(/\\/g, "/");
+      const marker = "/" + REPO.repo + "/" + REPO.repo + "/";
+      const at = path.lastIndexOf(marker);
+      if (at >= 0) path = path.slice(at + marker.length);
+      return {path, line: Number(m[2]), column: Number(m[3] || 1)};
+    }
+  }
+  return null;
+}
+function renderVerifyErrorLocations(lines, headSha) {
+  const found = new Map();
+  (Array.isArray(lines) ? lines : []).forEach(raw => {
+    const loc = verifyErrorLocation(raw);
+    if (!loc || !loc.path || !Number.isInteger(loc.line) || loc.line < 1) return;
+    const key = loc.path + ":" + loc.line + ":" + loc.column;
+    if (!found.has(key)) found.set(key, loc);
+  });
+  if (!found.size) return null;
+  const box = document.createElement("div");
+  box.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin:8px 0";
+  found.forEach(loc => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "sec";
+    b.textContent = loc.path + ":" + loc.line + (loc.column > 1 ? ":" + loc.column : "");
+    b.style.cssText = "font-size:11px;color:#b33b32;border-color:#d98b85";
+    b.onclick = () => {
+      if (loc.path === FILE && ed && typeof ed.revealLine === "function") {
+        showTab("run");
+        ed.revealLine(loc.line);
+        return;
+      }
+      const sha = /^[a-f0-9]{7,40}$/i.test(String(headSha || "")) ? headSha : REPO.branch;
+      const path = loc.path.split("/").map(encodeURIComponent).join("/");
+      const url = "https://github.com/" + REPO.owner + "/" + REPO.repo + "/blob/" + encodeURIComponent(sha) + "/" + path + "#L" + loc.line;
+      window.open(url, "_blank", "noopener");
+    };
+    box.appendChild(b);
+  });
+  return box;
+}
 function renderVerifyResult(d) {
   const res = g("wb-res"); if (!res) return;
   g("wb-runframe").dataset.live = "0"; res.innerHTML = "";
@@ -6462,6 +6512,7 @@ function renderVerifyResult(d) {
   res.appendChild(renderDeliveryChain(d));
   renderChain(d);
   const h = document.createElement("h4"); h.textContent = title; h.style.color = state === "success" ? "#247a43" : state === "failure" ? "#b33b32" : "#8b6b16"; res.appendChild(h);
+  if (state === "failure") { const locations = renderVerifyErrorLocations(d.error_lines, d.head_sha); if (locations) res.appendChild(locations); }
   const p = document.createElement("pre"); p.textContent = state === "failure" ? ((d.failed_step ? "失败步骤：" + d.failed_step + "\n\n" : "") + ((d.error_lines || []).join("\n") || "GitHub 没有返回可提取的报错行。")) : "checkout ✓\nnpm install ✓\nnpm test " + (state === "success" ? "✓" : "…") + "\nnpm run build " + (state === "success" ? "✓" : "…"); res.appendChild(p);
   const links = document.createElement("div");
   const actions = verifyLink("打开 Actions 运行记录", d.actions_url || d.run_url); if (actions) links.appendChild(actions);
