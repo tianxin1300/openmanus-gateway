@@ -207,6 +207,26 @@ test('workbench starts frontend/backend together and renders the full delivery c
   assert.match(frontendSource, /renderDeliveryChain/);
 });
 
+test('P0-01: simultaneous WebContainer startup routes frontend API calls to its paired local Wrangler port', () => {
+  assert.match(frontendSource, /new URLSearchParams\(location\.search\)\.get\("gateway"\)/);
+  assert.match(frontendSource, /location\.hostname\.replace\(\/\^3000-\/, "8787-"\)/);
+  assert.match(frontendSource, /parallelBackendUrl = url/);
+  assert.match(frontendSource, /target\.searchParams\.set\("gateway", parallelBackendUrl\)/);
+  assert.match(frontendSource, /Number\(port\) === 8787/);
+});
+
+test('P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records', () => {
+  const discard = workerSource.slice(workerSource.indexOf('async function codePendingDiscard('), workerSource.indexOf('// v108：cron 扫 KV'));
+  assert.ok(discard.indexOf('codeDeleteBranch') < discard.indexOf('codeClaimCall(env, user, "clear"'));
+  assert.match(discard, /if \(!branch\.ok && !branchGone\)/);
+  assert.match(discard, /ok: false[\s\S]*待处理记录已保留/);
+  const claimDO = workerSource.slice(workerSource.indexOf('export class CodeClaimDO'), workerSource.indexOf('export class CodeRunnerDO'));
+  assert.match(claimDO, /async alarm\(\)/);
+  assert.ok(claimDO.indexOf('codeDeleteBranch(this.env') < claimDO.indexOf('this.storage.delete("claim")'));
+  assert.match(claimDO, /this\.storage\.setAlarm\(now \+ CODE_PENDING_TTL_MS\)/);
+  assert.match(claimDO, /GitHub 临时分支删除失败/);
+});
+
 test('persistent runner, KV logs and Pages deployment are wired end to end', () => {
   const deploy = fs.readFileSync(path.join(root, '.github/workflows/deploy-project.yml'), 'utf8');
   const wrangler = fs.readFileSync(path.join(root, 'wrangler.toml'), 'utf8');

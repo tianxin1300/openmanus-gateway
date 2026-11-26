@@ -877,7 +877,14 @@ async function codePendingLoad(env, user) {
   if (d.ok && d.pending) return d.pending;
   if (d.configured === false && env.KV) {
     const p = await env.KV.get("code:pend:" + user, "json").catch(() => null);
-    if (p && p.created_at && Date.now() - p.created_at > CODE_PENDING_TTL_MS) { await env.KV.delete("code:pend:" + user).catch(() => {}); return null; }   // v108：读取时兜底过期
+    if (p && p.created_at && Date.now() - p.created_at > CODE_PENDING_TTL_MS) {
+      if (p.repo && p.branch) {
+        const removed = await codeDeleteBranch(env, p.repo, p.branch);
+        if (!removed.ok && removed.status !== 404) return p;
+      }
+      await env.KV.delete("code:pend:" + user).catch(() => {});
+      return null;
+    }
     return p;
   }
   return null;
@@ -894,11 +901,23 @@ const CODE_PENDING_TTL_MS = 600000;   // v108：待处理改动 10 分钟没点�
 async function codePendingDiscard(env, user, pending) {
   const p = pending || (await codePendingLoad(env, user));
   let branch = { ok: true, skipped: true };
-  if (p && p.repo && p.branch) branch = await codeDeleteBranch(env, p.repo, p.branch);   // 分支已不存在（404）也算删掉了
+  if (p && p.repo && p.branch) branch = await codeDeleteBranch(env, p.repo, p.branch);
+  const branchGone = !!(branch && branch.status === 404);
+  if (p && p.repo && p.branch && !branch.ok && !branchGone) {
+    return { ok: false, branch_deleted: false, cleared: false, status: branch.status || 502,
+      msg: "GitHub 临时分支删除失败，待处理记录已保留：" + (branch.msg || "未知错误"),
+      reply: "清空失败：GitHub 临时分支删除失败，待处理记录未清除。" };
+  }
   const cleared = await codeClaimCall(env, user, "clear", {});
-  if (!cleared.ok) console.log("[code] pending clear failed", JSON.stringify({ user: String(user).slice(0, 40), msg: cleared.msg || "" }));
-  if (env.KV) await env.KV.delete("code:pend:" + user).catch(() => {});   // v108：旧版 KV 遗留键也一并清掉
-  return { ok: true, branch_deleted: !!(branch && branch.ok), branch_already_gone: branch && branch.status === 404, cleared: !!cleared.ok, reply: "已丢弃：临时分支已删除，待处理记录已清空。" };
+  if (!cleared.ok) return { ok: false, branch_deleted: !!branch.ok, branch_already_gone: branchGone, cleared: false,
+    status: 503, msg: cleared.msg || "Durable Object 清理失败", reply: "临时分支已处理，但待处理记录清除失败；请重试。" };
+  if (env.KV) {
+    try { await env.KV.delete("code:pend:" + user); }
+    catch (e) { return { ok: false, branch_deleted: !!branch.ok, branch_already_gone: branchGone, cleared: false,
+      status: 503, msg: "KV 清理失败：" + (e && e.message || e), reply: "临时分支已处理，但旧待处理记录清除失败；请重试。" }; }
+  }
+  return { ok: true, branch_deleted: !!branch.ok, branch_already_gone: branchGone, cleared: true,
+    reply: "已丢弃：GitHub 临时分支已删除，待处理记录已清空。" };
 }
 
 // v108：cron 扫 KV 里遗留的待处理记录（比如浏览器关了、confirm 没送到），过期的删临时分支 + 清 KV
@@ -912,17 +931,20 @@ async function codePendingSweep(env) {
       cursor = page.list_complete ? undefined : page.cursor;
     } while (cursor);
   } catch (e) { return { count: 0, checked: 0, msg: "KV list 失败：" + (e && e.message || e) }; }
-  let count = 0;
+  let count = 0, failed = 0;
   for (const name of names) {
     const p = await env.KV.get(name, "json").catch(() => null);
     if (!p) { await env.KV.delete(name).catch(() => {}); count++; continue; }
     if (p.created_at && Date.now() - p.created_at > CODE_PENDING_TTL_MS) {
-      if (p.repo && p.branch) await codeDeleteBranch(env, p.repo, p.branch).catch(() => {});
+      if (p.repo && p.branch) {
+        const removed = await codeDeleteBranch(env, p.repo, p.branch).catch(e => ({ ok: false, msg: e && e.message || String(e) }));
+        if (!removed.ok && removed.status !== 404) { failed++; continue; }
+      }
       await env.KV.delete(name).catch(() => {});
       count++;
     }
   }
-  return { count, checked: names.length };
+  return { count, checked: names.length, failed };
 }
 
 function codePendingView(p) {
@@ -8797,7 +8819,7 @@ async function handle(request, env, ctx) {
       const user = await userFromReq(request, env, url, "");
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
       const r = await codePendingDiscard(env, user);
-      return json(r);
+      return json(r, r.ok ? 200 : (r.status || 502));
     }
 
     // ---- v105：代码助手的预览面板接口（全部要登录）----
@@ -9084,18 +9106,46 @@ async function handle(request, env, ctx) {
 }
 
 export class CodeClaimDO {
-  constructor(state) { this.storage = state.storage; }
+  constructor(state, env) { this.storage = state.storage; this.env = env; }
   async load() {
     const value = await this.storage.get("claim");
     if (!value) return null;
-    // v108：过期双重保险——创建 10 分钟后记录自动清掉（临时分支由 worker 的 cron / 下一次丢弃兜底删除）
     const createdAt = (value.pending && value.pending.created_at) || value.created_at || 0;
-    if ((value.expires_at && value.expires_at < Date.now()) || (createdAt && Date.now() - createdAt > CODE_PENDING_TTL_MS)) { await this.storage.delete("claim"); return null; }
+    if ((value.expires_at && value.expires_at <= Date.now()) || (createdAt && Date.now() - createdAt >= CODE_PENDING_TTL_MS)) {
+      const p = value.pending;
+      if (p && p.repo && p.branch) {
+        const removed = await codeDeleteBranch(this.env, p.repo, p.branch);
+        if (!removed.ok && removed.status !== 404) {
+          await this.storage.setAlarm(Date.now() + 60000);
+          throw new Error("GitHub 临时分支删除失败，待处理记录保留并将在 60 秒后重试：" + (removed.msg || "未知错误"));
+        }
+      }
+      await this.storage.delete("claim");
+      return null;
+    }
     return value;
   }
   async save(value) { await this.storage.put("claim", value); return value; }
   response(value, status = 200) { return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } }); }
+  async alarm() {
+    const value = await this.storage.get("claim");
+    if (!value) return;
+    const createdAt = (value.pending && value.pending.created_at) || value.created_at || 0;
+    const expiresAt = value.expires_at || (createdAt ? createdAt + CODE_PENDING_TTL_MS : 0);
+    if (expiresAt && expiresAt > Date.now()) { await this.storage.setAlarm(expiresAt); return; }
+    const p = value.pending;
+    if (p && p.repo && p.branch) {
+      const removed = await codeDeleteBranch(this.env, p.repo, p.branch);
+      if (!removed.ok && removed.status !== 404) {
+        await this.storage.setAlarm(Date.now() + 60000);
+        console.log("[code] pending expiry branch deletion failed; claim retained", removed.msg || "");
+        return;
+      }
+    }
+    await this.storage.delete("claim");
+  }
   async fetch(request) {
+    try {
     const action = new URL(request.url).pathname.replace(/^\//, "") || "state";
     if (request.method === "GET" || action === "state") {
       const current = await this.load();
@@ -9109,6 +9159,7 @@ export class CodeClaimDO {
       incoming.status = "awaiting_approval"; incoming.version = 1; incoming.updatedAt = now;
       if (!incoming.created_at) incoming.created_at = now;   // v108：记录创建时间，10 分钟后自动过期
       await this.save({ pending: incoming, created_at: now, version: 1, claims: {}, results: {}, expires_at: now + CODE_PENDING_TTL_MS });
+      await this.storage.setAlarm(now + CODE_PENDING_TTL_MS);
       return this.response({ ok: true, pending: incoming, version: 1 });
     }
     if (action === "claim") {
@@ -9140,6 +9191,9 @@ export class CodeClaimDO {
       return this.response({ ok: true, cleared: true });
     }
     return this.response({ ok: false, msg: "未知 Durable Object 操作" }, 404);
+    } catch (e) {
+      return this.response({ ok: false, msg: e && e.message || "待处理记录过期清理失败" }, 503);
+    }
   }
 }
 
