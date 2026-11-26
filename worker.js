@@ -8299,14 +8299,14 @@ async function handle(request, env, ctx) {
       if (audio.size > 20 * 1024 * 1024) return json({ ok: false, msg: "录音超过 20MB，请缩短录音时间" }, 413);
       const keys = getKeys(env.GROQ_KEYS || env.GROQ_API_KEY);
       if (!keys.length) return json({ ok: false, msg: "语音识别服务尚未配置，请在网关配置 GROQ_KEYS" }, 503);
-      const upstreamForm = new FormData();
-      upstreamForm.append("file", audio, String(audio.name || "voice.m4a"));
-      upstreamForm.append("model", "whisper-large-v3-turbo");
-      upstreamForm.append("language", "zh");
-      upstreamForm.append("response_format", "json");
       let lastStatus = 0;
       for (const key of keys) {
         try {
+          const upstreamForm = new FormData();
+          upstreamForm.append("file", audio, String(audio.name || "voice.m4a"));
+          upstreamForm.append("model", "whisper-large-v3-turbo");
+          upstreamForm.append("language", "zh");
+          upstreamForm.append("response_format", "json");
           const upstream = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
             method: "POST",
             headers: { Authorization: "Bearer " + key },
