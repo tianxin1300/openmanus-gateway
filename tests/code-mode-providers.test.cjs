@@ -29,7 +29,7 @@ function loadCodeClaimDO(deleteBranch) {
     codePendingView: p => p,
     Date: class FixedDate extends Date { static now() { return 1700000000000; } }, URL, Response, Request, console
   };
-  vm.runInNewContext(classSource + '\\nglobalThis.TestCodeClaimDO = CodeClaimDO;', sandbox);
+  vm.runInNewContext(classSource + '\n' + 'globalThis.TestCodeClaimDO = CodeClaimDO;', sandbox);
   return sandbox.TestCodeClaimDO;
 }
 
