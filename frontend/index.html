@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>OpenManus AI 助手</title>
+<link rel="stylesheet" href="./vendor/xterm.css">
+<script src="./vendor/xterm.js" defer></script>
 <style>
 :root{color-scheme:light;--ink:#19362a;--muted:#71867a;--line:#dfe9df;--panel:#fff;--canvas:#f4f8f2;--accent:#287447;--accent-dark:#1d6039;--nav:#10291f;--nav-soft:#1d4030}
 *{box-sizing:border-box}
@@ -6113,19 +6115,21 @@ async function initInteractiveTerminal(container) {
   if(terminalInitialized&&terminalInstance)return;
   const status=g("wb-terminal-status"),host=g("wb-xterm");
   if(!host)throw new Error("终端界面未找到");
-  if(!window.Terminal){
-    const urls=["https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js","https://unpkg.com/@xterm/xterm@5.5.0/lib/xterm.js"];
-    let loaded=false,last;
-    for(const url of urls){try{await loadScript(url,20000);loaded=!!window.Terminal;if(loaded)break;}catch(e){last=e;}}
-    if(!loaded)throw new Error("xterm.js 加载失败："+(last&&last.message||"CDN 不可用"));
-  }
-  if(!window.FitAddon){
-    try{await loadScript("https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js",20000);}catch(e){throw new Error("xterm FitAddon 加载失败："+e.message);}
-  }
-  if(!document.getElementById("wb-xterm-css")){const css=document.createElement("link");css.id="wb-xterm-css";css.rel="stylesheet";css.href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css";document.head.appendChild(css);}
+  if(!window.Terminal)throw new Error("本地 xterm.js 未加载：请检查 ./vendor/xterm.js");
   terminalInstance=new window.Terminal({cursorBlink:true,convertEol:true,scrollback:5000,fontSize:12,lineHeight:1.35,fontFamily:"ui-monospace,SFMono-Regular,Menlo,Consolas,monospace",theme:{background:"#07140d",foreground:"#d8ecd9",cursor:"#a9d6b1",selectionBackground:"#31543d"},allowProposedApi:false});
-  terminalFit=new window.FitAddon.FitAddon();terminalInstance.loadAddon(terminalFit);terminalInstance.open(host);
-  const fit=()=>{try{terminalFit.fit();if(terminalProcess&&terminalInstance.cols&&terminalInstance.rows)terminalProcess.resize({cols:terminalInstance.cols,rows:terminalInstance.rows});}catch(_){}};
+  terminalInstance.open(host);
+  const fit=()=>{
+    try{
+      const canvas=document.createElement("canvas"),ctx=canvas.getContext("2d");
+      ctx.font='12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
+      const cellWidth=Math.max(1,ctx.measureText("W").width);
+      const cols=Math.max(2,Math.floor(Math.max(0,host.clientWidth-24)/cellWidth));
+      const rows=Math.max(2,Math.floor(Math.max(0,host.clientHeight-16)/(12*1.35)));
+      if(cols!==terminalInstance.cols||rows!==terminalInstance.rows)terminalInstance.resize(cols,rows);
+      if(terminalProcess&&terminalInstance.cols&&terminalInstance.rows)terminalProcess.resize({cols:terminalInstance.cols,rows:terminalInstance.rows});
+    }catch(_){}
+  };
+  terminalFit={fit};
   requestAnimationFrame(fit);
   if(window.visualViewport)window.visualViewport.addEventListener("resize",()=>setTimeout(fit,80));
   window.addEventListener("resize",fit);
