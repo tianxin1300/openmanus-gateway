@@ -1057,12 +1057,10 @@ test('editor wraps long lines and iPad visual viewport resizes the workbench abo
   assert.match(frontendSource, /--wb-visual-top/);
 });
 
-test('terminal remains as a Pages and Worker log console without a WebContainer shell', () => {
-  assert.match(frontendSource, /id="wb-terminal"/);
-  assert.match(frontendSource, /id="wb-terminal-output"/);
-  assert.match(frontendSource, /id="wb-front-log"/);
-  assert.match(frontendSource, /id="wb-back-log"/);
-  assert.match(frontendSource, /\[Pages\].*\[Worker\]/s);
+test('terminal is a standalone command echo panel and Pages/Worker logs stay separate without WebContainer', () => {
+  assert.match(frontendSource, /<section id="wb-terminal" aria-label="终端">[\s\S]*?<pre id="wb-terminal-output"/);
+  assert.match(frontendSource, /<form id="wb-terminal-command-form"[\s\S]*?<input id="wb-terminal-command"/);
+  assert.match(frontendSource, /<div id="wb-runlogs" aria-label="Pages 与 Worker 运行日志" hidden>[\s\S]*?id="wb-front-log"[\s\S]*?id="wb-back-log"/);
   assert.doesNotMatch(frontendSource, /id="wb-terminal-input"|data-terminal-key|initInteractiveTerminal|spawn\("jsh"/);
   assert.doesNotMatch(frontendSource, /xterm\.js|xterm\.css|WebContainer|WC_MODULES|localWc/);
 });
@@ -1071,7 +1069,7 @@ test('devbench exposes one launch button, one run log and a terminal', () => {
   const launchButtons = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-both")[^>]*>/g)];
   assert.equal(launchButtons.length, 1);
 
-  const runLogs = [...frontendSource.matchAll(/<details\b(?=[^>]*\bid="wb-runlogs")[^>]*>/g)];
+  const runLogs = [...frontendSource.matchAll(/<div\b(?=[^>]*\bid="wb-runlogs")[^>]*>/g)];
   assert.equal(runLogs.length, 1);
 
   const terminals = [...frontendSource.matchAll(/<(?:section|div)\b(?=[^>]*\bid="wb-terminal")[^>]*>/g)];
@@ -1302,22 +1300,31 @@ test('devbench keeps the editor full-width and opens the independent preview in 
 
 
 
-test("devbench standalone preview keeps a synced run-results panel and expandable logs", () => {
+test("devbench standalone preview keeps independent terminal and run-log panels", () => {
   const match = /<script\b(?=[^>]*\bid=["']wb-devbench["'])[^>]*>([\s\S]*?)<\/script\s*>/i.exec(frontendSource);
   assert.ok(match, "the wb-devbench script must exist");
   assert.doesNotThrow(() => new vm.Script(match[1]), "the devbench script must parse");
   assert.match(match[1], /local-preview-frame/);
   assert.match(match[1], /local-run-result-content/);
   assert.match(match[1], /syncLocalTaskPreview\(\)/);
-  assert.match(match[1], /g\(["']wb-runlogs["']\)\.addEventListener\(["']toggle["']/);
+  assert.match(frontendSource, /<section id="wb-terminal" aria-label="终端">[\s\S]*?<pre id="wb-terminal-output"/);
+  assert.match(frontendSource, /<form id="wb-terminal-command-form"[\s\S]*?<input id="wb-terminal-command"[^>]*placeholder="输入命令/);
+  assert.match(frontendSource, /<div id="wb-runlogs" aria-label="Pages 与 Worker 运行日志" hidden>[\s\S]*?id="wb-front-log"[\s\S]*?id="wb-back-log"/);
+  assert.doesNotMatch(frontendSource, /<details id="wb-runlogs"/);
   assert.match(frontendSource, /id="wb-term-tabs" role="tablist"/);
   assert.match(frontendSource, /id="wb-terminal-tab" role="tab" aria-controls="wb-terminal" aria-selected="true"/);
   assert.match(frontendSource, /id="wb-runlogs-tab" role="tab" aria-controls="wb-runlogs" aria-selected="false"/);
   assert.match(match[1], /function setTerminalPanel\(panel\)/);
-  assert.match(match[1], /setTerminalPanel\("terminal"\)/);
-  assert.match(match[1], /setTerminalPanel\("logs"\)/);
-  assert.match(frontendSource, /#wb-term\[data-panel="terminal"\] #wb-runlogs,#wb-term\[data-panel="logs"\] #wb-terminal\{display:none\}/);
-  assert.doesNotMatch(frontendSource, /wb-runlogs-expanded/);
+  assert.match(match[1], /g\("wb-terminal"\)\.hidden = showLogs/);
+  assert.match(match[1], /g\("wb-runlogs"\)\.hidden = !showLogs/);
+  assert.match(match[1], /function appendTerminalCommand\(command\)/);
+  assert.match(match[1], /g\("wb-terminal-command-form"\)\.addEventListener\("submit"/);
+  assert.match(match[1], /appendTerminalCommand\(command\)/);
+  const runBoth = match[1].slice(match[1].indexOf("async function runBoth()"), match[1].indexOf("/* ---------------- 打开 / 关闭", match[1].indexOf("async function runBoth()")));
+  assert.doesNotMatch(runBoth, /wb-terminal-output|terminalOutput/);
+  assert.match(frontendSource, /#wb-terminal-command-form\{display:flex;flex:0 0 auto/);
+  assert.match(match[1], /window\.visualViewport\.addEventListener\("resize"/);
+  assert.match(match[1], /window\.visualViewport\.addEventListener\("scroll"/);
 });
 
 
@@ -1358,7 +1365,9 @@ test('ACCEPTANCE AUTO-02: independent preview synchronizes results, status chain
   assert.match(sync, /frame\.srcdoc = srcdocOf\(ed\.get\(\)\)/);
   assert.match(sync, /source\.cloneNode\(true\)/);
   assert.match(sync, /sourceChain\.cloneNode\(true\)/);
-  assert.match(sync, /output\.textContent/);
+  assert.match(sync, /logs\.textContent/);
+  assert.match(sync, /wb-front-log/);
+  assert.match(sync, /wb-back-log/);
   assert.match(script, /syncLocalTaskPreview\(\)/);
 });
 
@@ -1370,19 +1379,28 @@ test('ACCEPTANCE AUTO-03: Monaco and textarea fallback both wrap long lines with
   assert.match(frontendSource, /scrollbar:\s*\{horizontal:\s*"hidden"\}/);
 });
 
-test('ACCEPTANCE AUTO-04: terminal and expandable run logs are mutually exclusive and viewport-aware', () => {
+test('ACCEPTANCE AUTO-04: terminal input echo and Pages/Worker logs occupy separate tab panels', () => {
   assert.match(frontendSource, /id="wb-term-tabs" role="tablist"/);
   assert.match(frontendSource, /id="wb-terminal-tab" role="tab" aria-controls="wb-terminal" aria-selected="true"/);
   assert.match(frontendSource, /id="wb-runlogs-tab" role="tab" aria-controls="wb-runlogs" aria-selected="false"/);
-  assert.match(frontendSource, /#wb-term\[data-panel="terminal"\] #wb-runlogs,#wb-term\[data-panel="logs"\] #wb-terminal\{display:none\}/);
+  assert.match(frontendSource, /<section id="wb-terminal" aria-label="终端">[\s\S]*?<pre id="wb-terminal-output"/);
+  assert.match(frontendSource, /<form id="wb-terminal-command-form"[\s\S]*?<input id="wb-terminal-command"/);
+  assert.match(frontendSource, /<div id="wb-runlogs" aria-label="Pages 与 Worker 运行日志" hidden>[\s\S]*?id="wb-front-log"[\s\S]*?id="wb-back-log"/);
   const script = /<script\b(?=[^>]*\bid=["']wb-devbench["'])[^>]*>([\s\S]*?)<\/script\s*>/i.exec(frontendSource)[1];
   assert.match(script, /function setTerminalPanel\(panel\)/);
-  assert.match(script, /setTerminalPanel\("terminal"\)/);
-  assert.match(script, /setTerminalPanel\("logs"\)/);
-  assert.match(script, /g\("wb-runlogs"\)\.addEventListener\("toggle"/);
+  assert.match(script, /g\("wb-terminal"\)\.hidden = showLogs/);
+  assert.match(script, /g\("wb-runlogs"\)\.hidden = !showLogs/);
+  assert.match(script, /function appendTerminalCommand\(command\)/);
+  assert.match(script, /g\("wb-terminal-command-form"\)\.addEventListener\("submit"/);
+  assert.match(script, /appendTerminalCommand\(command\)/);
+  assert.doesNotMatch(script, /g\("wb-runlogs"\)\.addEventListener\("toggle"/);
+  const verifyResult = script.slice(script.indexOf("function renderVerifyResult"), script.indexOf("async function runRemoteVerify"));
+  assert.doesNotMatch(verifyResult, /wb-terminal-output/);
+  const runBoth = script.slice(script.indexOf("async function runBoth()"), script.indexOf("/* ---------------- 打开 / 关闭", script.indexOf("async function runBoth()")));
+  assert.doesNotMatch(runBoth, /wb-terminal-output|terminalOutput/);
+  assert.match(frontendSource, /#wb-terminal-command-form\{display:flex;flex:0 0 auto/);
   assert.match(script, /window\.visualViewport\.addEventListener\("resize"/);
   assert.match(script, /window\.visualViewport\.addEventListener\("scroll"/);
-  assert.doesNotMatch(frontendSource, /wb-runlogs-expanded/);
 });
 
 test('ACCEPTANCE CHAIN-01: generated state exists before any downstream delivery state', () => {

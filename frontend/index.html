@@ -5886,6 +5886,26 @@ const bestPlace = (list, q) => {
 }
 
 </style>
+<style id="wb-terminal-separated-panels">
+#wb-term{display:flex;flex-direction:column;min-height:110px;overflow:hidden}
+#wb-term-tabs{flex:0 0 38px;display:flex;align-items:center;gap:6px;padding:3px 8px;background:#202733;border-bottom:1px solid #3b4352}
+#wb-term-tabs button{flex:1;min-height:30px;padding:5px 10px;border:1px solid #465267;border-radius:7px;background:#252c39;color:#cbd4e3;font-size:12px}
+#wb-term-tabs button[aria-selected="true"]{background:#405b49;border-color:#5f8c6b;color:#fff}
+#wb-terminal,#wb-runlogs{flex:1 1 0;min-height:0;max-height:none;overflow:auto}
+#wb-terminal{display:flex;flex-direction:column;overflow:hidden;border:0;background:#171c25;color:#e5eaf2}
+#wb-runlogs{display:flex;flex-direction:column;gap:7px;padding:8px;background:#171c25;color:#e5eaf2}
+#wb-terminal[hidden],#wb-runlogs[hidden]{display:none!important}
+#wb-terminal-output{display:block;flex:1 1 0;min-height:0;max-height:none;overflow:auto;margin:0;padding:8px 10px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;color:#d8e0ec;background:#171c25;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#wb-terminal-command-form{display:flex;flex:0 0 auto;align-items:center;gap:8px;padding:8px;border-top:1px solid #3b4659;background:#202938}
+#wb-terminal-command{flex:1 1 auto;min-width:0;height:40px;padding:8px 11px;border:1px solid #53627a;border-radius:8px;background:#111720;color:#edf2f8;font:13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;outline:0}
+#wb-terminal-command::placeholder{color:#9aa8bb}
+#wb-terminal-command:focus{border-color:#8db6f4;box-shadow:0 0 0 2px #8db6f422}
+#wb-terminal-command-send{flex:0 0 auto;min-width:58px;min-height:40px;padding:7px 12px;border:1px solid #53627a;border-radius:8px;background:#354155;color:#edf2f8}
+.wb-terminal-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.wb-runlogs-title{flex:0 0 auto;padding:7px 9px;border:1px solid #3b4659;border-radius:7px;background:#252e3d;color:#dce4ef;font-size:12px;font-weight:700}
+#wb-runlogs .wb-logbox{min-height:0}
+@media(max-width:1100px){#wb-term{flex:0 0 min(34vh,220px);min-height:110px;max-height:55%}#wb-terminal{min-height:0}#wb-runlogs{min-height:0}#wb-terminal-command-form{padding-bottom:max(8px,env(safe-area-inset-bottom))}#wb-terminal-command{font-size:16px}}
+</style>
 <!-- 开发台：全宽编辑器与统一运行日志；本地预览在独立全屏工作区显示 -->
 <div id="wb" role="dialog" aria-hidden="true" aria-label="开发台">
   <div id="wb-bar">
@@ -5919,17 +5939,23 @@ const bestPlace = (list, q) => {
       <button type="button" id="wb-terminal-tab" role="tab" aria-controls="wb-terminal" aria-selected="true">终端</button>
       <button type="button" id="wb-runlogs-tab" role="tab" aria-controls="wb-runlogs" aria-selected="false">运行日志</button>
     </div>
-    <details id="wb-runlogs"><summary>展开运行日志（历史记录 · Pages · Worker）</summary>
+    <section id="wb-terminal" aria-label="终端">
+      <div class="wb-terminal-head"><span>终端</span><span class="wb-terminal-hint" id="wb-terminal-status" role="status" aria-live="polite">命令回显就绪</span><span class="sp"></span>
+        <button type="button" id="wb-terminal-layout" class="wb-touch-btn" aria-label="切换终端全屏" aria-pressed="false">全屏</button>
+      </div>
+      <pre id="wb-terminal-output" role="log" aria-live="polite">终端已就绪。输入命令后会立即显示在这里。</pre>
+      <form id="wb-terminal-command-form" autocomplete="off">
+        <label class="wb-terminal-sr-only" for="wb-terminal-command">输入命令</label>
+        <input id="wb-terminal-command" name="command" type="text" placeholder="输入命令…" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="send">
+        <button id="wb-terminal-command-send" type="submit">发送</button>
+      </form>
+    </section>
+    <div id="wb-runlogs" aria-label="Pages 与 Worker 运行日志" hidden>
+      <div id="wb-runlogs-title" class="wb-runlogs-title">运行日志（历史记录 · Pages · Worker）</div>
       <div id="wb-history" aria-label="历史运行日志"></div>
       <div class="wb-logbox"><div class="wb-logtitle">Pages 前端日志 · <a id="wb-pages-run-link" href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/45809262138" target="_blank" rel="noopener">打开 Pages Actions Run</a></div><pre id="wb-front-log"></pre></div>
       <div class="wb-logbox"><div class="wb-logtitle">Worker 后端日志 · <a id="wb-worker-run-link" href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/45809265485" target="_blank" rel="noopener">打开 Worker Actions Run</a></div><pre id="wb-back-log"></pre></div>
-    </details>
-    <section id="wb-terminal" aria-label="Pages 与 Worker 运行日志">
-      <div class="wb-terminal-head"><span>运行日志</span><span class="wb-terminal-hint" id="wb-terminal-status" role="status" aria-live="polite">日志面板就绪</span><span class="sp"></span>
-        <button type="button" id="wb-terminal-layout" class="wb-touch-btn" aria-label="切换日志全屏" aria-pressed="false">全屏</button>
-      </div>
-      <pre id="wb-terminal-output" role="log" aria-live="polite">等待 Pages / Worker 运行日志…</pre>
-    </section>
+    </div>
   </div>
 </div>
 <script id="wb-devbench">
@@ -6278,8 +6304,8 @@ async function loadRunHistory() {
       b.onclick=async()=>{const q=await authFetch(GATEWAY+"/api/code/logs?run_id="+encodeURIComponent(x.run_id),{cache:"no-store"}),j=await q.json().catch(()=>({}));if(j.ok)renderVerifyResult({...j,state:j.state||x.state,fromHistory:true});else toast(j.msg||"读取日志失败");};
       history.appendChild(b);
     });
-    const details=g("wb-runlogs"), summary=details&&details.querySelector("summary");
-    if(summary)summary.textContent="展开运行日志（历史 "+Math.min((d.runs||[]).length,20)+" 条 · Pages · Worker）";
+    const title=g("wb-runlogs-title");
+    if(title)title.textContent="运行日志（历史 "+Math.min((d.runs||[]).length,20)+" 条 · Pages · Worker）";
   } catch (_) {}
 }
 let pagesHealthProbe = {run_id:"", state:"idle", status:null, error:"", promise:null};
@@ -6407,7 +6433,6 @@ function renderVerifyResult(d) {
   renderChain(d);
   const h = document.createElement("h4"); h.textContent = title; h.style.color = state === "success" ? "#247a43" : state === "failure" ? "#b33b32" : "#8b6b16"; res.appendChild(h);
   if (state === "failure") { const locations = renderVerifyErrorLocations(d.error_lines, d.head_sha); if (locations) res.appendChild(locations); }
-  const terminalOutput = g("wb-terminal-output"); if (terminalOutput && Array.isArray(d.error_lines) && d.error_lines.length) terminalOutput.textContent = d.error_lines.join("\n");
   const p = document.createElement("pre"); p.textContent = state === "failure" ? ((d.failed_step ? "失败步骤：" + d.failed_step + "\n\n" : "") + ((d.error_lines || []).join("\n") || "GitHub 没有返回可提取的报错行。")) : "checkout ✓\nnpm install ✓\nnpm test " + (state === "success" ? "✓" : "…") + "\nnpm run build " + (state === "success" ? "✓" : "…"); res.appendChild(p);
   const links = document.createElement("div");
   const actions = verifyLink("打开 Actions 运行记录", d.actions_url || d.run_url); if (actions) links.appendChild(actions);
@@ -6519,7 +6544,8 @@ function renderChain(d) {
 async function runBoth() {
   const btn = g("wb-both"); if (!authToken) { toast("请先登录"); return; }
   if (btn) { btn.disabled = true; btn.textContent = "启动中…"; }
-  g("wb-runlogs").open = false; g("wb-front-log").textContent = ""; g("wb-back-log").textContent = ""; g("wb-terminal-output").textContent = "正在等待 Pages / Worker 日志…"; g("wb-terminal-status").textContent = "正在连接运行记录";
+  g("wb-front-log").textContent = ""; g("wb-back-log").textContent = ""; g("wb-terminal-status").textContent = "命令回显就绪";
+  setTerminalPanel("logs");
   showTab("run"); renderVerifyResult({ state: "running", submitted: false, local: true });
   renderChain({ started_at: new Date().toISOString(), state: "running", runs: [] });
   say("正在触发 GitHub Actions：前端 build + Worker deploy 并行跑 …");
@@ -6532,13 +6558,10 @@ async function runBoth() {
     const fl = (front.logs || []).join("\n"), bl = (back.logs || []).join("\n");
     g("wb-front-log").textContent = fl || (front.run_url ? "Pages build / deploy 排队中… " + front.run_url : "等待 GitHub 返回 Pages 部署日志…");
     g("wb-back-log").textContent = bl || (back.run_url ? "Worker deploy 排队中… " + back.run_url : "等待 GitHub 返回 Worker deploy 日志…");
-    const terminalOutput = g("wb-terminal-output");
-    if (terminalOutput) {
-      terminalOutput.textContent = ["[Pages]", fl || g("wb-front-log").textContent, "", "[Worker]", bl || g("wb-back-log").textContent].join("\n");
-      terminalOutput.scrollTop = terminalOutput.scrollHeight;
-    }
-    const terminalStatus = g("wb-terminal-status");
-    if (terminalStatus) terminalStatus.textContent = "Pages / Worker 日志同步中";
+    const logsPanel = g("wb-runlogs");
+    if (logsPanel) logsPanel.scrollTop = logsPanel.scrollHeight;
+    const logsTitle = g("wb-runlogs-title");
+    if (logsTitle) logsTitle.textContent = "运行日志 · Pages / Worker 同步中";
     const pagesLink=g("wb-pages-run-link"), workerLink=g("wb-worker-run-link");
     if(pagesLink && front.run_id) pagesLink.href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/"+encodeURIComponent(front.run_id);
     if(workerLink && back.run_id) workerLink.href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/"+encodeURIComponent(back.run_id);
@@ -6615,7 +6638,7 @@ function syncLocalTaskPreview() {
       }
     }
     if (chain) { const sourceChain = g("wb-chain"); chain.replaceChildren(...(sourceChain ? [sourceChain.cloneNode(true)] : [])); }
-    if (logs) { const output = g("wb-terminal-output"); logs.textContent = output ? output.textContent : "等待运行输出…"; }
+    if (logs) { const pages = g("wb-front-log"), worker = g("wb-back-log"); logs.textContent = ["[Pages]", pages ? pages.textContent : "", "", "[Worker]", worker ? worker.textContent : ""].join("\n"); }
   } catch (error) { /* A preview tab may be closing while a result update arrives. */ }
 }
 function openLocalTaskPreview() {
@@ -6641,20 +6664,30 @@ g("wb-local-preview").addEventListener("click", () => {
 g("wb-reload").addEventListener("click", () => { if (!ed) return; if (dirty && !confirm("重新读取会丢掉未保存的修改，继续？")) return; loadFile(); });
 g("wb-prev-refresh").addEventListener("click", renderPreview);
 function setTerminalPanel(panel) {
-  const term = g("wb-term"), logs = g("wb-runlogs");
   const showLogs = panel === "logs";
-  term.dataset.panel = showLogs ? "logs" : "terminal";
-  logs.open = showLogs;
+  g("wb-term").dataset.panel = showLogs ? "logs" : "terminal";
+  g("wb-terminal").hidden = showLogs;
+  g("wb-runlogs").hidden = !showLogs;
   g("wb-terminal-tab").setAttribute("aria-selected", String(!showLogs));
   g("wb-runlogs-tab").setAttribute("aria-selected", String(showLogs));
 }
 g("wb-terminal-tab").addEventListener("click", () => setTerminalPanel("terminal"));
 g("wb-runlogs-tab").addEventListener("click", () => setTerminalPanel("logs"));
-g("wb-runlogs").addEventListener("toggle", () => {
-  const showLogs = g("wb-runlogs").open;
-  g("wb-term").dataset.panel = showLogs ? "logs" : "terminal";
-  g("wb-terminal-tab").setAttribute("aria-selected", String(!showLogs));
-  g("wb-runlogs-tab").setAttribute("aria-selected", String(showLogs));
+function appendTerminalCommand(command) {
+  const output = g("wb-terminal-output");
+  if (!output) return;
+  const lines = String(output.textContent || "").split("\n").filter((line, index) => !(index === 0 && line.startsWith("终端已就绪")));
+  lines.push("> " + command);
+  output.textContent = lines.slice(-300).join("\n");
+  output.scrollTop = output.scrollHeight;
+}
+g("wb-terminal-command-form").addEventListener("submit", event => {
+  event.preventDefault();
+  const input = g("wb-terminal-command"), command = String(input.value || "").trim();
+  if (!command) return;
+  appendTerminalCommand(command);
+  input.value = "";
+  g("wb-terminal-status").textContent = "命令已回显";
 });
 g("wb-terminal-layout").addEventListener("click",()=>{
   const terminal=g("wb-terminal"),button=g("wb-terminal-layout"),full=terminal.classList.toggle("wb-terminal-fullscreen");
