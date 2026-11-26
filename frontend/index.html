@@ -6227,7 +6227,7 @@ async function ensureLocalWebContainer() {
   localLog("启动浏览器本地容器 …");
   localWc=await withTimeout(localWcModule.WebContainer.boot(coep==="credentialless"?{coep:"credentialless"}:{}),60000,"WebContainer boot");
   localWc.on("server-ready",(port,url)=>{
-    const frame=g("wb-runframe");if(frame){frame.dataset.live="1";frame.dataset.localReady="0";frame.dataset.localFallback="0";frame.src=url;showTab("run");clearTimeout(localPreviewGuard);localPreviewGuard=setTimeout(()=>{if(frame.dataset.localReady!=="1"&&frame.dataset.localFallback!=="1")fallbackToPagesPreview(frame);},5000);}
+    const frame=g("wb-runframe");if(frame){frame.dataset.live="1";frame.dataset.localReady="0";frame.dataset.localFallback="0";frame.onload=()=>{if(frame.dataset.localFallback==="1")return;clearTimeout(localPreviewGuard);localPreviewGuard=setTimeout(()=>{if(frame.dataset.localReady!=="1"&&frame.dataset.localFallback!=="1")fallbackToPagesPreview(frame);},5000);};frame.src=url;showTab("run");clearTimeout(localPreviewGuard);localPreviewGuard=setTimeout(()=>{if(frame.dataset.localReady!=="1"&&frame.dataset.localFallback!=="1")fallbackToPagesPreview(frame);},15000);}
     localLog("本地预览服务已就绪：端口 "+port);
     if(localWcReady){localWcReady(url);localWcReady=null;}
   });
