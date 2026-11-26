@@ -223,7 +223,7 @@ test('persistent runner, KV logs and Pages deployment are wired end to end', () 
   assert.match(deploy, /actions\/checkout@v4/);
   assert.match(deploy, /run: npm test/);
   assert.match(deploy, /run: npm run build/);
-  assert.match(deploy, /wrangler pages deploy \. --project-name zhineng-et5/);
+  assert.match(deploy, /wrangler pages deploy \. --project-name zhineng/);
   assert.match(deploy, /CODE_PREVIEW_URL: https:\/\/zhineng-et5\.pages\.dev/);
   assert.match(frontendSource, /部署/);
   assert.match(frontendSource, /\/api\/code\/logs/);
