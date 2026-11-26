@@ -8,6 +8,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const http = require('node:http');
+const os = require('node:os');
+const { pathToFileURL } = require('node:url');
 
 const root = path.resolve(__dirname, '..');
 const workerSource = fs.readFileSync(path.join(root, 'worker.js'), 'utf8');
@@ -806,3 +809,52 @@ for (const relativeFile of ['studio.js', 'frontend/studio.js']) {
     assert.equal(window.omStudio.state, state);
   });
 }
+
+
+test('local HTTP integration: frontend-style API request reaches the real Worker /api/models route', async () => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'openmanus-worker-http-'));
+  const modulePath = path.join(tempDir, 'worker.mjs');
+  await fs.promises.copyFile(path.join(root, 'worker.js'), modulePath);
+  let server;
+  try {
+    const workerModule = await import(pathToFileURL(modulePath).href + '?test=' + Date.now());
+    const worker = workerModule.default;
+    assert.equal(typeof worker.fetch, 'function');
+    server = http.createServer(async (req, res) => {
+      try {
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        const body = chunks.length ? Buffer.concat(chunks) : undefined;
+        const request = new Request('http://' + (req.headers.host || '127.0.0.1') + req.url, {
+          method: req.method,
+          headers: req.headers,
+          body: ['GET', 'HEAD'].includes(req.method) ? undefined : body
+        });
+        const response = await worker.fetch(request, {}, { waitUntil() {} });
+        res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+        res.end(Buffer.from(await response.arrayBuffer()));
+      } catch (error) {
+        res.writeHead(500, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, msg: error.message }));
+      }
+    });
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    const response = await fetch('http://127.0.0.1:' + address.port + '/api/models', {
+      headers: { Accept: 'application/json' }
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type') || '', /application\\/json/i);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.ok(Array.isArray(payload.providers));
+    assert.ok(payload.providers.some(provider => provider.id === 'Groq'));
+    assert.ok(payload.providers.some(provider => provider.id === 'OpenRouter'));
+  } finally {
+    if (server) await new Promise(resolve => server.close(resolve));
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+});
