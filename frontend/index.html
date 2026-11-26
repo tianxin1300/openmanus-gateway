@@ -6605,7 +6605,10 @@ g("wb-local-preview").addEventListener("click", async () => {
   button.disabled = true;
   if (alert) { alert.hidden = true; g("wb-local-error-summary").textContent = ""; }
   try { await openLocalTaskPreview(); }
-  catch (_) { /* runLocalTaskPreview renders the one-line warning in the preview pane */ }
+  catch (error) {
+    const summary = g("wb-local-error-summary");
+    if (alert && summary) { summary.textContent = "本地预览启动失败：" + String(error && error.message || error); alert.hidden = false; }
+  }
   finally { button.disabled = false; }
 });
 g("wb-reload").addEventListener("click", () => { if (!ed) return; if (dirty && !confirm("重新读取会丢掉未保存的修改，继续？")) return; loadFile(); });
