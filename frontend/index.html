@@ -757,7 +757,7 @@ const GATEWAY = (() => {
   const production = "https://openmanus-gateway.tianxinyuan881.workers.dev";
   try {
     const candidate = new URL(new URLSearchParams(location.search).get("gateway") || "");
-    const expectedHost = location.hostname.replace(/^3000-/, "8787-");
+    const expectedHost = location.hostname.replace(/^3000(?=--|-)/, "8787");
     if (candidate.protocol === "https:" && candidate.hostname === expectedHost && candidate.pathname === "/" && !candidate.username && !candidate.password) return candidate.origin;
   } catch (_) {}
   return production;
