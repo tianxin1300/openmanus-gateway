@@ -1,73 +1,73 @@
-诊断时间(UTC): 2026-11-26T03:26:23+00:00
+诊断时间(UTC): 2026-11-26T05:15:37+00:00
 
 == 最近 12 个提交 ==
-e55ac51 Update project name in deploy test assertion
-7f43590 Update project name in deployment workflow
-bf229a3 Rename project from 'zhineng-et5' to 'zhineng'
-4f64476 Update pages build output directory in wrangler.toml
-bdd1da1 diag: worker.js / index.html / 测试 现状报告
-5472849 Fix indentation in deploy-project.yml
-2798ecc diag: worker.js / index.html / 测试 现状报告
-e66493a diag: worker.js / index.html / 测试 现状报告
-358e9ad Fix indentation in deploy-project.yml
-59d888a diag: 先只读诊断仓库现状（worker.js / index.html / npm test / build），v107~v109 补丁暂停
-90faa01 v109: 开发台「同时启动」(Actions 两个 job 并行) + 状态链（apply_v109.py + devrun.js + dev-run.yml 模板）
-30366ea Update deployment command in tests
+a8d28e8 Correct P0 cleanup regression assertion
+0ee15b9 Temporarily run deploy-project and diagnostic report on push
+6dc17b4 Require explicit success for force-clear UI
+52f430a Keep pending state when Durable Object expiry cleanup fails
+714fece Correct local API routing regression assertion
+9cc7416 Handle WebContainer preview host port separator variants
+d011eb6 Fix P0 local API routing and pending branch cleanup
+ce76b89 Wire preview accept and reject actions to approval API
+8eb873b Make code preview collapsible and refreshable without losing pending edits
+475e989 Harden sensitive filename protection
+d17cba5 Correct repository file path matching
+f86ad72 Fix protected-path matching and whole-repo path parsing
 
 == 文件 ==
 .:
-total 1052
-drwxr-xr-x 11 runner runner   4096 Nov 26 03:26 .
-drwxr-xr-x  3 runner runner   4096 Nov 26 03:26 ..
-drwxr-xr-x  7 runner runner   4096 Nov 26 03:26 .git
-drwxr-xr-x  3 runner runner   4096 Nov 26 03:26 .github
--rw-r--r--  1 runner runner    724 Nov 26 03:26 apply_v106.py
--rw-r--r--  1 runner runner   2686 Nov 26 03:26 apply_v107.py
--rw-r--r--  1 runner runner   4017 Nov 26 03:26 apply_v108.py
--rw-r--r--  1 runner runner   4249 Nov 26 03:26 apply_v109.py
--rw-r--r--  1 runner runner   2497 Nov 26 03:26 dev-run.yml
-drwxr-xr-x  2 runner runner   4096 Nov 26 03:26 diag
--rw-r--r--  1 runner runner   6573 Nov 26 03:26 diag_v110.py
-drwxr-xr-x  2 runner runner   4096 Nov 26 03:26 frontend
--rw-r--r--  1 runner runner    197 Nov 26 03:26 package-lock.json
--rw-r--r--  1 runner runner    338 Nov 26 03:26 package.json
--rw-r--r--  1 runner runner  23105 Nov 26 03:26 studio.js
-drwxr-xr-x  2 runner runner   4096 Nov 26 03:26 tests
-drwxr-xr-x  2 runner runner   4096 Nov 26 03:26 v106
-drwxr-xr-x  2 runner runner   4096 Nov 26 03:26 v107
-drwxr-xr-x  2 runner runner   4096 Nov 26 03:26 v108
-drwxr-xr-x  2 runner runner   4096 Nov 26 03:26 v109
--rw-r--r--  1 runner runner 960144 Nov 26 03:26 worker.js
--rw-r--r--  1 runner runner    512 Nov 26 03:26 wrangler.toml
+total 1056
+drwxr-xr-x 11 runner runner   4096 Nov 26 05:15 .
+drwxr-xr-x  3 runner runner   4096 Nov 26 05:15 ..
+drwxr-xr-x  7 runner runner   4096 Nov 26 05:15 .git
+drwxr-xr-x  3 runner runner   4096 Nov 26 05:15 .github
+-rw-r--r--  1 runner runner    724 Nov 26 05:15 apply_v106.py
+-rw-r--r--  1 runner runner   2686 Nov 26 05:15 apply_v107.py
+-rw-r--r--  1 runner runner   4017 Nov 26 05:15 apply_v108.py
+-rw-r--r--  1 runner runner   4249 Nov 26 05:15 apply_v109.py
+-rw-r--r--  1 runner runner   2497 Nov 26 05:15 dev-run.yml
+drwxr-xr-x  2 runner runner   4096 Nov 26 05:15 diag
+-rw-r--r--  1 runner runner   6573 Nov 26 05:15 diag_v110.py
+drwxr-xr-x  2 runner runner   4096 Nov 26 05:15 frontend
+-rw-r--r--  1 runner runner    197 Nov 26 05:15 package-lock.json
+-rw-r--r--  1 runner runner    338 Nov 26 05:15 package.json
+-rw-r--r--  1 runner runner  23105 Nov 26 05:15 studio.js
+drwxr-xr-x  2 runner runner   4096 Nov 26 05:15 tests
+drwxr-xr-x  2 runner runner   4096 Nov 26 05:15 v106
+drwxr-xr-x  2 runner runner   4096 Nov 26 05:15 v107
+drwxr-xr-x  2 runner runner   4096 Nov 26 05:15 v108
+drwxr-xr-x  2 runner runner   4096 Nov 26 05:15 v109
+-rw-r--r--  1 runner runner 963375 Nov 26 05:15 worker.js
+-rw-r--r--  1 runner runner    512 Nov 26 05:15 wrangler.toml
 
 .github/workflows:
 total 20
-drwxr-xr-x 2 runner runner 4096 Nov 26 03:26 .
-drwxr-xr-x 3 runner runner 4096 Nov 26 03:26 ..
--rw-r--r-- 1 runner runner 2454 Nov 26 03:26 apply-v105.yml
--rw-r--r-- 1 runner runner 2725 Nov 26 03:26 deploy-project.yml
--rw-r--r-- 1 runner runner 2558 Nov 26 03:26 verify-project.yml
+drwxr-xr-x 2 runner runner 4096 Nov 26 05:15 .
+drwxr-xr-x 3 runner runner 4096 Nov 26 05:15 ..
+-rw-r--r-- 1 runner runner 2454 Nov 26 05:15 apply-v105.yml
+-rw-r--r-- 1 runner runner 2870 Nov 26 05:15 deploy-project.yml
+-rw-r--r-- 1 runner runner 2558 Nov 26 05:15 verify-project.yml
 
 frontend:
-total 816
-drwxr-xr-x  2 runner runner   4096 Nov 26 03:26 .
-drwxr-xr-x 11 runner runner   4096 Nov 26 03:26 ..
--rw-r--r--  1 runner runner     92 Nov 26 03:26 _headers
--rw-r--r--  1 runner runner  20601 Nov 26 03:26 devrun.js
--rw-r--r--  1 runner runner 592360 Nov 26 03:26 index.html
--rw-r--r--  1 runner runner 161913 Nov 26 03:26 openmanus_frontend_file_v99l 2.zip
--rw-r--r--  1 runner runner  18738 Nov 26 03:26 studio.js
--rw-r--r--  1 runner runner  12533 Nov 26 03:26 tasks.js
--rw-r--r--  1 runner runner     80 Nov 26 03:26 wrangler.toml
+total 820
+drwxr-xr-x  2 runner runner   4096 Nov 26 05:15 .
+drwxr-xr-x 11 runner runner   4096 Nov 26 05:15 ..
+-rw-r--r--  1 runner runner     92 Nov 26 05:15 _headers
+-rw-r--r--  1 runner runner  20601 Nov 26 05:15 devrun.js
+-rw-r--r--  1 runner runner 593387 Nov 26 05:15 index.html
+-rw-r--r--  1 runner runner 161913 Nov 26 05:15 openmanus_frontend_file_v99l 2.zip
+-rw-r--r--  1 runner runner  21927 Nov 26 05:15 studio.js
+-rw-r--r--  1 runner runner  12533 Nov 26 05:15 tasks.js
+-rw-r--r--  1 runner runner     80 Nov 26 05:15 wrangler.toml
 
 tests:
 total 44
-drwxr-xr-x  2 runner runner  4096 Nov 26 03:26 .
-drwxr-xr-x 11 runner runner  4096 Nov 26 03:26 ..
--rw-r--r--  1 runner runner 32841 Nov 26 03:26 code-mode-providers.test.cjs
+drwxr-xr-x  2 runner runner  4096 Nov 26 05:15 .
+drwxr-xr-x 11 runner runner  4096 Nov 26 05:15 ..
+-rw-r--r--  1 runner runner 34458 Nov 26 05:15 code-mode-providers.test.cjs
 
 == worker.js ==
-960144 字节, 9148 行, CRLF=False
+963375 字节, 9216 行, CRLF=False
 -- 前 10 行 --
 // openmanus-gateway v99y：一个脑子。飞书消息不再自己猜意图，直接调前端同一个 runWorkChat（同一份 WORK_SYSTEM_PROMPT / 同一个模型轮换 / 同一张 FS_TOOLS）。选哪个工具完全由模型自己定：代码里没有关键词分流、没有白名单、没有预调工具，只给任务结构（工具表 + 会话态 + 多轮循环 + 最终自由文本）。删掉飞书先猜意图那层 / 关键…
 // v100：新增「代码助手」（CODE_SYSTEM_PROMPT / codeLLM / codeAssist，OpenRouter 免费代码模型 → Groq llama-3.3-70b 兜底；可经 GitHub REST 读写文件）。其余代码一行没改。
@@ -82,7 +82,7 @@ drwxr-xr-x 11 runner runner  4096 Nov 26 03:26 ..
 -- 所有 path === 路由（77 个）--
 /agg /api/agent/chat /api/agent/cron/run /api/agent/tool/search /api/baidu /api/chat /api/code /api/code/confirm /api/code/deploy /api/code/file /api/code/force-clear /api/code/history /api/code/logs /api/code/pending /api/code/rollback /api/code/runs /api/code/tree /api/code/verify /api/connectors /api/connectors/feishu/execute /api/connectors/figma/execute /api/connectors/github/execute /api/connectors/run /api/connectors/screenshot/execute /api/connectors/search/execute /api/debug/llmprobe /api/feedback /api/feishu/agent-plan /api/feishu/event /api/feishu/logs /api/feishu/oauth/callback /api/feishu/oauth/start /api/feishu/relaylog /api/feishu/selftest /api/feishu/toolcheck /api/fetch /api/file/ai /api/file/read /api/files /api/files/upload /api/generate/audio /api/generate/image /api/history /api/hot /api/kb /api/kb/clear /api/kb/delete /api/library /api/location /api/login /api/map /api/map/jskey /api/memory /api/models /api/places/busrt /api/places/extras /api/places/line /api/places/nearby /api/places/route /api/places/staticmap /api/places/suggest /api/places/where /api/projects /api/register /api/shares /api/tasks/recent /api/tasks/schedules /api/translate /api/translate/diag /api/tts /debug /feishu/logs /feishu/logs/ /openmanus_tools.yaml /openmanus_tools.yml /register /v1/chat/completions
 -- code/dev/task/verify/deploy 开头的函数和类 --
-codeLLM codeVerifyPreview codeGhApi codeGitRefUrl codeTempBranch codeTempPreview codeCreateTempBranch codeDeleteBranch codeMergeTempBranch codeHistoryLoad codeHistorySave codeMemoryAppend codeMemoryPrompt codeRollback codeRunnerNamespace codeRunnerId codeRunnerCall codeRunnerUpdate codeRunIndexLoad codePersistRun codeRunLogs codeRuns codeWorkflowStatus codeDeployStart codeDeployStatus codeVerifyStart codeVerifyRedact codeVerifyErrorLines codeVerifyStatus codeGetFile codeFileTree codeUpdateFile codePushGuard codeParse codeBlocks codeAssist codeEditRules codeChunks codeKeywords codePick codeLineAt codeShow codeParseEdits codeApply codeClaimStub codeClaimCall codeClaimState codePendingActive codePendingLoad codePendingCreate codePendingDiscard codePendingSweep codePendingView codeProject codeConfirm codeChatEntry taskIsDue CodeClaimDO CodeRunnerDO
+codeLLM codeVerifyPreview codeGhApi codeGitRefUrl codeTempBranch codeTempPreview codeCreateTempBranch codeDeleteBranch codeMergeTempBranch codeHistoryLoad codeHistorySave codeMemoryAppend codeMemoryPrompt codeRollback codeRunnerNamespace codeRunnerId codeRunnerCall codeRunnerUpdate codeRunIndexLoad codePersistRun codeRunLogs codeRuns codeWorkflowStatus codeDeployStart codeDeployStatus codeVerifyStart codeVerifyRedact codeVerifyErrorLines codeVerifyStatus codeGetFile codeFileTree codeUpdateFile codePathProtected codePushGuard codeParse codeBlocks codeAssist codeEditRules codeChunks codeKeywords codePick codeLineAt codeShow codeParseEdits codeApply codeClaimStub codeClaimCall codeClaimState codePendingActive codePendingLoad codePendingCreate codePendingDiscard codePendingSweep codePendingView codeProject codeConfirm codeChatEntry taskIsDue CodeClaimDO CodeRunnerDO
 -- export class --
 CodeClaimDO CodeRunnerDO
 -- CODE_/DEV_/TASK_ 常量 --
@@ -115,7 +115,7 @@ CODE_MODEL_ID CODE_SYSTEM_PROMPT CODE_OR_MODELS CODE_GROQ_MODELS CODE_NVIDIA_MOD
   0  code:chain:
   2  codeCreateTempBranch
   3  codeMergeTempBranch
-  8  codeDeleteBranch
+ 11  codeDeleteBranch
   6  CODE_VERIFY_WORKFLOW
   5  CODE_DEPLOY_WORKFLOW
   0  expirationTtl: 3600
@@ -229,13 +229,13 @@ async function codeConfirm(env, user, yes, input = {}) {
     editsForApply = pend.edits.filter((e) => !resolved.has(e.path));
     paths = paths.filter((path) => !resolved.has(path));
 -- 含 code:pend: 的行 --
-878: const p = await env.KV.get("code:pend:" + user, "json").catch(() => null);
-879: if (p && p.created_at && Date.now() - p.created_at > CODE_PENDING_TTL_MS) { await env.KV.delete("code:pend:" + user).catch(() => {}); return null; }   // v108：读取时兜底过期
-899: if (env.KV) await env.KV.delete("code:pend:" + user).catch(() => {});   // v108：旧版 KV 遗留键也一并清掉
-909: const page = await env.KV.list({ prefix: "code:pend:", cursor });
+880: const p = await env.KV.get("code:pend:" + user, "json").catch(() => null);
+886: await env.KV.delete("code:pend:" + user).catch(() => {});
+916: try { await env.KV.delete("code:pend:" + user); }
+930: const page = await env.KV.list({ prefix: "code:pend:", cursor });
 
 == frontend/index.html ==
-592360 字节, 6279 行, CRLF=False
+593387 字节, 6301 行, CRLF=False
 -- <script src=…> --
 <script src="https://cdn.tailwindcss.com">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js">
@@ -246,21 +246,21 @@ async function codeConfirm(env, user, yes, input = {}) {
 <script src="studio.js">
 -- id="wb-…"（工作台）--
 wb-back-log wb-bar wb-both wb-ci wb-close wb-deploy wb-devbench wb-editor wb-file wb-front-log wb-left wb-lint wb-main wb-open wb-parallel-logs wb-prev-refresh wb-preview wb-reload wb-res wb-right wb-run wb-runframe wb-save wb-state wb-term wb-term-clear wb-xterm
-开发台                     14 处，行号 [628, 687, 5523, 5588, 5616, 5629, 5630, 5632]
-renderDeliveryChain      2 处，行号 [6036, 6053]
-wb-both                  3 处，行号 [5637, 6199, 6261]
-/api/code/verify         2 处，行号 [6085, 6107]
-/api/code/deploy         2 处，行号 [6119, 6121]
-/api/code/logs           1 处，行号 [6034]
+开发台                     14 处，行号 [628, 687, 5531, 5596, 5624, 5637, 5638, 5640]
+renderDeliveryChain      2 处，行号 [6044, 6061]
+wb-both                  3 处，行号 [5645, 6221, 6283]
+/api/code/verify         2 处，行号 [6093, 6115]
+/api/code/deploy         2 处，行号 [6127, 6129]
+/api/code/logs           1 处，行号 [6042]
 om-code-bar              0 处，行号 []
-composer-inner           4 处，行号 [108, 428, 720, 4133]
+composer-inner           4 处，行号 [108, 428, 720, 4141]
 -- 含「开发台」的行（前 6 行）--
 628: /* ---- 开发台（Monaco 编辑器 + 实时预览 + WebContainer 终端）---- */
 687: <button id="wb-open" class="sec header-action" type="button" title="开发台：在线编辑 index.html / 实时预览 / 终端" aria-label="开发台"><span class="action-icon" aria-hidden="true">⌘</span><span class="action-label">开发台</span></button>
-5523: /* 开发台 · 代码检测：脚本语法 + 重复 id + $("id") 引用不到的元素 + 遗留 console.log */
-5588: if (!code.trim()) { rows.push(["err", "编辑器里没有内容：先打开开发台并读取文件。"]); return show(rows); }
-5616: /* 开发台顶栏在手机上换行显示，避免「代码检测」等按钮被挤出屏幕 */
-5629: <!-- 开发台：左 Monaco 编辑器 / 右 实时预览（含运行结果）/ 下 终端（WebContainer + xterm），库全部按需从 CDN 加载 -->
+5531: /* 开发台 · 代码检测：脚本语法 + 重复 id + $("id") 引用不到的元素 + 遗留 console.log */
+5596: if (!code.trim()) { rows.push(["err", "编辑器里没有内容：先打开开发台并读取文件。"]); return show(rows); }
+5624: /* 开发台顶栏在手机上换行显示，避免「代码检测」等按钮被挤出屏幕 */
+5637: <!-- 开发台：左 Monaco 编辑器 / 右 实时预览（含运行结果）/ 下 终端（WebContainer + xterm），库全部按需从 CDN 加载 -->
 
 == wrangler.toml ==
 name = "openmanus-gateway"
@@ -300,46 +300,48 @@ crons = ["0 0 * * *"]
 }
 
 == npm test（node --test tests/*.cjs） ==
-node v24.22.3
+node v22.23.5
 退出码 0
-✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (3.058223ms)
-✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.430377ms)
-✔ editor delivery: pending work is resumable and deployment state is not overstated (0.530256ms)
-✔ project isolation: code edits use a temporary branch before merging to the base branch (0.685311ms)
-✔ web workbench: refuses unsafe save and recognizes dev/test/build scripts (0.598647ms)
-✔ remote verification: reuses a dispatchable workflow and returns status fields (0.432691ms)
-✔ remote verification UI: green success, red failures, and no invented preview URL (0.673248ms)
-✔ BUG-01: protected media and files never put the login token in URLs or media bodies (3.996124ms)
-✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (0.699417ms)
-✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.454817ms)
-✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (0.899283ms)
-✔ workbench starts frontend/backend together and renders the full delivery chain (1.232657ms)
-✔ persistent runner, KV logs and Pages deployment are wired end to end (1.292305ms)
-✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (2.507136ms)
-✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (1.539322ms)
-✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (1.016597ms)
-✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (0.995075ms)
-✔ codeLLM: OpenRouter network errors also never fall back to Toter (1.057648ms)
-✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (0.963708ms)
-✔ codeLLM: first usable custom model succeeds without attempting later models (0.920304ms)
-✔ codeLLM: retains the Groq target loop after OpenRouter (0.937299ms)
-✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (1.013623ms)
-✔ frontend: without studio initialization, ordinary-chat providers remain available (2.892568ms)
-✔ frontend: code mode shows provider-specific code models and hides Toter aliases (1.121082ms)
-✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (2.829555ms)
-✔ frontend: switching off code mode restores buttons and preserves chat model choice (1.414907ms)
-✔ studio.js: syncToggle re-renders providers when code mode changes (0.955246ms)
-✔ studio.js: omStudio state is exposed before eager init (1.007193ms)
-✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (0.905232ms)
-✔ frontend/studio.js: omStudio state is exposed before eager init (0.824322ms)
-ℹ tests 30
+✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (1.521541ms)
+✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.31391ms)
+✔ editor delivery: pending work is resumable and deployment state is not overstated (0.268623ms)
+✔ project isolation: code edits use a temporary branch before merging to the base branch (0.468342ms)
+✔ web workbench: refuses unsafe save and recognizes dev/test/build scripts (1.136925ms)
+✔ remote verification: reuses a dispatchable workflow and returns status fields (0.379549ms)
+✔ remote verification UI: green success, red failures, and no invented preview URL (0.597616ms)
+✔ BUG-01: protected media and files never put the login token in URLs or media bodies (0.609684ms)
+✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (0.675522ms)
+✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.282243ms)
+✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (0.765568ms)
+✔ workbench starts frontend/backend together and renders the full delivery chain (1.017485ms)
+✔ P0-01: simultaneous WebContainer startup routes frontend API calls to its paired local Wrangler port (0.363806ms)
+✔ P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records (1.232738ms)
+✔ persistent runner, KV logs and Pages deployment are wired end to end (1.128923ms)
+✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (1.66084ms)
+✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (1.019719ms)
+✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (0.843695ms)
+✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (0.855573ms)
+✔ codeLLM: OpenRouter network errors also never fall back to Toter (0.828312ms)
+✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (0.844476ms)
+✔ codeLLM: first usable custom model succeeds without attempting later models (0.820079ms)
+✔ codeLLM: retains the Groq target loop after OpenRouter (0.926423ms)
+✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (1.221902ms)
+✔ frontend: without studio initialization, ordinary-chat providers remain available (2.337535ms)
+✔ frontend: code mode shows provider-specific code models and hides Toter aliases (1.279057ms)
+✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (2.735377ms)
+✔ frontend: switching off code mode restores buttons and preserves chat model choice (1.111566ms)
+✔ studio.js: syncToggle re-renders providers when code mode changes (0.849073ms)
+✔ studio.js: omStudio state is exposed before eager init (1.578106ms)
+✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (0.775587ms)
+✔ frontend/studio.js: omStudio state is exposed before eager init (0.889073ms)
+ℹ tests 32
 ℹ suites 0
-ℹ pass 30
+ℹ pass 32
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 129.301981
+ℹ duration_ms 94.140187
 
 == npm run build ==
 退出码 0
