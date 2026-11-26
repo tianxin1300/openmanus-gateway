@@ -1061,7 +1061,7 @@ test('terminal is a standalone command echo panel and Pages/Worker logs stay sep
   assert.match(frontendSource, /<section id="wb-terminal" aria-label="终端">[\s\S]*?<pre id="wb-terminal-output"/);
   assert.match(frontendSource, /<form id="wb-terminal-command-form"[\s\S]*?<input id="wb-terminal-command"/);
   assert.match(frontendSource, /<div id="wb-runlogs" aria-label="Pages 与 Worker 运行日志" hidden>[\s\S]*?id="wb-front-log"[\s\S]*?id="wb-back-log"/);
-  assert.doesNotMatch(frontendSource, /id="wb-terminal-input"|initInteractiveTerminal|spawn\("jsh"/);
+  assert.doesNotMatch(frontendSource, /id="wb-terminal-input"|data-terminal-key|initInteractiveTerminal|spawn\("jsh"/);
   assert.doesNotMatch(frontendSource, /xterm\.js|xterm\.css|WebContainer|WC_MODULES|localWc/);
 });
 
@@ -1379,7 +1379,7 @@ test('ACCEPTANCE AUTO-03: Monaco and textarea fallback both wrap long lines with
   assert.match(frontendSource, /scrollbar:\s*\{horizontal:\s*"hidden"\}/);
 });
 
-test('terminal shortcut toolbar and blue theme are restored without changing acceptance sign-off', () => {
+test('terminal panels and viewport behavior remain independently testable; terminal acceptance stays unpassed', () => {
   assert.match(frontendSource, /id="wb-term-tabs" role="tablist"/);
   assert.match(frontendSource, /id="wb-terminal-tab" role="tab" aria-controls="wb-terminal" aria-selected="true"/);
   assert.match(frontendSource, /id="wb-runlogs-tab" role="tab" aria-controls="wb-runlogs" aria-selected="false"/);
@@ -1401,15 +1401,7 @@ test('terminal shortcut toolbar and blue theme are restored without changing acc
   assert.match(frontendSource, /#wb-terminal-command-form\{display:flex;flex:0 0 auto/);
   assert.match(script, /window\.visualViewport\.addEventListener\("resize"/);
   assert.match(script, /window\.visualViewport\.addEventListener\("scroll"/);
-  assert.match(frontendSource, /id="wb-terminal-shortcuts" role="toolbar"/);
-  for (const key of ["escape", "tab", "ctrl", "up", "down", "left", "right", "ctrl-c", "ctrl-d", "clear"]) {
-    assert.match(frontendSource, new RegExp('data-terminal-key="' + key + '"'));
-  }
-  assert.ok(frontendSource.includes('#wb-terminal-shortcuts button{min-width:36px;min-height:32px;padding:5px 9px;border:1px solid #3b4659;border-radius:7px;background:#2a3445;color:#e7edf7;font-size:11px;font-weight:650;box-shadow:none}'));
-  assert.ok(frontendSource.includes('#wb-term-tabs button[aria-selected="true"]{background:#2a3445;border-color:#58749e;color:#fff}'));
-  assert.ok(script.includes('function insertTerminalInput(value)'));
-  assert.ok(script.includes('terminalShortcuts.addEventListener("click"'));
-  assert.ok(script.includes('terminalCtrlPending'));
+
   assert.ok(script.includes('g("wb-terminal-command").addEventListener("keydown"'));
   assert.ok(script.includes('event.key.toUpperCase().charCodeAt(0) & 31'));
 });
