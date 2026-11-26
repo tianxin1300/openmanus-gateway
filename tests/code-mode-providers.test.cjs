@@ -28,6 +28,7 @@ function loadCodePendingDiscard({ pending, deleteBranch, claimCall, kvDelete }) 
   const source = workerSource.slice(start, end);
   const sandbox = {
     codePendingLoad: async () => pending,
+    codeClaimState: async () => ({ ok: true, pending, version: 1 }),
     codeDeleteBranch: deleteBranch,
     codeClaimCall: claimCall,
     CODE_PENDING_TTL_MS: 600000,
@@ -268,15 +269,20 @@ test('P0-01: local preview is started from the visible control', () => {
   const previewButtons = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-local-preview")[^>]*>/g)];
   assert.equal(previewButtons.length, 1);
 });
-test('P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records', () => {
+test('P0-02/03: expiry and force-clear lock pending before deleting the GitHub branch', () => {
   const discard = workerSource.slice(workerSource.indexOf('async function codePendingDiscard('), workerSource.indexOf('// v108：cron 扫 KV'));
+  assert.ok(discard.indexOf('codeClaimCall(env, user, "discard"') < discard.indexOf('codeDeleteBranch'));
   assert.ok(discard.indexOf('codeDeleteBranch') < discard.indexOf('codeClaimCall(env, user, "clear"'));
-  assert.match(discard, /if \(p && p\.repo && p\.branch && !branch\.ok && !branchGone\)/);
-  assert.match(discard, /ok: false[\s\S]*待处理记录已保留/);
-  assert.match(workerSource, /if \(d\.ok\) return null;[\s\S]*throw new Error\(d\.msg \|\| "Durable Object 读取待处理记录失败/);
+  assert.match(discard, /discard-release/);
+  assert.match(discard, /GitHub 临时分支删除失败，待处理记录已保留/);
+  assert.match(workerSource, /上一项修改正在执行接受操作/);
   const claimDO = workerSource.slice(workerSource.indexOf('export class CodeClaimDO'), workerSource.indexOf('export class CodeRunnerDO'));
+  assert.match(claimDO, /action === "discard"/);
+  assert.match(claimDO, /action === "discard-release"/);
+  assert.match(claimDO, /p\.status === "applying"[\s\S]*不能自动丢弃/);
+  assert.match(claimDO, /p\.status !== "discarding"/);
+  assert.match(claimDO, /\["applying", "discarding"\]/);
   assert.match(claimDO, /async alarm\(\)/);
-  assert.ok(claimDO.indexOf('codeDeleteBranch(this.env') < claimDO.indexOf('this.storage.delete("claim")'));
   assert.match(claimDO, /this\.storage\.setAlarm\(now \+ CODE_PENDING_TTL_MS\)/);
   assert.match(claimDO, /GitHub 临时分支删除失败/);
 });
@@ -289,7 +295,7 @@ test('force-clear: GitHub branch deletion failure retains DO/KV records and retu
   const discard = loadCodePendingDiscard({
     pending,
     deleteBranch: async () => { events.push('github.delete'); return { ok: false, status: 503, msg: 'simulated GitHub API outage' }; },
-    claimCall: async () => { events.push('do.clear'); return { ok: true }; },
+    claimCall: async (_env, _user, action) => { events.push('do.' + action); return { ok: true }; },
     kvDelete: kv.delete
   });
   const result = await discard(env, 'user-1');
@@ -298,7 +304,7 @@ test('force-clear: GitHub branch deletion failure retains DO/KV records and retu
   assert.equal(result.status, 503);
   assert.match(result.msg, /GitHub 临时分支删除失败/);
   assert.match(result.reply, /待处理记录未清除/);
-  assert.deepEqual(events, ['github.delete']);
+  assert.deepEqual(events, ['do.discard', 'github.delete', 'do.discard-release']);
 });
 
 test('force-clear: frontend keeps preview panel visible and reports failure', async () => {
@@ -364,6 +370,78 @@ test('CodeClaimDO alarm: GitHub 404 is treated as already deleted', async () => 
   await instance.alarm();
   assert.deepEqual(events, ['github.delete', 'storage.delete:claim']);
   assert.equal(storage.value, null);
+});
+
+test('codeProject refuses to auto-discard an applying pending operation', () => {
+  const block = workerSource.slice(workerSource.indexOf('async function codeProject('), workerSource.indexOf('async function codePendingCreate('));
+  assert.match(block, /if \(\(previous\.status \|\| "awaiting_approval"\) === "applying"\)/);
+  assert.match(block, /上一项修改正在执行接受操作/);
+  assert.match(block, /if \(!discarded\.ok\) return/);
+});
+
+test('CodeClaimDO atomically rejects discard while an accept operation is applying', async () => {
+  const value = {
+    pending: { id: 'busy-1', project: 'demo', status: 'applying', repo: 'owner/repo', branch: 'code/busy' },
+    created_at: 1700000000000, expires_at: 1700000600000, version: 1,
+    claims: { 'operation-1': { at: 1700000000000, yes: true } }, results: {}
+  };
+  const events = [];
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async put(key, next) { this.value = next; },
+    async delete(key) { events.push('storage.delete:' + key); this.value = null; },
+    async setAlarm(at) { events.push('alarm:' + at); }
+  };
+  const DO = loadCodeClaimDO(async () => { events.push('github.delete'); return { ok: true, status: 204 }; });
+  const instance = new DO({ storage }, {});
+  const response = await instance.fetch(new Request('https://code-claims/discard', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pending_id: 'busy-1', version: 1 })
+  }));
+  const result = await response.json();
+  assert.equal(response.status, 409);
+  assert.equal(result.ok, false);
+  assert.match(result.msg, /正在执行接受操作/);
+  assert.equal(storage.value.pending.status, 'applying');
+  assert.deepEqual(events, []);
+});
+
+test('CodeClaimDO uses a versioned discard lock and only clears the locked pending', async () => {
+  const value = {
+    pending: { id: 'discard-1', project: 'demo', status: 'awaiting_approval', repo: 'owner/repo', branch: 'code/discard' },
+    created_at: 1700000000000, expires_at: 1700000600000, version: 1,
+    claims: {}, results: {}
+  };
+  const events = [];
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async put(key, next) { this.value = next; },
+    async delete(key) { events.push('storage.delete:' + key); this.value = null; },
+    async setAlarm(at) { events.push('alarm:' + at); }
+  };
+  const DO = loadCodeClaimDO(async () => ({ ok: true, status: 204 }));
+  const instance = new DO({ storage }, {});
+  const lock = await instance.fetch(new Request('https://code-claims/discard', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pending_id: 'discard-1', version: 1 })
+  }));
+  assert.equal(lock.status, 200);
+  assert.equal(storage.value.pending.status, 'discarding');
+  const staleClear = await instance.fetch(new Request('https://code-claims/clear', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pending_id: 'wrong-id', version: 1 })
+  }));
+  assert.equal(staleClear.status, 409);
+  assert.ok(storage.value);
+  const clear = await instance.fetch(new Request('https://code-claims/clear', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pending_id: 'discard-1', version: 1 })
+  }));
+  assert.equal(clear.status, 200);
+  assert.equal(storage.value, null);
+  assert.deepEqual(events, ['storage.delete:claim']);
 });
 
 test('persistent runner, KV logs and Pages deployment are wired end to end', () => {
