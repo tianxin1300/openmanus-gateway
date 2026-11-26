@@ -6242,7 +6242,7 @@ async function runLocalTaskPreview(fileOverrides) {
     localWcRunning=true;showTab("run");g("wb-runlogs").open=false;
     clearTimeout(localPreviewGuard);const frame=g("wb-runframe");if(frame){frame.dataset.live="0";frame.dataset.localReady="0";frame.dataset.localFallback="0";frame.removeAttribute("src");}
     g("wb-local-log").textContent="";g("wb-local-logbox").hidden=false;const terminalOutput=g("wb-terminal-output");if(terminalOutput)terminalOutput.replaceChildren();
-    say("正在启动 WebContainer 本地预览 …");
+    say("");
     try{
       localLog("读取任务文件 …");
       const notes=[],files=await collectLocalFiles(notes);
