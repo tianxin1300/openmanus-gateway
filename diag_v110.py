@@ -130,13 +130,28 @@ with open(os.path.join(HERE, "diag", "report.txt"), "w", encoding="utf-8") as f:
     f.write("\n".join(out) + "\n")
 print("诊断报告已写入 diag/report.txt（%d 行）" % len(out))
 
-# 推回 main（只加 diag/report.txt）
+# 推回 main（只更新 diag/report.txt）；任何同步或推送失败都必须让工作流失败。
 sh("git", "config", "user.name", "github-actions[bot]")
 sh("git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
 sh("git", "add", "diag/report.txt")
-rc, txt = sh("git", "commit", "-m", "diag: worker.js / index.html / 测试 现状报告")
-print(txt.strip()[:300])
+rc, txt = sh("git", "diff", "--cached", "--quiet")
 if rc == 0:
-    sh("git", "pull", "--rebase", "origin", "main")
-    rc, txt = sh("git", "push", "origin", "HEAD:main")
-    print("推送：" + ("成功" if rc == 0 else "失败 " + txt.strip()[:300]))
+    print("诊断报告没有变化，无需提交。")
+    sys.exit(0)
+if rc != 1:
+    print("检查暂存区失败：" + txt.strip()[:500])
+    sys.exit(1)
+rc, txt = sh("git", "commit", "-m", "diag: refresh current project report")
+if rc != 0:
+    print("提交诊断报告失败：" + txt.strip()[:500])
+    sys.exit(1)
+print(txt.strip()[:300])
+rc, txt = sh("git", "pull", "--rebase", "origin", "main")
+if rc != 0:
+    print("同步 main 失败：" + txt.strip()[:500])
+    sys.exit(1)
+rc, txt = sh("git", "push", "origin", "HEAD:main")
+if rc != 0:
+    print("推送诊断报告失败：" + txt.strip()[:500])
+    sys.exit(1)
+print("推送：成功")
