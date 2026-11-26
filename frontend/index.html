@@ -6394,56 +6394,11 @@ async function runBoth() {
     finish(true, "并行任务启动失败，已恢复按钮");
   }
 }
-async function run() {
-  if (running || parallelRunning || !ed) return; running = true; g("wb-run").disabled = true; showTab("run");
-  card("正在运行…", "准备 WebContainer"); say("正在运行 …");
-  try {
-    termLn("\r\n\x1b[36m$ 运行：boot → mount /" + DIR + " → npm install\x1b[0m");
-    if (!(await ensureWC())) { say("运行失败，详情见终端 / 右侧", true); return; }
-    procs.forEach(p => { try { p.kill(); } catch (_) {} }); procs = []; if (shell) { try { shell.kill(); } catch (_) {} shell = null; shellIn = null; }
-    const notes = [], files = await collectFiles(notes);
-    let genPkg = false;
-    if (!files["package.json"]) { genPkg = true; files["package.json"] = JSON.stringify({name: "frontend-preview", private: true, scripts: {start: "serve -l 3000 ."}, dependencies: {serve: "^14.2.0"}}, null, 2); }
-    await wc.mount(toTree(files));
-    termLn("已 mount " + Object.keys(files).length + " 个文件：" + Object.keys(files).join("、"));
-    notes.forEach(n => termLn("\x1b[33m· " + n + "\x1b[0m"));
-    if (genPkg) termLn("\x1b[33m· /" + DIR + " 里没有 package.json，临时生成一个（只在浏览器容器里，不写回仓库）：用 serve 起静态服务\x1b[0m");
-    const inst = {text: ""}, p1 = await wc.spawn("npm", ["install", "--no-audit", "--no-fund"]); procs.push(p1); pipeOut(p1, inst);
-    const code = await p1.exit; const tail = stripAnsi(inst.text).split("\n").map(s => s.trimEnd()).filter(Boolean).slice(-40).join("\n");
-    if (code !== 0) { termLn("\x1b[31m✗ npm install 失败，退出码 " + code + "\x1b[0m"); card("npm install 失败（退出码 " + code + "）", tail, true); say("npm install 失败", true); return; }
-    termLn("\x1b[32m✓ npm install 完成\x1b[0m");
-    let pkg = {}; try { pkg = JSON.parse(files["package.json"]); } catch (_) {}
-    const scripts = pkg && pkg.scripts || {}, checks = ["test", "build"].filter((name, i, a) => scripts[name] && a.indexOf(name) === i);
-    for (const name of checks) {
-      termLn("\x1b[36m$ npm run " + name + "\x1b[0m");
-      const out = {text: ""}, cp = await wc.spawn("npm", ["run", name]); procs.push(cp); pipeOut(cp, out);
-      const result = await Promise.race([cp.exit, new Promise(ok => setTimeout(() => { try { cp.kill(); } catch (_) {} ok(124); }, 120000))]);
-      const log = stripAnsi(out.text).split("\n").filter(Boolean).slice(-30).join("\n");
-      if (result !== 0) { termLn("\x1b[33m· npm run " + name + " 未通过（退出码 " + result + "），仍继续尝试启动服务\x1b[0m"); card("npm run " + name + " 未通过", log, true); }
-      else termLn("\x1b[32m✓ npm run " + name + " 通过\x1b[0m");
-    }
-    const start = scripts.dev ? "dev" : scripts.start ? "start" : "";
-    if (!start) { card("检查完成", (tail || "（无输出）") + "\n\n/package.json 里没有 dev 或 start 脚本，所以没有启动服务。"); say("检查完成"); }
-    else {
-      card("检查完成，正在运行 npm run " + start + "…", tail);
-      const ready = new Promise(ok => { serverWait = ok; }), p2 = await wc.spawn("npm", ["run", start]); procs.push(p2); pipeOut(p2);
-      const url = await Promise.race([ready, new Promise(ok => setTimeout(() => ok(null), 60000))]);
-      if (!url) { serverWait = null; card("npm install 完成，但服务 60 秒内没有监听端口", tail, true); say("服务没起来", true); }
-      else say("运行完成，结果在右侧「运行结果」");
-    }
-    try {   // 交还一个可输入的 shell
-      shell = await wc.spawn("jsh", {terminal: {cols: term ? term.cols : 80, rows: term ? term.rows : 24}});
-      shell.output.pipeTo(new WritableStream({write(d) { termW(d); }})).catch(() => {}); shellIn = shell.input.getWriter();
-    } catch (e) { termLn("（交互 shell 没起来：" + e.message + "）"); }
-  } catch (e) { termLn("\x1b[31m✗ " + e.message + "\x1b[0m"); card("运行出错", e.message, true); say("运行出错：" + e.message, true); }
-  finally { running = false; g("wb-run").disabled = false; }
-}
-
 /* ---------------- 打开 / 关闭 ---------------- */
 async function openWb() {
   document.body.classList.add("wb-open"); g("wb").setAttribute("aria-hidden", "false"); amdOn();
   if (inited) { fit(); return; }
-  inited = true; say("正在加载编辑器和终端 …");
+  inited = true; say("正在加载编辑器 …");
   await initEditor(); fit();
   await loadFile();
 }
