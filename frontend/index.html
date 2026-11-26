@@ -6105,7 +6105,7 @@ function renderDeliveryChain(d) {
   const online = deployed && health.state === "ok" && health.status === 200;
   const healthFailed = deploy.conclusion === "failure" || worker.conclusion === "failure" || (deployed && health.state === "bad");
   const healthLabel = online ? "线上健康 HTTP 200" : healthFailed ? "线上健康失败" + (health.status ? " HTTP " + health.status : "") : "线上健康";
-  const steps = [{name:"已生成", ok:true}, {name:"已验证", ok:verified}, {name:"已提交", ok:submitted}, {name:"部署中", ok:deployed, now:deploying && !deployed}, {name:healthLabel, ok:online, bad:healthFailed, now:deployed && health.state === "checking"}];
+  const steps = [{name:"已生成", ok:true}, {name:"已验证", ok:verified}, {name:"已提交", ok:submitted}, {name:deployed ? "已部署" : "部署中", ok:deployed, now:deploying && !deployed}, {name:healthLabel, ok:online, bad:healthFailed, now:deployed && health.state === "checking"}];
   if (failed) steps.push({name:"部署失败", bad:true});
   else if (healthFailed) steps.push({name:"线上探活失败", bad:true});
   steps.forEach((x) => { const b=document.createElement("button"); b.type="button"; b.textContent=(x.ok ? "✓ " : x.bad ? "✗ " : x.now ? "… " : "○ ")+x.name; b.className="sec"; b.style.cssText="padding:5px 8px;font-size:11px;border-radius:8px;color:"+(x.ok ? "#247a43" : x.bad ? "#b33b32" : "#7a887d")+";background:"+(x.ok ? "#e6f5e8" : x.bad ? "#fde8e6" : "#f1f4f0"); if (x.bad) b.onclick=()=>{ const pre=res.parentElement && res.parentElement.querySelector("pre"); if(pre) pre.scrollIntoView({behavior:"smooth",block:"nearest"}); }; res.appendChild(b); }); return res;
