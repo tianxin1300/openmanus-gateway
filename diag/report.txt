@@ -1,6 +1,7 @@
-诊断时间(UTC): 2026-11-26T13:44:31+00:00
+诊断时间(UTC): 2026-11-26T13:44:46+00:00
 
 == 最近 12 个提交 ==
+a715138 diag: refresh current project report
 5d5b00c Test dedicated local preview view and return action
 5d19956 Make local preview a dedicated full-width view
 121ccfa diag: refresh current project report
@@ -12,7 +13,6 @@ e72790f diag: refresh current project report
 1326962 Fix visible local preview test assertions
 5ec59e3 Show local preview startup errors in the inline warning
 97e7014 diag: refresh current project report
-6446027 Test visible WebContainer local preview control
 
 == 文件 ==
 .:
@@ -320,7 +320,7 @@ SyntaxError: Invalid regular expression flags
     at node:internal/main/run_main_module:36:49
 
 Node.js v22.23.5
-✖ tests/code-mode-providers.test.cjs (25.604552ms)
+✖ tests/code-mode-providers.test.cjs (30.289624ms)
 ℹ tests 1
 ℹ suites 0
 ℹ pass 0
@@ -328,12 +328,12 @@ Node.js v22.23.5
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 30.32132
+ℹ duration_ms 38.723926
 
 ✖ failing tests:
 
 test at tests/code-mode-providers.test.cjs:1:1
-✖ tests/code-mode-providers.test.cjs (25.604552ms)
+✖ tests/code-mode-providers.test.cjs (30.289624ms)
   'test failed'
 
 == npm run build ==
