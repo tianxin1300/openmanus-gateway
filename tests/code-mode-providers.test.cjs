@@ -1410,6 +1410,8 @@ test('terminal shortcut toolbar and blue theme are restored without changing acc
   assert.ok(script.includes('function insertTerminalInput(value)'));
   assert.ok(script.includes('terminalShortcuts.addEventListener("click"'));
   assert.ok(script.includes('terminalCtrlPending'));
+  assert.ok(script.includes('g("wb-terminal-command").addEventListener("keydown"'));
+  assert.ok(script.includes('event.key.toUpperCase().charCodeAt(0) & 31'));
 });
 
 test('ACCEPTANCE CHAIN-01: generated state exists before any downstream delivery state', () => {
