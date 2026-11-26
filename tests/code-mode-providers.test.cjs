@@ -893,7 +893,7 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
   assert.match(queued[3], /^… 部署中$/);
   assert.match(queued[4], /^○ 线上健康$/);
 
-  context.pagesHealthProbe = { run_id: '12', state: 'checking', status: null, error: '', promise: null };
+  vm.runInContext("pagesHealthProbe = { run_id: '12', state: 'checking', status: null, error: '', promise: null }", context);
   const deployedChecking = render({
     runs: [
       { kind: 'verify', conclusion: 'success' },
@@ -904,7 +904,7 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
   assert.match(deployedChecking[3], /^✓ 已部署$/);
   assert.match(deployedChecking[4], /^… 线上健康$/);
 
-  context.pagesHealthProbe = { run_id: '12', state: 'ok', status: 200, error: '', promise: null };
+  vm.runInContext("pagesHealthProbe = { run_id: '12', state: 'ok', status: 200, error: '', promise: null }", context);
   const online = render({
     runs: [
       { kind: 'verify', conclusion: 'success' },
@@ -915,7 +915,7 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
   assert.match(online[3], /^✓ 已部署$/);
   assert.match(online[4], /^✓ 线上健康 HTTP 200$/);
 
-  context.pagesHealthProbe = { run_id: '12', state: 'bad', status: 503, error: 'HTTP 503', promise: null };
+  vm.runInContext("pagesHealthProbe = { run_id: '12', state: 'bad', status: 503, error: 'HTTP 503', promise: null }", context);
   const unhealthy = render({
     runs: [
       { kind: 'verify', conclusion: 'success' },
