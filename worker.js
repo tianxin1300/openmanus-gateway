@@ -732,7 +732,7 @@ async function codeUpdateFile(env, repo, path, text, message, branch, sha) {   /
 }
 function codePathProtected(path) {
   const p = String(path || "");
-  return /(^|\\/)\\.git(?:\\/|$)|(^|\\/)\\.env(?:$|[.\\/])|_.key|_token_|_secret[^/]*$/i.test(p);
+  return /(^|\/)\.git(?:\/|$)|(^|\/)\.env(?:$|[.\/])|_\.key|_token_|_secret[^/]*$/i.test(p);
 }
 function codePushGuard(env, user, repo, path) {   // 返回空串 = 允许；否则是不能推的原因
   const owner = String(env.CODE_OWNER || env.AGENT_USER || "").trim();
@@ -944,7 +944,7 @@ async function codeProject(env, user, proj, req, history, ui) {
   const tree = await codeFileTree(env, proj.repo, branch);
   if (!tree.ok) return { ok: false, reply: "❌ 读取仓库文件列表失败：" + tree.msg };
   const allPaths = tree.files.filter((p) => !codePathProtected(p));
-  const mentioned = [...new Set((String(req).match(/[A-Za-z0-9_.-]+(?:\\/[A-Za-z0-9_.-]+)*\\.[A-Za-z0-9_.-]+/g) || []).map((p) => p.replace(/^\\.\\//, "")))];
+  const mentioned = [...new Set((String(req).match(/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9_.-]+/g) || []).map((p) => p.replace(/^\. \//, "").replace(/^\.\\//, "")))];
   let targets = [];
   for (const wanted of mentioned) {
     const matches = allPaths.filter((p) => p === wanted || p.endsWith("/" + wanted) || (!wanted.includes("/") && p.split("/").pop() === wanted));
