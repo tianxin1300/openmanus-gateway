@@ -218,7 +218,7 @@ test('P0-01: simultaneous WebContainer startup routes frontend API calls to its 
 test('P0-02/03: expiry and force-clear delete the GitHub branch before clearing pending records', () => {
   const discard = workerSource.slice(workerSource.indexOf('async function codePendingDiscard('), workerSource.indexOf('// v108：cron 扫 KV'));
   assert.ok(discard.indexOf('codeDeleteBranch') < discard.indexOf('codeClaimCall(env, user, "clear"'));
-  assert.match(discard, /if \(!branch\.ok && !branchGone\)/);
+  assert.match(discard, /if \(p && p\.repo && p\.branch && !branch\.ok && !branchGone\)/);
   assert.match(discard, /ok: false[\s\S]*待处理记录已保留/);
   assert.match(workerSource, /if \(d\.ok\) return null;[\s\S]*throw new Error\(d\.msg \|\| "Durable Object 读取待处理记录失败/);
   const claimDO = workerSource.slice(workerSource.indexOf('export class CodeClaimDO'), workerSource.indexOf('export class CodeRunnerDO'));
