@@ -1,6 +1,8 @@
-诊断时间(UTC): 2026-11-26T18:09:02+00:00
+诊断时间(UTC): 2026-11-26T18:09:18+00:00
 
 == 最近 12 个提交 ==
+afbc02e fix: preserve standalone deploy verification status
+87fbed7 diag: refresh current project report
 25de285 fix: distinguish standalone verification failures from deploy failures
 f274877 diag: refresh current project report
 2703592 fix: correct status chain failure evaluation order
@@ -11,14 +13,12 @@ a21bb69 diag: refresh current project report
 f9bf670 diag: refresh current project report
 cca921f fix: keep delivery status chain honest on failed runs
 411741e diag: refresh current project report
-058de37 diag: refresh current project report
-03d6abd test: correct applying guard source assertion
 
 == 文件 ==
 .:
 total 1064
 drwxr-xr-x 11 runner runner   4096 Nov 26 18:09 .
-drwxr-xr-x  3 runner runner   4096 Nov 26 18:08 ..
+drwxr-xr-x  3 runner runner   4096 Nov 26 18:09 ..
 drwxr-xr-x  7 runner runner   4096 Nov 26 18:09 .git
 drwxr-xr-x  3 runner runner   4096 Nov 26 18:09 .github
 -rw-r--r--  1 runner runner    724 Nov 26 18:09 apply_v106.py
@@ -57,7 +57,7 @@ drwxr-xr-x  3 runner runner   4096 Nov 26 18:09 .
 drwxr-xr-x 11 runner runner   4096 Nov 26 18:09 ..
 -rw-r--r--  1 runner runner     90 Nov 26 18:09 _headers
 -rw-r--r--  1 runner runner  20601 Nov 26 18:09 devrun.js
--rw-r--r--  1 runner runner 621393 Nov 26 18:09 index.html
+-rw-r--r--  1 runner runner 621414 Nov 26 18:09 index.html
 -rw-r--r--  1 runner runner 161913 Nov 26 18:09 openmanus_frontend_file_v99l 2.zip
 -rw-r--r--  1 runner runner  21927 Nov 26 18:09 studio.js
 -rw-r--r--  1 runner runner  12533 Nov 26 18:09 tasks.js
@@ -239,7 +239,7 @@ async function codeConfirm(env, user, yes, input = {}) {
 999: const page = await env.KV.list({ prefix: "code:pend:", cursor });
 
 == frontend/index.html ==
-621393 字节, 6709 行, CRLF=False
+621414 字节, 6709 行, CRLF=False
 -- <script src=…> --
 <script src="./vendor/xterm.js">
 <script src="https://cdn.tailwindcss.com">
@@ -307,53 +307,53 @@ crons = ["0 0 * * *"]
 == npm test（node --test tests/*.cjs） ==
 node v22.23.5
 退出码 1
-✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (3.13712ms)
-✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.460146ms)
-✔ editor delivery: pending work is resumable and deployment state is not overstated (0.424901ms)
-✔ project isolation: code edits use a temporary branch before merging to the base branch (0.604495ms)
-✔ web workbench: exposes the local preview control (0.4671ms)
-✔ remote verification: reuses a dispatchable workflow and returns status fields (0.489843ms)
-✔ remote verification UI: green success, red failures, and no invented preview URL (0.953406ms)
-✔ BUG-01: protected media and files never put the login token in URLs or media bodies (0.886971ms)
-✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (1.037171ms)
-✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.785524ms)
-✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (1.06356ms)
-✔ workbench simultaneous start triggers GitHub Actions and renders the full delivery chain (2.384649ms)
-✔ P0-01: local preview is started from the visible control (0.37035ms)
-✔ P0-02/03: expiry and force-clear lock pending before deleting the GitHub branch (0.706625ms)
-✔ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (1.444259ms)
+✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (3.120406ms)
+✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.459871ms)
+✔ editor delivery: pending work is resumable and deployment state is not overstated (0.481092ms)
+✔ project isolation: code edits use a temporary branch before merging to the base branch (0.643212ms)
+✔ web workbench: exposes the local preview control (0.532648ms)
+✔ remote verification: reuses a dispatchable workflow and returns status fields (0.508833ms)
+✔ remote verification UI: green success, red failures, and no invented preview URL (1.06794ms)
+✔ BUG-01: protected media and files never put the login token in URLs or media bodies (0.984566ms)
+✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (1.091164ms)
+✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.98036ms)
+✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (1.170492ms)
+✔ workbench simultaneous start triggers GitHub Actions and renders the full delivery chain (2.695498ms)
+✔ P0-01: local preview is started from the visible control (0.416216ms)
+✔ P0-02/03: expiry and force-clear lock pending before deleting the GitHub branch (0.814325ms)
+✔ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (1.454421ms)
 [code] pending expiry branch deletion failed; claim retained simulated GitHub failure
-✔ force-clear: frontend keeps preview panel visible and reports failure (13.733167ms)
-✔ CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim (22.061382ms)
-✔ CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry (1.347839ms)
-✔ CodeClaimDO alarm: GitHub 404 is treated as already deleted (1.093626ms)
-✔ codeProject refuses to auto-discard an applying pending operation (0.158144ms)
-✔ CodeClaimDO atomically rejects discard while an accept operation is applying (6.694834ms)
-✔ CodeClaimDO uses a versioned discard lock and only clears the locked pending (2.635426ms)
-✔ persistent runner, KV logs and Pages deployment are wired end to end (2.296295ms)
-✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (1.60609ms)
-✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (1.259265ms)
-✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (1.154079ms)
-✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (1.46074ms)
-✔ codeLLM: OpenRouter network errors also never fall back to Toter (1.448497ms)
-✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (1.075943ms)
-✔ codeLLM: first usable custom model succeeds without attempting later models (1.040677ms)
-✔ codeLLM: retains the Groq target loop after OpenRouter (1.027964ms)
-✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (1.282889ms)
-✔ frontend: without studio initialization, ordinary-chat providers remain available (2.446374ms)
-✔ frontend: code mode shows provider-specific code models and hides Toter aliases (1.343201ms)
-✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (3.273624ms)
-✔ frontend: switching off code mode restores buttons and preserves chat model choice (1.497358ms)
-✔ studio.js: syncToggle re-renders providers when code mode changes (1.093506ms)
-✔ studio.js: omStudio state is exposed before eager init (1.126408ms)
-✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (0.916837ms)
-✔ frontend/studio.js: omStudio state is exposed before eager init (0.875661ms)
-✔ local HTTP integration: frontend-style API request reaches the real Worker /api/models route (82.441093ms)
-✔ local preview button opens the dedicated full-width view only after server-ready (1.873848ms)
-✔ devbench exposes one launch button, one run log and a terminal (1.282077ms)
-✖ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (6.615987ms)
-✔ delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once (1.799681ms)
-✔ devbench keeps the editor full-width and moves preview/results into the dedicated view (1.485836ms)
+✔ force-clear: frontend keeps preview panel visible and reports failure (13.590547ms)
+✔ CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim (23.210921ms)
+✔ CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry (1.409446ms)
+✔ CodeClaimDO alarm: GitHub 404 is treated as already deleted (1.143421ms)
+✔ codeProject refuses to auto-discard an applying pending operation (0.156291ms)
+✔ CodeClaimDO atomically rejects discard while an accept operation is applying (6.516521ms)
+✔ CodeClaimDO uses a versioned discard lock and only clears the locked pending (2.578655ms)
+✔ persistent runner, KV logs and Pages deployment are wired end to end (2.555942ms)
+✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (1.694877ms)
+✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (1.328025ms)
+✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (1.130422ms)
+✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (1.099036ms)
+✔ codeLLM: OpenRouter network errors also never fall back to Toter (1.24361ms)
+✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (1.102421ms)
+✔ codeLLM: first usable custom model succeeds without attempting later models (1.083022ms)
+✔ codeLLM: retains the Groq target loop after OpenRouter (1.057034ms)
+✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (1.244081ms)
+✔ frontend: without studio initialization, ordinary-chat providers remain available (3.245452ms)
+✔ frontend: code mode shows provider-specific code models and hides Toter aliases (1.423095ms)
+✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (3.604924ms)
+✔ frontend: switching off code mode restores buttons and preserves chat model choice (1.628349ms)
+✔ studio.js: syncToggle re-renders providers when code mode changes (1.230621ms)
+✔ studio.js: omStudio state is exposed before eager init (1.187106ms)
+✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (0.976835ms)
+✔ frontend/studio.js: omStudio state is exposed before eager init (1.008763ms)
+✔ local HTTP integration: frontend-style API request reaches the real Worker /api/models route (73.812009ms)
+✔ local preview button opens the dedicated full-width view only after server-ready (2.374884ms)
+✔ devbench exposes one launch button, one run log and a terminal (1.529072ms)
+✖ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (6.656708ms)
+✔ delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once (1.871379ms)
+✔ devbench keeps the editor full-width and moves preview/results into the dedicated view (1.712033ms)
 ℹ tests 46
 ℹ suites 0
 ℹ pass 45
@@ -361,12 +361,12 @@ node v22.23.5
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 261.252041
+ℹ duration_ms 256.252393
 
 ✖ failing tests:
 
 test at tests/code-mode-providers.test.cjs:989:1
-✖ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (6.615987ms)
+✖ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (6.656708ms)
   AssertionError [ERR_ASSERTION]: The input did not match the regular expression /^○ 已部署$/. Input:
   
   '✓ 已部署'
