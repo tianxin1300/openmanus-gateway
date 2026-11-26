@@ -860,6 +860,18 @@ test('local HTTP integration: frontend-style API request reaches the real Worker
 
 
 
+test('WebContainer local preview is opt-in and hidden behind query or AI trigger', () => {
+  assert.ok(frontendSource.includes('new URLSearchParams(location.search).get("webcontainer")==="1"'));
+  assert.ok(frontendSource.includes('window.openLocalTaskPreview=openLocalTaskPreview'));
+  assert.ok(frontendSource.includes('open-local-task-preview'));
+  assert.ok(frontendSource.includes('WebContainer.boot'));
+  assert.ok(frontendSource.includes('container.mount(localTree(files))'));
+  assert.ok(frontendSource.includes('id="wb-local-logbox" hidden'));
+  assert.ok(frontendSource.includes('id="wb-runframe"'));
+  assert.ok(!frontendSource.includes('id="wb-run"'));
+  assert.ok(!frontendSource.includes('运行</button>'));
+});
+
 test('devbench has one Actions launch button and one expandable unified run log', () => {
   assert.ok(frontendSource.includes('<button id="wb-both" class="sec" type="button" title="触发 GitHub Actions：前端 build 与 Worker deploy 并行执行，日志收纳在统一运行日志">同时启动</button>'));
   assert.ok(!frontendSource.includes('<button id="wb-run"'));
