@@ -886,6 +886,9 @@ test('WebContainer local preview opens as a dedicated view and can return to the
   assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-left'));
   assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-term{display:none!important}'));
   assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-runframe{display:block!important'));
+  assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-main{display:flex!important;flex:1 1 0!important;height:0!important;min-height:0!important;overflow:hidden!important}'));
+  assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-runframe{position:absolute!important;inset:0!important;display:block!important;flex:none!important;width:100%!important;height:100%!important;min-height:0!important;max-height:none!important;border:0!important}'));
+  assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-local-error{position:absolute!important;z-index:2!important;top:0!important;left:0!important;right:0!important;flex:none!important;max-width:100%!important;overflow:hidden!important}'));
   assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-chain'));
   assert.ok(frontendSource.includes('id="wb-local-error" class="wb-local-error" role="status" aria-live="polite" hidden'));
   assert.ok(frontendSource.includes('summary.textContent="本地预览启动失败："'));
