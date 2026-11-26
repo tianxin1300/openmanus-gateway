@@ -858,3 +858,85 @@ test('local HTTP integration: frontend-style API request reaches the real Worker
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
 });
+
+
+test('delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct', () => {
+  const block = extract(frontendSource, 'let pagesHealthProbe', 'function renderVerifyResult');
+  const context = vm.createContext({
+    document: { createElement: tag => element(tag) },
+    AbortController, setTimeout, clearTimeout,
+    authFetch() { throw new Error('Health probe is not expected in pure renderer tests'); },
+    GATEWAY: ''
+  });
+  vm.runInContext(block, context, { filename: 'delivery-chain.vm.js', timeout: 1000 });
+  const render = data => {
+    const node = vm.runInContext('renderDeliveryChain(' + JSON.stringify(data) + ')', context);
+    return node.children.map(child => child.textContent);
+  };
+  const labels = values => values.map(value => value.replace(/^[✓✗○…] /, ''));
+  const generated = labels(render({ runs: [] }));
+  assert.deepEqual(generated, ['已生成', '已验证', '已提交', '部署中', '线上健康']);
+  assert.match(render({ runs: [] })[0], /^✓ /);
+  assert.match(render({ runs: [] })[1], /^○ /);
+
+  const queued = render({
+    head_sha: 'abc123',
+    state: 'running',
+    runs: [
+      { kind: 'verify', run_id: 11, conclusion: 'success' },
+      { kind: 'deploy', run_id: 12 },
+      { kind: 'worker', run_id: 13 }
+    ]
+  });
+  assert.match(queued[1], /^✓ 已验证$/);
+  assert.match(queued[2], /^✓ 已提交$/);
+  assert.match(queued[3], /^… 部署中$/);
+  assert.match(queued[4], /^○ 线上健康$/);
+
+  context.pagesHealthProbe = { run_id: '12', state: 'checking', status: null, error: '', promise: null };
+  const deployedChecking = render({
+    runs: [
+      { kind: 'verify', conclusion: 'success' },
+      { kind: 'deploy', run_id: 12, conclusion: 'success' },
+      { kind: 'worker', conclusion: 'success' }
+    ]
+  });
+  assert.match(deployedChecking[3], /^✓ 已部署$/);
+  assert.match(deployedChecking[4], /^… 线上健康$/);
+
+  context.pagesHealthProbe = { run_id: '12', state: 'ok', status: 200, error: '', promise: null };
+  const online = render({
+    runs: [
+      { kind: 'verify', conclusion: 'success' },
+      { kind: 'deploy', run_id: 12, conclusion: 'success' },
+      { kind: 'worker', conclusion: 'success' }
+    ]
+  });
+  assert.match(online[3], /^✓ 已部署$/);
+  assert.match(online[4], /^✓ 线上健康 HTTP 200$/);
+
+  context.pagesHealthProbe = { run_id: '12', state: 'bad', status: 503, error: 'HTTP 503', promise: null };
+  const unhealthy = render({
+    runs: [
+      { kind: 'verify', conclusion: 'success' },
+      { kind: 'deploy', run_id: 12, conclusion: 'success' },
+      { kind: 'worker', conclusion: 'success' }
+    ]
+  });
+  assert.match(unhealthy[3], /^✓ 已部署$/);
+  assert.match(unhealthy[4], /^✗ 线上健康失败 HTTP 503$/);
+  assert.match(unhealthy[5], /^✗ 线上探活失败$/);
+  assert.equal(unhealthy.some(value => value.includes('部署失败')), false);
+
+  const deploymentFailure = render({
+    runs: [
+      { kind: 'verify', conclusion: 'success' },
+      { kind: 'deploy', run_id: 12, conclusion: 'failure' },
+      { kind: 'worker', conclusion: 'success' }
+    ]
+  });
+  assert.match(deploymentFailure[3], /^○ 部署中$/);
+  assert.match(deploymentFailure[4], /^○ 线上健康$/);
+  assert.match(deploymentFailure[5], /^✗ 部署失败$/);
+  assert.equal(deploymentFailure.some(value => value.includes('线上探活失败')), false);
+});
