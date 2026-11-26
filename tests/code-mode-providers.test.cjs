@@ -180,11 +180,14 @@ test('BUG-07: verification logs preserve file context and expose exact source-li
   assert.match(frontendSource, /setSelectionRange\(start/);
   assert.match(frontendSource, /renderVerifyErrorLocations\(d\.error_lines, d\.head_sha\)/);
   const locationBlock = extract(frontendSource, 'function verifyErrorLocation(raw)', 'function renderVerifyResult(d)');
-  const locationContext = vm.createContext({});
+  const locationContext = vm.createContext({REPO: {repo: 'openmanus-gateway', owner: 'tianxin1300'}});
   vm.runInContext(locationBlock, locationContext);
   const parsed = vm.runInContext('verifyErrorLocation("    at run (tests/code-mode-providers.test.cjs:1148:10)")', locationContext);
   assert.deepEqual({path: parsed.path, line: parsed.line, column: parsed.column},
     {path: 'tests/code-mode-providers.test.cjs', line: 1148, column: 10});
+  const absolute = vm.runInContext('verifyErrorLocation("    at run (/home/runner/work/openmanus-gateway/openmanus-gateway/frontend/index.html:88:3)")', locationContext);
+  assert.deepEqual({path: absolute.path, line: absolute.line, column: absolute.column},
+    {path: 'frontend/index.html', line: 88, column: 3});
   const python = vm.runInContext('verifyErrorLocation(\'  File "worker.py", line 27\')', locationContext);
   assert.deepEqual({path: python.path, line: python.line, column: python.column},
     {path: 'worker.py', line: 27, column: 1});
