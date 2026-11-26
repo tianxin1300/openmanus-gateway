@@ -1030,3 +1030,12 @@ test('delivery chain: real probePagesHealth logic accepts only HTTP 200 and prob
   assert.match(unhealthy.error, /HTTP 503/);
   assert.equal(calls, 2);
 });
+
+
+test('devbench hides legacy preview/result cards until the dedicated local preview workspace opens', () => {
+  assert.match(frontendSource, /#wb:not\\(\\.wb-local-preview-mode\\)\\s+#wb-right\\s*\\{\\s*display:\\s*none!important;\\s*\\}/);
+  assert.match(frontendSource, /#wb:not\\(\\.wb-local-preview-mode\\)\\s+#wb-left\\s*\\{[^}]*flex:\\s*1 1 100%!important/);
+  assert.match(frontendSource, /#wb\\.wb-local-preview-mode\\s+#wb-right\\s*\\{\\s*display:\\s*flex!important/);
+  assert.match(frontendSource, /#wb\\.wb-local-preview-mode\\s+#wb-runframe\\s*\\{[^}]*display:\\s*block!important/);
+  assert.match(frontendSource, /button\\.textContent = "返回开发台"/);
+});
