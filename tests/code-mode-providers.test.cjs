@@ -906,7 +906,7 @@ test('devbench has one Actions launch button and one expandable unified run log'
   assert.ok(frontendSource.includes('alert.open=false'));
   assert.ok(frontendSource.includes('showTab("prev")'));
   assert.ok(frontendSource.includes('#wb-right{flex:0 0 25%;max-height:25%'));
-  assert.ok(frontendSource.includes('#wb-term{flex:0 0 24%;min-height:120px;max-height:32%;overflow:hidden}'));
+  assert.ok(frontendSource.includes('#wb-term{flex:0 0 max(214px,calc(30vh + 34px))'), "terminal retains the responsive editor layout");
 
 
 
@@ -918,6 +918,12 @@ test('devbench has one Actions launch button and one expandable unified run log'
   assert.match(terminalCss[0], /#426fbd/, "terminal send action uses restrained blue");
   assert.doesNotMatch(terminalCss[0], /#(?:07140d|10291f|193c2a|28764a|8cc9a0)/i,
     "terminal theme must not reintroduce the rejected deep-green palette");
+  assert.ok(frontendSource.includes('<style id="wb-professional-theme">'), "full editor professional theme exists");
+  for (const selector of ['#wb-bar{', '#wb-chain{', '#wb-left{', '#wb-right{', '.wb-rhead{', '#wb-res{', '#wb-runlogs{', '#wb-terminal{']) {
+    assert.ok(frontendSource.includes(selector), 'professional theme covers ' + selector);
+  }
+  assert.ok(frontendSource.includes('background:#1b2230!important'), "editor chrome uses neutral graphite");
+  assert.ok(frontendSource.includes('background:#426fbd!important'), "primary editor actions use restrained blue");
   assert.ok(frontendSource.includes('id="wb-xterm" role="region"'));
   assert.ok(frontendSource.includes('id="wb-terminal-input"'));
   assert.ok(frontendSource.includes('id="wb-terminal-send"'));
