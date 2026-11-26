@@ -875,6 +875,7 @@ function codePendingActive(p) {
 async function codePendingLoad(env, user) {
   const d = await codeClaimState(env, user);
   if (d.ok && d.pending) return d.pending;
+  if (d.ok) return null;
   if (d.configured === false && env.KV) {
     const p = await env.KV.get("code:pend:" + user, "json").catch(() => null);
     if (p && p.created_at && Date.now() - p.created_at > CODE_PENDING_TTL_MS) {
@@ -887,7 +888,7 @@ async function codePendingLoad(env, user) {
     }
     return p;
   }
-  return null;
+  throw new Error(d.msg || "Durable Object 读取待处理记录失败；记录未清除");
 }
 async function codePendingCreate(env, user, pending) {
   const d = await codeClaimCall(env, user, "create", { pending });
