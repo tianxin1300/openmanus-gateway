@@ -6322,7 +6322,7 @@ async function runBoth() {
     g("wb-front-log").textContent = fl || (front.run_url ? "Pages build / deploy 排队中… " + front.run_url : "等待 GitHub 返回 Pages 部署日志…");
     g("wb-back-log").textContent = bl || (back.run_url ? "Worker deploy 排队中… " + back.run_url : "等待 GitHub 返回 Worker deploy 日志…");
     renderChain(d); renderVerifyResult({ ...d, deploy: true });
-    if (front.conclusion === "success" && front.run_id) void probePagesHealth(front.run_id);
+    if (front.conclusion === "success" && back.conclusion === "success" && front.run_id) void probePagesHealth(front.run_id);
   };
   try {
     const start = await authFetch(GATEWAY + "/api/code/both", { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify({ ref: REPO.branch }) });
