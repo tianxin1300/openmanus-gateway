@@ -18,6 +18,22 @@ const blockedProviders = ['肖恩AI', 'Toter', 'Toter2'];
 const messages = [{ role: 'user', content: 'Write a small function.' }];
 const openRouterUrl = 'https://openrouter.ai/api/v1/chat/completions';
 
+function loadCodeClaimDO(deleteBranch) {
+  const start = workerSource.indexOf('export class CodeClaimDO');
+  const end = workerSource.indexOf('export class CodeRunnerDO', start);
+  assert.ok(start >= 0 && end > start, 'CodeClaimDO source must exist');
+  const classSource = workerSource.slice(start, end).replace(/^export /, '');
+  const sandbox = {
+    CODE_PENDING_TTL_MS: 600000,
+    codeDeleteBranch: deleteBranch,
+    codePendingView: p => p,
+    Date, URL, Response, Request, console
+  };
+  vm.runInNewContext(classSource + '\\nglobalThis.TestCodeClaimDO = CodeClaimDO;', sandbox);
+  return sandbox.TestCodeClaimDO;
+}
+
+
 test('worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists', () => {
   const expectedGroq = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
   const expectedOpenRouter = [
@@ -240,6 +256,54 @@ test('P0-02/03: expiry and force-clear delete the GitHub branch before clearing 
   assert.ok(claimDO.indexOf('codeDeleteBranch(this.env') < claimDO.indexOf('this.storage.delete("claim")'));
   assert.match(claimDO, /this\.storage\.setAlarm\(now \+ CODE_PENDING_TTL_MS\)/);
   assert.match(claimDO, /GitHub 临时分支删除失败/);
+});
+
+test('CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim', async () => {
+  const events = [];
+  const value = { pending: { id: 'p1', repo: 'owner/repo', branch: 'code/demo', created_at: 1 }, created_at: 1, expires_at: 1 };
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async delete(key) { events.push('storage.delete:' + key); this.value = null; },
+    async setAlarm(at) { events.push('alarm:' + at); }
+  };
+  const DO = loadCodeClaimDO(async () => { events.push('github.delete'); return { ok: true, status: 204 }; });
+  const instance = new DO({ storage }, {});
+  await instance.alarm();
+  assert.deepEqual(events, ['github.delete', 'storage.delete:claim']);
+  assert.equal(storage.value, null);
+});
+
+test('CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry', async () => {
+  const events = [];
+  const value = { pending: { id: 'p2', repo: 'owner/repo', branch: 'code/demo', created_at: 1 }, created_at: 1, expires_at: 1 };
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async delete(key) { events.push('storage.delete:' + key); this.value = null; },
+    async setAlarm(at) { events.push('alarm:' + at); }
+  };
+  const DO = loadCodeClaimDO(async () => { events.push('github.delete'); return { ok: false, status: 500, msg: 'simulated GitHub failure' }; });
+  const instance = new DO({ storage }, {});
+  await instance.alarm();
+  assert.deepEqual(events, ['github.delete', 'alarm:' + (Date.now() + 60000)]);
+  assert.equal(storage.value, value);
+});
+
+test('CodeClaimDO alarm: GitHub 404 is treated as already deleted', async () => {
+  const events = [];
+  const value = { pending: { id: 'p3', repo: 'owner/repo', branch: 'code/demo', created_at: 1 }, created_at: 1, expires_at: 1 };
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async delete(key) { events.push('storage.delete:' + key); this.value = null; },
+    async setAlarm(at) { events.push('alarm:' + at); }
+  };
+  const DO = loadCodeClaimDO(async () => { events.push('github.delete'); return { ok: false, status: 404 }; });
+  const instance = new DO({ storage }, {});
+  await instance.alarm();
+  assert.deepEqual(events, ['github.delete', 'storage.delete:claim']);
+  assert.equal(storage.value, null);
 });
 
 test('persistent runner, KV logs and Pages deployment are wired end to end', () => {
