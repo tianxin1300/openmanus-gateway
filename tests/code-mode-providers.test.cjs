@@ -866,10 +866,10 @@ test('local HTTP integration: frontend-style API request reaches the real Worker
 
 
 test('local preview button enters and exits the dedicated preview view', async () => {
-  const previewButton = [...frontendSource.matchAll(/<button\\b(?=[^>]*\\bid="wb-local-preview")[^>]*>/g)];
+  const previewButton = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-local-preview")[^>]*>/g)];
   assert.equal(previewButton.length, 1);
 
-  const handlerMatch = frontendSource.match(/g\\("wb-local-preview"\\)\\.addEventListener\\("click", async \\(\\) => \\{([\\s\\S]*?)\\n\\}\\);/);
+  const handlerMatch = frontendSource.match(/g\("wb-local-preview"\)\.addEventListener\("click", async \(\) => \{([\s\S]*?)\n\}\);/);
   assert.ok(handlerMatch);
 
   const activeClasses = new Set();
@@ -894,7 +894,7 @@ test('local preview button enters and exits the dedicated preview view', async (
     openLocalTaskPreview: async () => { activeClasses.add('wb-local-preview-mode'); },
     String
   };
-  const click = vm.runInNewContext('(async () => {' + handlerMatch[1] + '\\n})', sandbox);
+  const click = vm.runInNewContext('(async () => {' + handlerMatch[1] + '\n})', sandbox);
 
   await click();
   assert.equal(activeClasses.has('wb-local-preview-mode'), true);
@@ -903,13 +903,13 @@ test('local preview button enters and exits the dedicated preview view', async (
 });
 
 test('devbench exposes one launch button, one run log and a terminal', () => {
-  const launchButtons = [...frontendSource.matchAll(/<button\\b(?=[^>]*\\bid="wb-both")[^>]*>/g)];
+  const launchButtons = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-both")[^>]*>/g)];
   assert.equal(launchButtons.length, 1);
 
-  const runLogs = [...frontendSource.matchAll(/<details\\b(?=[^>]*\\bid="wb-runlogs")[^>]*>/g)];
+  const runLogs = [...frontendSource.matchAll(/<details\b(?=[^>]*\bid="wb-runlogs")[^>]*>/g)];
   assert.equal(runLogs.length, 1);
 
-  const terminals = [...frontendSource.matchAll(/<(?:section|div)\\b(?=[^>]*\\bid="wb-terminal")[^>]*>/g)];
+  const terminals = [...frontendSource.matchAll(/<(?:section|div)\b(?=[^>]*\bid="wb-terminal")[^>]*>/g)];
   assert.equal(terminals.length, 1);
 });
 
