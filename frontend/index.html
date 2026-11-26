@@ -670,7 +670,7 @@ button.om-ic-only .om-ic{margin:0;width:16px;height:16px}
 #wb-runlogs .wb-logbox{display:flex;flex-direction:column;min-height:90px;margin:7px 0;border:1px solid #3b4352;border-radius:7px;overflow:hidden;background:#1d2330}#wb-runlogs .wb-logtitle{flex:0 0 25px;padding:5px 8px;color:#d6deed;background:#252c39;font-size:11px;font-weight:700}#wb-runlogs .wb-logtitle a{color:#9fc0f5;text-decoration:underline;margin-left:8px}#wb-runlogs pre{max-height:170px;min-height:48px;margin:0;padding:6px 8px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:#e2e6ee;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}#wb-history{display:flex;flex-wrap:wrap;gap:5px;padding:3px 0}#wb-history button{font-size:11px;padding:4px 7px}
 
 @media(max-width:820px){#wb-main{flex-direction:column}#wb-left{flex:1 1 0;min-height:0;border-right:0;border-bottom:1px solid #1d4030}#wb-right{flex:0 0 25%;max-height:25%;min-height:0;width:100%;overflow:hidden}#wb-term{flex:0 0 max(214px,calc(30vh + 34px));min-height:214px;max-height:65%}#wb-file{display:none}}
-/* iPad / 小屏：底部独立终端输出至少 180px，运行日志展开不挤占终端 */
+/* iPad / 小屏：运行日志展开时为日志卡片分配空间，同时保留可见终端 */
 @media(max-width:1100px){
   #wb{display:none;min-height:0;overflow:hidden}
   .wb-open #wb{display:flex}
@@ -687,6 +687,7 @@ button.om-ic-only .om-ic{margin:0;width:16px;height:16px}
   #wb-runlogs[open]{flex:0 1 auto;max-height:calc(100% - 90px);min-height:34px;overflow:auto}
   #wb-terminal{min-height:90px}
   #wb-terminal{flex:1 1 0;min-height:180px}
+  #wb-term.wb-runlogs-expanded #wb-terminal{min-height:90px}
   #wb-terminal.wb-terminal-fullscreen{z-index:10050}
   #wb-runlogs .wb-logbox{min-height:0}
   #wb-runlogs pre{max-height:64px;min-height:28px;overflow:auto}
