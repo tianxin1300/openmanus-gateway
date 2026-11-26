@@ -1057,12 +1057,10 @@ test('editor wraps long lines and iPad visual viewport resizes the workbench abo
   assert.match(frontendSource, /--wb-visual-top/);
 });
 
-test('terminal remains as a Pages and Worker log console without a WebContainer shell', () => {
-  assert.match(frontendSource, /id="wb-terminal"/);
-  assert.match(frontendSource, /id="wb-terminal-output"/);
-  assert.match(frontendSource, /id="wb-front-log"/);
-  assert.match(frontendSource, /id="wb-back-log"/);
-  assert.match(frontendSource, /\[Pages\].*\[Worker\]/s);
+test('terminal is a standalone command echo panel and Pages/Worker logs stay separate without WebContainer', () => {
+  assert.match(frontendSource, /<section id="wb-terminal" aria-label="终端">[\s\S]*?<pre id="wb-terminal-output"/);
+  assert.match(frontendSource, /<form id="wb-terminal-command-form"[\s\S]*?<input id="wb-terminal-command"/);
+  assert.match(frontendSource, /<div id="wb-runlogs" aria-label="Pages 与 Worker 运行日志" hidden>[\s\S]*?id="wb-front-log"[\s\S]*?id="wb-back-log"/);
   assert.doesNotMatch(frontendSource, /id="wb-terminal-input"|data-terminal-key|initInteractiveTerminal|spawn\("jsh"/);
   assert.doesNotMatch(frontendSource, /xterm\.js|xterm\.css|WebContainer|WC_MODULES|localWc/);
 });
@@ -1071,7 +1069,7 @@ test('devbench exposes one launch button, one run log and a terminal', () => {
   const launchButtons = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-both")[^>]*>/g)];
   assert.equal(launchButtons.length, 1);
 
-  const runLogs = [...frontendSource.matchAll(/<details\b(?=[^>]*\bid="wb-runlogs")[^>]*>/g)];
+  const runLogs = [...frontendSource.matchAll(/<div\b(?=[^>]*\bid="wb-runlogs")[^>]*>/g)];
   assert.equal(runLogs.length, 1);
 
   const terminals = [...frontendSource.matchAll(/<(?:section|div)\b(?=[^>]*\bid="wb-terminal")[^>]*>/g)];
@@ -1367,7 +1365,9 @@ test('ACCEPTANCE AUTO-02: independent preview synchronizes results, status chain
   assert.match(sync, /frame\.srcdoc = srcdocOf\(ed\.get\(\)\)/);
   assert.match(sync, /source\.cloneNode\(true\)/);
   assert.match(sync, /sourceChain\.cloneNode\(true\)/);
-  assert.match(sync, /output\.textContent/);
+  assert.match(sync, /logs\.textContent/);
+  assert.match(sync, /wb-front-log/);
+  assert.match(sync, /wb-back-log/);
   assert.match(script, /syncLocalTaskPreview\(\)/);
 });
 
