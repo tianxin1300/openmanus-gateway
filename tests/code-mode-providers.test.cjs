@@ -1448,7 +1448,7 @@ test('ACCEPTANCE.md: ten code acceptance items each map to an executable npm tes
   const ids = ['AUTO-01', 'AUTO-02', 'AUTO-03', 'AUTO-04', 'CHAIN-01', 'CHAIN-02', 'CHAIN-03', 'CHAIN-04', 'CHAIN-05', 'CHAIN-06'];
   for (const id of ids) {
     assert.ok(doc.includes(id), 'ACCEPTANCE.md must define ' + id);
-    assert.ok(new RegExp("test\('" + id + ":").test(fs.readFileSync(__filename, 'utf8')), 'must have a dedicated Node test for ' + id);
+    assert.ok(fs.readFileSync(__filename, 'utf8').includes("test('ACCEPTANCE " + id + ":"), 'must have a dedicated Node test for ' + id);
   }
   assert.match(doc, /npm test/);
   assert.match(doc, /通过：该项对应的专属 Node\.js 自动化测试本次执行成功/);
