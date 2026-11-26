@@ -76,6 +76,11 @@
     ".om-fc:disabled{opacity:.5;cursor:default}",
     ".om-x{width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:var(--muted,#71867a);font-size:20px;line-height:1;cursor:pointer}",
     ".om-x:hover{background:#eef3ec}",
+    "#om-code-reopen{position:fixed;right:14px;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:999;display:none;align-items:center;gap:7px;height:40px;padding:0 15px;border:1px solid #a9d5b0;border-radius:999px;background:#e8f5e8;color:#205d32;font-size:13px;font-weight:750;box-shadow:0 5px 18px rgba(16,41,31,.2);cursor:pointer}",
+    "#om-code-reopen.on{display:inline-flex}",
+    ".om-refresh{flex:none;height:28px;padding:0 9px;border:1px solid var(--line,#dfe9df);border-radius:8px;background:#fff;color:var(--muted,#71867a);font-size:12px;cursor:pointer}",
+    ".om-refresh:disabled{opacity:.5}",
+    ".om-pull-hint{display:none;text-align:center;padding:5px;color:var(--muted,#71867a);font-size:11px}",
     ".om-pb{overflow:auto;padding:10px 14px;flex:1;min-height:56px}",
     ".om-edit{border:1px solid var(--line,#dfe9df);border-radius:10px;margin-bottom:10px;overflow:hidden}",
     ".om-file{padding:6px 10px;background:var(--canvas,#f4f8f2);font-size:12px;font-weight:650}",
@@ -155,16 +160,29 @@
   };
 
   /* ---------- 改动预览面板 ---------- */
-  var panel = null, stEl = null, yesBtn = null, noBtn = null, fcBtn = null, footer = null, closeTimer = 0, expTimer = 0;
+  var panel = null, stEl = null, yesBtn = null, noBtn = null, fcBtn = null, footer = null, closeTimer = 0, expTimer = 0, reopenBtn = null, currentPending = null, panelCollapsed = false, refreshBusy = false;
   function ensurePanel() {
     if (panel) return panel;
     panel = el("div"); panel.id = "om-code-panel"; panel.hidden = true;
     panel.setAttribute("role", "region"); panel.setAttribute("aria-label", "代码改动预览");
     document.body.appendChild(panel);
+    reopenBtn = el("button", ""); reopenBtn.id = "om-code-reopen"; reopenBtn.type = "button"; reopenBtn.textContent = "▤ 查看待处理改动"; reopenBtn.setAttribute("aria-label", "重新打开代码改动预览");
+    reopenBtn.addEventListener("click", function () { panelCollapsed = false; if (currentPending) render(currentPending); else refreshPending(true); });
+    document.body.appendChild(reopenBtn);
     return panel;
   }
   function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
-  function hide() { clearTimeout(closeTimer); clearTimeout(expTimer); if (panel) panel.hidden = true; panelState = ""; }
+  function hide() { clearTimeout(closeTimer); clearTimeout(expTimer); if (panel) panel.hidden = true; if (reopenBtn) reopenBtn.classList.remove("on"); panelState = ""; panelCollapsed = false; currentPending = null; }
+  function collapse() { clearTimeout(closeTimer); if (panel) panel.hidden = true; if (reopenBtn) reopenBtn.classList.add("on"); panelCollapsed = true; }
+  function refreshPending(quiet) {
+    if (refreshBusy) return Promise.resolve(); refreshBusy = true;
+    if (stEl && !quiet) say("正在刷新待处理改动…");
+    return api("/api/code/pending", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j && j.ok && j.pending && j.pending.edits && j.pending.edits.length) { currentPending = j.pending; render(j.pending); if (panelCollapsed) { panel.hidden = true; if (reopenBtn) reopenBtn.classList.add("on"); } }
+      else { currentPending = null; hide(); if (!quiet) toast("当前没有待处理的改动"); }
+    }).catch(function (e) { if (!quiet) toast("刷新失败：" + (e && e.message || e)); })
+      .finally(function () { refreshBusy = false; });
+  }
   function linkify(node, text) {   // 文字里的网址变成可点的链接（只处理 http / https）
     clear(node);
     String(text).split(/(https?:\/\/[^\s]+)/).forEach(function (part) {
@@ -180,14 +198,17 @@
   }
   function render(p) {
     clearTimeout(closeTimer); clearTimeout(expTimer);
-    var root = ensurePanel(); clear(root); panelState = "pending";
+    currentPending = p; var root = ensurePanel(); clear(root); panelState = "pending";
     var head = el("div", "om-ph");
     head.appendChild(el("strong", "", "改动预览"));
     head.appendChild(el("span", "om-meta", state.project + " · 共 " + p.edits.length + " 处 · 推到 " + p.repo + "@" + p.branch));
+    var refreshBtn = el("button", "om-refresh", "刷新 ↻"); refreshBtn.type = "button"; refreshBtn.title = "重新读取服务器上的待处理改动"; refreshBtn.addEventListener("click", function () { refreshPending(false); }); head.appendChild(refreshBtn);
+    var touchY = null; head.addEventListener("touchstart", function (ev) { if (ev.touches && ev.touches.length === 1) touchY = ev.touches[0].clientY; }, {passive:true});
+    head.addEventListener("touchend", function (ev) { if (touchY == null || !ev.changedTouches || !ev.changedTouches.length) return; var dy = ev.changedTouches[0].clientY - touchY; touchY = null; if (Math.abs(dy) > 42) refreshPending(false); }, {passive:true});
     fcBtn = el("button", "om-fc", "强制清空"); fcBtn.type = "button"; fcBtn.title = "清掉待处理的改动（服务器里的暂存），面板消失；不用去 GitHub 删";
     fcBtn.addEventListener("click", forceClear); head.appendChild(fcBtn);
     var x = el("button", "om-x", "×"); x.type = "button"; x.setAttribute("aria-label", "关闭预览（修改仍保留，10 分钟后自动丢弃）");
-    x.addEventListener("click", hide); head.appendChild(x); root.appendChild(head);
+    x.addEventListener("click", collapse); head.appendChild(x); root.appendChild(head);
     var body = el("div", "om-pb");
     if (p.summary) { var s = el("div", "om-meta", "需求：" + p.summary); s.style.marginBottom = "8px"; s.style.whiteSpace = "normal"; body.appendChild(s); }
     (p.warn || []).forEach(function (w) { body.appendChild(el("div", "om-warn", "⚠️ " + w + "（可能是括号写漏了，推之前请留意）")); });
@@ -203,7 +224,7 @@
     noBtn.addEventListener("click", function () { decide(false); });
     yesBtn.addEventListener("click", function () { decide(true); });
     footer.appendChild(stEl); footer.appendChild(noBtn); footer.appendChild(yesBtn); root.appendChild(footer);
-    root.hidden = false; body.scrollTop = 0;
+    root.hidden = !!panelCollapsed; if (reopenBtn) reopenBtn.classList.toggle("on", !!panelCollapsed); body.scrollTop = 0;
     var left = typeof p.left === "number" ? p.left : 10 * 60 * 1000;   // v108：到点自动收面板 + 清掉服务器里的暂存
     expTimer = setTimeout(function () {
       if (panelState !== "pending") return;
@@ -252,10 +273,7 @@
   /* ---------- 读取待推送的修改 ---------- */
   function check() {
     if (!state.on || !loggedIn()) return;
-    api("/api/code/pending").then(function (r) { return r.json(); }).then(function (j) {
-      if (j && j.ok && j.pending && j.pending.edits && j.pending.edits.length) render(j.pending);
-      else if (panelState === "pending") hide();   // 已经没有待推送的了，旧面板收掉；显示结果的面板留着等你关
-    }).catch(function () {});
+    refreshPending(true);
   }
 
   function init() { mountToggle(); if (state.on) setTimeout(check, 800); }
