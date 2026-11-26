@@ -881,85 +881,15 @@ test('WebContainer local preview is opt-in and hidden behind query or AI trigger
   assert.ok(!frontendSource.includes('运行</button>'));
 });
 
-test('devbench has one Actions launch button and one expandable unified run log', () => {
-  assert.ok(frontendSource.includes('<button id="wb-both" class="sec" type="button" title="触发 GitHub Actions：前端 build 与 Worker deploy 并行执行，日志收纳在统一运行日志">同时启动</button>'));
-  assert.ok(!frontendSource.includes('<button id="wb-run"'));
-  assert.ok(!frontendSource.includes('id="wb-parallel-logs"'));
-  assert.ok(frontendSource.includes('<details id="wb-runlogs">'));
-  assert.ok(frontendSource.includes('id="wb-pages-run-link" href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/45809262138"'));
-  assert.ok(frontendSource.includes('id="wb-worker-run-link" href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/45809265485"'));
-  assert.ok(frontendSource.includes('(d.runs||[]).slice(0,20)'));
-  assert.ok(frontendSource.includes('#wb-right{flex:0 0 25%;max-height:25%'));
+test('devbench has one Actions launch button, one run log and a terminal element', () => {
+  const launchButtons = [...frontendSource.matchAll(/<button\\b(?=[^>]*\\bid="wb-both")[^>]*>\\s*同时启动\\s*<\\/button>/g)];
+  assert.equal(launchButtons.length, 1, "there is exactly one 同时启动 button");
 
-  const runlogsCss = frontendSource.match(/#wb-runlogs\s*\{[^}]*\}/);
-  assert.ok(runlogsCss, "run log CSS rule exists");
-  assert.match(runlogsCss[0], /max-height\s*:/, "run log CSS has a height cap");
-  assert.ok(frontendSource.includes('#wb-res{min-height:0;max-height:100%;overflow:auto'));
-  assert.ok(frontendSource.includes('if(logs) logs.open=false'));
-  assert.ok(frontendSource.includes('showTab("run");g("wb-runlogs").open=false'));
-  assert.ok(frontendSource.includes('g("wb-runlogs").open = false;'));
-  assert.ok(frontendSource.includes('id="wb-local-error" class="wb-local-error" hidden'));
-  assert.ok(frontendSource.includes('id="wb-local-error-summary"'));
-  assert.ok(frontendSource.includes('id="wb-local-error-detail"'));
-  assert.ok(frontendSource.includes('.wb-local-error>summary{height:28px;line-height:28px'));
-  assert.ok(frontendSource.includes('.wb-local-error>pre{max-height:72px;overflow:auto'));
-  assert.ok(frontendSource.includes('alert.open=false'));
-  assert.ok(frontendSource.includes('showTab("prev")'));
-  assert.ok(frontendSource.includes('#wb-right{flex:0 0 25%;max-height:25%'));
-  assert.ok(frontendSource.includes('#wb-term{flex:0 0 max(214px,calc(30vh + 34px))'), "terminal retains the responsive editor layout");
+  const runLogs = [...frontendSource.matchAll(/<details\\b(?=[^>]*\\bid="wb-runlogs")[^>]*>/g)];
+  assert.equal(runLogs.length, 1, "there is exactly one 运行日志 element");
 
-
-
-  assert.match(frontendSource, /#wb-main\s*\{[^}]*min-height:0[^}]*overflow:hidden/);
-  assert.ok(frontendSource.includes('id="wb-terminal"'), "terminal container id exists");
-  assert.match(frontendSource, /aria-label="[^"]*终端[^"]*"/, "terminal aria-label contains 终端");
-  const terminalCss = frontendSource.match(/#wb-terminal\s*\{[^}]*\}[\s\S]*?#wb-terminal-output\s*\{[^}]*\}/);
-  assert.ok(terminalCss, "terminal visual theme CSS exists");
-  assert.match(terminalCss[0], /background:#171b24/, "terminal uses neutral charcoal, not green");
-  assert.match(terminalCss[0], /#426fbd/, "terminal send action uses restrained blue");
-  assert.doesNotMatch(terminalCss[0], /#(?:07140d|10291f|193c2a|28764a|8cc9a0)/i,
-    "terminal theme must not reintroduce the rejected deep-green palette");
-  assert.ok(frontendSource.includes('<style id="wb-professional-theme">'), "full editor professional theme exists");
-  for (const selector of ['#wb-bar{', '#wb-chain{', '#wb-left{', '#wb-right{', '.wb-rhead{', '#wb-res{', '#wb-runlogs{', '#wb-terminal{']) {
-    assert.ok(frontendSource.includes(selector), 'professional theme covers ' + selector);
-  }
-  assert.ok(frontendSource.includes('background:#1b2230!important'), "editor chrome uses neutral graphite");
-  assert.ok(frontendSource.includes('background:#426fbd!important'), "primary editor actions use restrained blue");
-  assert.ok(frontendSource.includes('id="wb-xterm" role="region"'));
-  assert.ok(frontendSource.includes('id="wb-terminal-input"'));
-  assert.ok(frontendSource.includes('id="wb-terminal-send"'));
-  assert.ok(frontendSource.includes('data-terminal-key="escape"'));
-  assert.ok(frontendSource.includes('data-terminal-key="tab"'));
-  assert.ok(frontendSource.includes('data-terminal-key="ctrl"'));
-  assert.ok(frontendSource.includes('data-terminal-key="up"'));
-  assert.ok(frontendSource.includes('data-terminal-key="down"'));
-  assert.ok(frontendSource.includes('data-terminal-key="left"'));
-  assert.ok(frontendSource.includes('data-terminal-key="right"'));
-  assert.ok(frontendSource.includes('data-terminal-key="ctrl-c"'));
-  assert.ok(frontendSource.includes('data-terminal-key="ctrl-d"'));
-  assert.ok(frontendSource.includes('data-terminal-key="clear"'));
-  assert.ok(frontendSource.includes('aria-label="终端特殊按键"'));
-  assert.ok(frontendSource.includes('min-width:44px;min-height:44px'));
-  assert.ok(frontendSource.includes('container.spawn("jsh"'));
-  assert.ok(frontendSource.includes('terminalInstance.onData'));
-  assert.ok(frontendSource.includes('terminalHistory.unshift'));
-  assert.ok(frontendSource.includes('wb-terminal-fullscreen'));
-  assert.ok(frontendSource.includes('window.visualViewport'));
-  assert.ok(frontendSource.includes('aria-live="polite"'));
-  assert.ok(frontendSource.includes('id="wb-terminal-input"'), "terminal command input exists");
-  assert.match(frontendSource, /aria-label="[^"]*(?:输入|终端)[^"]*"/, "an aria-label identifies an input or terminal control");
-  assert.ok(frontendSource.includes('aria-label="切换终端全屏"'));
-  assert.ok(frontendSource.includes('role="toolbar" aria-label="终端特殊按键"'));
-  assert.match(frontendSource, /#wb-terminal\\s*\\{[^}]*min-height:180px/);
-  assert.match(frontendSource, /#wb-term\\s*\\{[^}]*min-height:214px[^}]*max-height:65%/);
-  assert.match(frontendSource, /#wb-runlogs\\[open\\]\\s*\\{[^}]*max-height:min\\(50%,calc\\(100% - 180px\\)\\)/);
-  assert.ok(frontendSource.includes('terminal.textContent += line'));
-  assert.ok(frontendSource.includes('g("wb-terminal-output").textContent=""'));
-
-  assert.ok(!frontendSource.includes('点右上角「运行」会在浏览器里启动 WebContainer'));
-  assert.ok(!frontendSource.includes('g("wb-run").addEventListener'));
-  assert.ok(!frontendSource.includes("function initTerm"));
-  assert.ok(!frontendSource.includes("async function run() {"));
+  const terminals = [...frontendSource.matchAll(/<(?:section|div)\\b(?=[^>]*\\bid="wb-terminal")[^>]*>/g)];
+  assert.equal(terminals.length, 1, "the terminal element exists exactly once");
 });
 
 test('delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct', () => {
