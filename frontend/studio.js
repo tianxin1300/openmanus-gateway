@@ -243,23 +243,35 @@
     if (wasNo && ok) closeTimer = setTimeout(hide, 1500);
   }
   function decide(yes) {
-    busy(true); say(yes ? "正在推送…" : "正在丢弃…");
-    api("/api/code/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ yes: yes }) })
+    var p = currentPending;
+    if (!p || !(p.pending_id || p.id) || !Number.isInteger(Number(p.version)) || !p.project) {
+      busy(false); say("预览信息不完整，请先刷新改动预览再操作。", "om-errc"); return;
+    }
+    var operationId = "studio-" + (window.crypto && typeof window.crypto.randomUUID === "function" ? window.crypto.randomUUID() : Date.now().toString(36) + "-" + Math.random().toString(36).slice(2));
+    var payload = {
+      yes: !!yes,
+      pending_id: String(p.pending_id || p.id),
+      version: Number(p.version),
+      project: String(p.project),
+      operation_id: operationId
+    };
+    busy(true); say(yes ? "正在接受并合并到 " + (p.baseBranch || "main") + "…" : "正在拒绝并删除临时修改…");
+    api("/api/code/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       .then(function (r) { return r.json().catch(function () { return { ok: false, reply: "服务器返回的不是 JSON（HTTP " + r.status + "）" }; }); })
       .then(function (j) {
-        var text = j.reply || j.msg || (j.ok ? "完成" : "失败");
-        return api("/api/code/pending").then(function (r) { return r.json(); }).catch(function () { return null; }).then(function (pj) {
+        var message = j.reply || j.msg || (j.ok ? "操作完成" : "操作失败");
+        return api("/api/code/pending", { cache: "no-store" }).then(function (r) { return r.json(); }).catch(function () { return null; }).then(function (pj) {
           var still = !!(pj && pj.ok && pj.pending && pj.pending.edits && pj.pending.edits.length);
-          showResult(text, !!j.ok, still, !yes);
+          if (!still && j.ok) currentPending = null;
+          showResult(message, !!j.ok, still, !yes);
         });
       })
       .catch(function (e) { showResult("请求失败：" + (e && e.message || e), false, true, !yes); });
   }
 
   /* ---------- v108：强制清空 / 自动过期时清服务器里的暂存 ---------- */
-  function clearOnServer() {   // 旧后端没有 /api/code/clear（404）时退回「不推」——同样是把暂存清掉
-    var post = function (p, body) { return api(p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); };
-    return post("/api/code/clear", {}).then(function (r) { return r.status === 404 ? post("/api/code/confirm", { yes: false }) : r; })
+  function clearOnServer() {
+    return api("/api/code/force-clear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) })
       .then(function (r) { return r.json().catch(function () { return { ok: false, msg: "服务器返回的不是 JSON（HTTP " + r.status + "）" }; }); });
   }
   function forceClear() {
