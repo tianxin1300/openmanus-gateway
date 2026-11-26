@@ -852,7 +852,7 @@ test('local HTTP integration: frontend-style API request reaches the real Worker
 
 
 
-test('local preview button enters and exits the dedicated preview view', async () => {
+test('local preview button keeps classic preview visible until server-ready and then toggles', async () => {
   const previewButton = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-local-preview")[^>]*>/g)];
   assert.equal(previewButton.length, 1);
 
@@ -862,7 +862,6 @@ test('local preview button enters and exits the dedicated preview view', async (
   const activeClasses = new Set();
   const button = { disabled: false, textContent: '' };
   const alert = { hidden: true };
-  const summary = { textContent: '' };
   const wb = {
     classList: {
       contains: name => activeClasses.has(name),
@@ -870,23 +869,30 @@ test('local preview button enters and exits the dedicated preview view', async (
       remove: name => activeClasses.delete(name)
     }
   };
-  const nodes = {
-    'wb-local-preview': button,
-    wb,
-    'wb-local-error': alert,
-    'wb-local-error-summary': summary
-  };
+  const nodes = { 'wb-local-preview': button, wb, 'wb-local-error': alert };
   const sandbox = {
     g: id => nodes[id],
-    openLocalTaskPreview: async () => { activeClasses.add('wb-local-preview-mode'); },
+    openLocalTaskPreview: async () => {},
+    clearTimeout: () => {},
+    say: () => {},
     String
   };
   const click = vm.runInNewContext('(async () => {' + handlerMatch[1] + '\n})', sandbox);
 
   await click();
-  assert.equal(activeClasses.has('wb-local-preview-mode'), true);
+  assert.equal(activeClasses.has('wb-local-preview-mode'), false, 'startup must leave the classic preview visible');
+  assert.equal(button.disabled, false);
+
+  const readyHandler = frontendSource.match(/localWc\.on\("server-ready",\s*\(port,url\)=>\{([\s\S]*?)\n\s*localLog/);
+  assert.ok(readyHandler, 'WebContainer server-ready handler must exist');
+  assert.ok(readyHandler[1].includes('wb-local-preview-mode'), 'fullscreen mode starts only after the server is ready');
+  assert.ok(readyHandler[1].includes('button.textContent="返回开发台"'));
+
+  activeClasses.add('wb-local-preview-mode');
+  button.textContent = '返回开发台';
   await click();
   assert.equal(activeClasses.has('wb-local-preview-mode'), false);
+  assert.equal(button.textContent, '本地预览');
 });
 
 test('devbench exposes one launch button, one run log and a terminal', () => {
@@ -1032,10 +1038,13 @@ test('delivery chain: real probePagesHealth logic accepts only HTTP 200 and prob
 });
 
 
-test('devbench hides legacy preview/result cards until the dedicated local preview workspace opens', () => {
-  assert.ok(frontendSource.includes('#wb:not(.wb-local-preview-mode) #wb-right{display:none!important}'));
-  assert.ok(frontendSource.includes('#wb:not(.wb-local-preview-mode) #wb-left{flex:1 1 100%!important;width:100%!important;border-right:0!important;border-bottom:0!important}'));
+test('devbench keeps the classic live preview and result pane visible by default', () => {
+  assert.ok(!frontendSource.includes('#wb:not(.wb-local-preview-mode) #wb-right{display:none!important}'));
+  assert.ok(!frontendSource.includes('#wb:not(.wb-local-preview-mode) #wb-left{flex:1 1 100%!important;width:100%!important;border-right:0!important;border-bottom:0!important}'));
   assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-right{display:flex!important}'));
   assert.ok(frontendSource.includes('#wb.wb-local-preview-mode #wb-runframe{position:absolute!important;inset:0!important;display:block!important;'));
-  assert.ok(frontendSource.includes('button.textContent="返回开发台"'));
+  assert.ok(frontendSource.includes('function renderPreview() { if (!ed) return; g("wb-preview").srcdoc = srcdocOf(ed.get()); }'));
+  assert.ok(frontendSource.includes('id="wb-res"'));
+  assert.equal(frontendSource.includes('localStartupGuard'), false);
+  assert.ok(frontendSource.includes('timeoutId=setTimeout(()=>resolve({timeout:true}),30000)'));
 });
