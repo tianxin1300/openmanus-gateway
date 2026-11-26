@@ -928,6 +928,7 @@ test('delivery chain: generated, verified, submitted, deploying, deployed and li
   assert.match(unhealthy[5], /^✗ 线上探活失败$/);
   assert.equal(unhealthy.some(value => value.includes('部署失败')), false);
 
+  vm.runInContext("pagesHealthProbe = { run_id: '', state: 'idle', status: null, error: '', promise: null }", context);
   const deploymentFailure = render({
     runs: [
       { kind: 'verify', conclusion: 'success' },
