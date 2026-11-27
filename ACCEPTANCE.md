@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 79 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，因此 Node TAP 实际运行 81 项。`workbench-acceptance.test.cjs` 运行 39 项，`npm test` 合计 120 项。Playwright UI 文件另有 6 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入这 120 项。
+> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 81 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，因此 Node TAP 实际运行 83 项。`workbench-acceptance.test.cjs` 运行 39 项，`npm test` 合计 122 项。Playwright UI 文件另有 6 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入这 120 项。
 
 ## 1. 唯一执行入口与判定规则
 
@@ -165,7 +165,7 @@ npm test
 
 ## 5. 最终交付结论
 
-- **代码自动验收：** AUTO-01～04、CHAIN-01～06 共 10 项均有专属测试，按本次执行结果逐项判定；WORKBENCH-01～16 按各自列出的专属测试判定。不得将未执行或失败项计为通过。
+- **代码自动验收：** AUTO-01～04、CHAIN-01～06 共 10 项均有专属测试，按本次执行结果逐项判定；WORKBENCH-01～17 按各自列出的专属测试判定。不得将未执行或失败项计为通过。
 - **最终交付：** 代码自动验收通过后，仍需按项目流程完成部署。
 
 ## 6. 开发工作台行为验收（WORKBENCH-01～05）
@@ -439,3 +439,19 @@ npm test
 **通过条件：** 任一失败响应均不能让前端误显示操作成功或丢失可恢复分支状态；重试入口必须恢复。
 
 **边界：** 这三项 Playwright 测试使用浏览器 API fixtures 注入 500/409/503 响应，验证前端错误处理与状态保留；不代表真实 GitHub API 在生产网络中的端到端故障演练。
+## 16. 多项目切换与未保存编辑保护（WORKBENCH-17）
+
+### WORKBENCH-17 — 项目切换必须隔离临时分支并保护未保存修改
+
+**自动化测试：**
+- `ACCEPTANCE WORKBENCH-PROJECT-01: cancelling a dirty project switch preserves the current branch and edits`
+- `ACCEPTANCE WORKBENCH-PROJECT-02: switching projects clears old branch state and loads the new project branch`
+
+**测试覆盖：**
+- 当前文件有未保存修改时，用户取消项目切换：项目选择器恢复原项目，当前临时分支、文件路径和审核决策保持不变，不触发新分支创建。
+- 用户确认切换且当前无未保存修改时：更新目标项目 owner/repo，清除旧项目活动分支与文件审核决策，将文件路径重置到入口文件，重新创建/读取目标项目独立临时分支。
+- 新项目分支建立后，重新加载编辑文件、文件树、改动差异与历史记录。
+
+**通过条件：** 取消切换不污染当前项目状态；确认切换不沿用旧项目分支、SHA 或审核决策，且后续读取全部针对新项目。
+
+**边界：** 测试在 VM 中执行真实前端切换函数并替换 API/DOM 依赖；不代表真实第二仓库的 GitHub 授权、网络访问或生产分支创建已完成验证。
