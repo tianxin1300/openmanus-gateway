@@ -313,6 +313,7 @@ test('ACCEPTANCE IDEMPOTENCY-01: repeated create reuses one branch and repeated 
     codeGhApi: async (_env, url) => {
       if (url.includes('/compare/')) return { ok: true, data: { files: [{ filename: 'a.js' }] } };
       if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: 'base' } } };
+      if (url.endsWith('/heads/code/p-idempotent')) return { ok: true, data: { object: { sha: 'b'.repeat(40) } } };
       throw new Error('unexpected ' + url);
     },
     codeMergeTempBranch: async () => { mergeCalls++; return { ok: true, data: { sha: 'once-only-sha' } }; },
@@ -380,6 +381,7 @@ test('ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rej
     codeGhApi: async (_env, url) => {
       if (url.includes('/compare/')) return { ok: true, data: { files: compareCount++ === 0 ? changes : [{ filename: 'keep.js' }, { filename: 'add.js' }] } };
       if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: 'base' } } };
+      if (url.endsWith('/heads/code/mixed')) return { ok: true, data: { object: { sha: 'b'.repeat(40) } } };
       throw new Error('unexpected ' + url);
     },
     codeWorkbenchBranchRejectFileUnlocked: async (_e, _u, body) => { rejected.push(body); return { ok: true }; },
