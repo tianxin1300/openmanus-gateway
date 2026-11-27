@@ -24,7 +24,7 @@
   var KEY_ON = "om_code_mode", KEY_PROJ = "om_code_project", PROJECTS = ["聚合体", "就医伴侣"];
   var state = { on: false, project: window.OM_CODE_PROJECT || "聚合体" };
   var panelState = "";   // "" | "pending"（等验证或确认）| "result"（已出结果，等你关掉）
-  var verifyPollTimer = null, verifyPollBusy = false;
+  var verifyPollTimer = null, verifyPollBusy = false, autoRepairPoll = false;
 
   function ls(k, v) {
     try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {}
@@ -251,20 +251,31 @@
     if (refreshBusy) return Promise.resolve(); refreshBusy = true;
     if (stEl && !quiet) say("正在刷新待处理改动…");
     return api("/api/code/pending", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
-      if (j && j.ok && j.pending && j.pending.edits && j.pending.edits.length) { currentPending = j.pending; render(j.pending); if (panelCollapsed) { panel.hidden = true; if (reopenBtn) reopenBtn.classList.add("on"); } scheduleVerificationPoll(); }
+      if (j && j.ok && j.pending && j.pending.edits && j.pending.edits.length) {
+        currentPending = j.pending;
+        if (j.pending.status === "repairing") autoRepairPoll = true;
+        else if (j.pending.status === "verification_pending") autoRepairPoll = false;
+        else if (j.pending.status === "verification_failed" && (j.pending.repair_error || Number(j.pending.repair_attempts || 0) >= 2)) autoRepairPoll = false;
+        render(j.pending); if (panelCollapsed) { panel.hidden = true; if (reopenBtn) panel.hidden = true; if (reopenBtn) reopenBtn.classList.add("on"); } scheduleVerificationPoll();
+      }
       else { currentPending = null; hide(); if (!quiet) toast("当前没有待处理的改动"); }
     }).catch(function (e) { if (!quiet) toast("刷新失败：" + (e && e.message || e)); })
       .finally(function () { refreshBusy = false; });
   }
   function scheduleVerificationPoll() {
     clearTimeout(verifyPollTimer); verifyPollTimer = null;
-    if (!currentPending || currentPending.status !== "verification_pending" || verifyPollBusy) return;
+    if (!currentPending || verifyPollBusy || (currentPending.status !== "verification_pending" && currentPending.status !== "repairing" && !(currentPending.status === "verification_failed" && autoRepairPoll))) return;
     verifyPollTimer = setTimeout(pollVerification, 4000);
   }
   function pollVerification() {
-    if (verifyPollBusy || !currentPending || currentPending.status !== "verification_pending") return;
+    if (verifyPollBusy || !currentPending) return;
+    var repairing = currentPending.status === "repairing" || (currentPending.status === "verification_failed" && autoRepairPoll);
+    if (!repairing && currentPending.status !== "verification_pending") return;
     verifyPollBusy = true;
-    api("/api/code/verify", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
+    var request = repairing ? api("/api/code/pending", { cache: "no-store" }) : api("/api/code/verify", { cache: "no-store" });
+    request.then(function (r) { return r.json(); }).then(function (j) {
+      if (repairing) return refreshPending(true);
+      if (j && j.ok && j.auto_repair_started) autoRepairPoll = true;
       if (j && j.ok && j.status === "completed") return refreshPending(true);
     }).catch(function () {}).finally(function () { verifyPollBusy = false; scheduleVerificationPoll(); });
   }
@@ -305,21 +316,25 @@
     if (p.status === "verification_pending") {
       body.appendChild(el("div", "om-warn", "⏳ GitHub Actions 正在验证此临时分支：npm install → npm test → npm run build。验证期间禁止合并。"));
       if (p.verify_run_url) { var runLink = el("a", "", "查看 Actions 验证运行"); runLink.href = p.verify_run_url; runLink.target = "_blank"; runLink.rel = "noopener noreferrer"; body.appendChild(runLink); }
+    } else if (p.status === "repairing") {
+      body.appendChild(el("div", "om-warn", "模型正在读取 Actions 失败日志和临时分支源码，尝试自动修复；最多自动修复 2 次。修复期间不会合并。"));
+      body.appendChild(el("div", "om-meta", "自动修复进度：" + Number(p.repair_attempts || 1) + " / 2"));
     } else if (p.status === "verification_passed") {
       body.appendChild(el("div", "om-okc", "✓ 验证通过。请再次点击“确认合并”，才会合并到目标分支。"));
       if (p.verify_run_url) { var passLink = el("a", "", "查看通过的 Actions 运行"); passLink.href = p.verify_run_url; passLink.target = "_blank"; passLink.rel = "noopener noreferrer"; body.appendChild(passLink); }
     } else if (p.status === "verification_failed") {
-      body.appendChild(el("div", "om-errc", "✕ 验证失败，未合并。修复临时分支后可重新验证；也可拒绝并删除。"));
+      body.appendChild(el("div", "om-errc", "✕ 验证失败，未合并。系统会先尝试自动修复；如果修复用尽或失败，可重新验证或拒绝并删除。"));
+      if (p.repair_error) body.appendChild(el("div", "om-meta", "自动修复结果：" + p.repair_error));
       if (p.verify_failed_step) body.appendChild(el("div", "om-meta", "失败步骤：" + p.verify_failed_step));
       (p.verify_error_lines || []).forEach(function (line) { var logLine = el("pre", "om-diff", line); logLine.style.whiteSpace = "pre-wrap"; body.appendChild(logLine); });
       if (p.verify_run_url) { var failLink = el("a", "", "查看失败的 Actions 日志"); failLink.href = p.verify_run_url; failLink.target = "_blank"; failLink.rel = "noopener noreferrer"; body.appendChild(failLink); }
     }
     root.appendChild(body);
     footer = el("div", "om-pf");
-    var verifying = p.status === "verification_pending", passed = p.status === "verification_passed", failed = p.status === "verification_failed";
-    stEl = el("div", "om-st", verifying ? "验证运行中，页面会自动刷新状态；验证未通过前不会合并。" : passed ? "测试与构建已通过。再次确认后才会合并到 " + (p.baseBranch || "目标分支") + "。" : failed ? "验证失败，修改仍保留在临时分支。" : "先推送到临时分支并运行测试，测试通过后再确认合并。");
+    var verifying = p.status === "verification_pending" || p.status === "repairing", passed = p.status === "verification_passed", failed = p.status === "verification_failed";
+    stEl = el("div", "om-st", p.status === "repairing" ? "模型正在自动修复，修复完成后会重新运行测试。" : verifying ? "验证运行中，页面会自动刷新状态；验证未通过前不会合并。" : passed ? "测试与构建已通过。再次确认后才会合并到 " + (p.baseBranch || "目标分支") + "。" : failed ? "验证失败，修改仍保留在临时分支。" : "先推送到临时分支并运行测试，测试通过后再确认合并。");
     noBtn = el("button", "om-btn om-no", "不推"); noBtn.type = "button"; noBtn.disabled = verifying; if (fcBtn) fcBtn.disabled = verifying;
-    yesBtn = el("button", "om-btn om-yes", passed ? "确认合并" : failed ? "重新验证" : "推送并验证"); yesBtn.type = "button"; yesBtn.disabled = verifying;
+    yesBtn = el("button", "om-btn om-yes", p.status === "repairing" ? "自动修复中" : passed ? "确认合并" : failed ? "重新验证" : "推送并验证"); yesBtn.type = "button"; yesBtn.disabled = verifying;
     noBtn.addEventListener("click", function () { decide(false); });
     yesBtn.addEventListener("click", function () { decide(true); });
     footer.appendChild(stEl); footer.appendChild(noBtn); footer.appendChild(yesBtn); root.appendChild(footer);
