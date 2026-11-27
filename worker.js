@@ -845,7 +845,7 @@ async function codeRepairPendingFromVerification(env, user, job) {
     const paths = [...new Set([
       ...(pend.edits || []).map((e) => String(e.path || "")),
       ...tree.files.filter((path) => (job.error_lines || []).some((line) => String(line).includes(path)))
-    ])].filter((path) => path && codePathOk(path) && !codePathProtected(path)).slice(0, 5);
+    ])].filter((path) => path && codePathOk(path) && !codePathProtected(path)).slice(0, 3);
     if (!paths.length) return await finish("verification_failed", { ok: false, reply: "自动修复未找到可安全读取的失败相关文件。" }, pend.edits);
     const files = {}, shas = {};
     const loaded = await Promise.all(paths.map(async (path) => ({ path, bad: codePushGuard(env, user, pend.repo, path), file: await codeGetFile(env, pend.repo, path, pend.branch) })));
@@ -854,7 +854,7 @@ async function codeRepairPendingFromVerification(env, user, job) {
       if (!item.file.ok || !item.file.exists) return await finish("verification_failed", { ok: false, reply: "自动修复读取 " + item.path + " 失败：" + (item.file.msg || "文件不存在") }, pend.edits);
       files[item.path] = item.file.text; shas[item.path] = item.file.sha;
     }
-    const source = Object.keys(files).map((path) => "### " + path + "\n\n" + codeCut(files[path], 18000)).join("\n\n");
+    const source = Object.keys(files).map((path) => "### " + path + "\n\n" + codeCut(files[path], 10000)).join("\n\n");
     const logs = (job.error_lines || []).slice(0, 60).map((line) => codeVerifyRedact(line)).join("\n");
     const system = "你是 OpenManus 仓库的自动测试修复代理。你必须依据真实 GitHub Actions 失败日志和下面给出的临时分支源码修复根因。只允许修改提供的文件；不能删除、跳过或弱化测试，不能用假数据绕过测试，不能修改密钥或受保护文件。输出必须只包含一个或多个精确修改块，格式：\n<<<<<<< SEARCH 文件路径\n原文中唯一且连续的片段\n=======\n替换后的完整片段\n>>>>>>> REPLACE\nSEARCH 必须逐字匹配当前源码。不要输出整文件，不要声称已经运行测试；修复后系统会重新运行 Actions 验证。若日志和源码不足以安全修复，只回复一行 ASK: 加上最关键的缺失信息。";
     const prompt = "验证任务：" + String(job.request_id || "") + "\n失败步骤：" + String(job.failed_step || "未知") + "\n待验证 commit：" + String(job.expected_sha || "") + "\nActions 真实失败日志：\n" + logs + "\n\n临时分支源码：\n" + source + "\n\n请只修复这些失败直接相关的问题，保留所有既有功能和测试。";
@@ -872,7 +872,7 @@ async function codeRepairPendingFromVerification(env, user, job) {
     const applied = codeApply(files, edits);
     if (applied.errs.length || !applied.done.length) return await finish("verification_failed", { ok: false, reply: "模型修复块无法安全应用：" + applied.errs.map((e) => e.msg).join("；") }, pend.edits);
     const changed = [...new Set(applied.done.map((e) => e.path))];
-    if (changed.length > 4) return await finish("verification_failed", { ok: false, reply: "自动修复涉及超过 4 个文件，已停止自动写入，保留临时分支供人工审查。" }, pend.edits);
+    if (changed.length > 3) return await finish("verification_failed", { ok: false, reply: "自动修复涉及超过 3 个文件，已停止自动写入，保留临时分支供人工审查。" }, pend.edits);
     const repairedEdits = [...(pend.edits || [])];
     for (const path of changed) {
       const update = await codeUpdateFile(env, pend.repo, path, applied.out[path], "AI: repair failed verification", pend.branch, shas[path]);
