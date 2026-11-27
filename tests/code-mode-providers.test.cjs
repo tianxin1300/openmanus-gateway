@@ -167,7 +167,7 @@ test('editor delivery: pending work is resumable and deployment state is not ove
 test('project isolation: code edits use a temporary branch before merging to the base branch', () => {
   assert.match(workerSource, /async function codeCreateTempBranch\(env, repo, project, base = "main"\)/);
   assert.match(workerSource, /ref: "refs\/heads\/" \+ branch/);
-  assert.match(workerSource, /async function codeMergeTempBranch\(env, repo, branch, base, message\)/);
+  assert.match(workerSource, /async function codeMergeTempBranch\\(env, repo, branch, base, message, expectedBaseSha, expectedHeadSha\\)/);
   assert.match(workerSource, /await codeMergeTempBranch\(env, pend\.repo, pend\.branch/);
   assert.match(workerSource, /await codeDeleteBranch\(env, pend\.repo, pend\.branch\)/);
   assert.match(workerSource, /branch_deleted: true/);
