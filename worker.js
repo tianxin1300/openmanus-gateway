@@ -937,10 +937,11 @@ async function codeVerifyStatus(env, user) {
   old.logs = Array.isArray(old.error_lines) ? old.error_lines : [];
   old.preview_url = codeVerifyPreview(env, old.run_id);
   old.state = old.status === "completed" ? (old.conclusion === "success" ? "success" : "failure") : "running";
-  let repairStarted = false;
+  let repairStarted = false, verificationConflict = false;
   if (old.pending_id && old.run_id && old.status === "completed") {
     const verification = await codeClaimCall(env, user, "verification", { pending_id: old.pending_id, request_id: old.request_id, run_id: String(old.run_id), run_url: old.run_url, expected_sha: old.expected_sha, actual_sha: String(old.head_sha || ""), conclusion: old.conclusion || "failure", error_lines: old.error_lines || [], failed_step: old.failed_step || "" });
-    if (!verification.ok && !verification.conflict) old.verification_error = verification.msg || "无法更新待处理验证状态";
+    if (!verification.ok && verification.conflict) verificationConflict = true;
+    else if (!verification.ok) old.verification_error = verification.msg || "无法更新待处理验证状态";
     if (verification.ok) {
       old.pending_status = verification.pending && verification.pending.status || "";
       if (old.pending_status === "verification_failed" && old.conclusion !== "success" && old.head_sha && old.head_sha === old.expected_sha) {
@@ -951,7 +952,7 @@ async function codeVerifyStatus(env, user) {
       }
     }
   }
-  if (env.KV && !repairStarted) await env.KV.put(codeVerifyKey(user), JSON.stringify(old), { expirationTtl: 86400 });
+  if (env.KV && !repairStarted && !verificationConflict) await env.KV.put(codeVerifyKey(user), JSON.stringify(old), { expirationTtl: 86400 });
   await codePersistRun(env, user, old);
   return { ok: true, ...old, log_key: codeRunLogKey(old.run_id || old.request_id), actions_url: old.run_url || ("https://github.com/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW) };
 }
