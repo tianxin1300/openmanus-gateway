@@ -72,6 +72,19 @@ function loadPendingVerificationHelpers(stubs = {}) {
 }
 
 
+
+function loadCodeVerifySweep(stubs = {}) {
+  const start = workerSource.indexOf('async function codeVerifySweep');
+  const end = workerSource.indexOf('async function codeVerifyStatus', start);
+  assert.ok(start >= 0 && end > start, 'verification sweep must exist');
+  const sandbox = Object.assign({
+    codeVerifyStatus: async (_env, user) => ({ ok: true, status: 'in_progress', state: 'running', user }),
+    Date, String, Array, Object, Promise
+  }, stubs);
+  vm.runInNewContext(workerSource.slice(start, end) + String.fromCharCode(10) + 'globalThis.runCodeVerifySweep = codeVerifySweep;', sandbox);
+  return sandbox;
+}
+
 function loadCodeRepairHelper(stubs = {}) {
   const start = workerSource.indexOf('async function codeRepairPendingFromVerification');
   const end = workerSource.indexOf('async function codeVerifyStatus', start);
@@ -2086,4 +2099,31 @@ test('codeConfirm discard refuses success when GitHub cannot delete the temporar
   assert.match(discard, /if \(!removed\.ok && removed\.status !== 404\)/);
   assert.match(discard, /ok: false, pending: true, conflict: true/);
   assert.ok(discard.indexOf('codeDeleteBranch') < discard.indexOf('finish("discarded"'));
+});
+
+
+test('codeVerifySweep rotates across users and polls only one active code verification per cron', async () => {
+  const jobs = {
+    'code:verify:user-a': { pending_id: 'p-a', status: 'completed', pending_status: 'verification_passed' },
+    'code:verify:user-b': { pending_id: 'p-b', status: 'in_progress' },
+    'code:verify:user-c': { pending_id: 'p-c', status: 'queued' }
+  };
+  const writes = [], polled = [];
+  const kv = {
+    async list() { return { keys: Object.keys(jobs).map(name => ({ name })) }; },
+    async get(key, type) { return key === 'code:verify-sweep:last' ? 'code:verify:user-a' : jobs[key] || null; },
+    async put(key, value) { writes.push([key, value]); }
+  };
+  const sandbox = loadCodeVerifySweep({
+    codeVerifyStatus: async (_env, user) => { polled.push(user); return { ok: true, status: 'in_progress', state: 'running' }; }
+  });
+  const result = await sandbox.runCodeVerifySweep({ KV: kv, GH_PAT: 'configured' });
+  assert.equal(result.checked, 1);
+  assert.deepEqual(polled, ['user-b']);
+  assert.equal(writes[0][0], 'code:verify-sweep:last');
+  assert.equal(writes[0][1], 'code:verify:user-b');
+});
+
+test('minute cron includes autonomous code verification polling', () => {
+  assert.match(workerSource, /codeVerifySweep\(e2\)/);
 });
