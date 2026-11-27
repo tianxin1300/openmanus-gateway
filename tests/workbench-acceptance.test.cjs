@@ -1522,3 +1522,59 @@ test('ACCEPTANCE RENAME-REJECT-MERGE-01: real rename rejection restores the sour
   assert.deepEqual(history[0].files, ['keep.js']);
   assert.equal(kv.deleted, true);
 });
+
+
+test('ACCEPTANCE WORKBENCH-AUTH-ROUTE-01: workbench HTTP routes reject missing, invalid and expired tokens before dispatch', async () => {
+  const authSource = sourceOf('function sameStr(', 'const getKeys =');
+  const userSource = sourceOf('async function userFromReq(', 'const getKeys =');
+  const routeSource = sourceOf('    if (path === "/api/code/branch/current"', '    if (path === "/api/code/tree"');
+  const route = runFunction(
+    authSource + '\\n' + userSource +
+    '\\nasync function testWorkbenchRoute(request, env, url, path) {\\n' + routeSource + '\\nreturn null;\\n}',
+    'testWorkbenchRoute',
+    {
+      AG_RE: /^\\/api\\/(agent\\/(tool|cron)\\/|translate$|places\\/(nearby|route|suggest|where)$)/,
+      json: (value, status = 200) => new Response(JSON.stringify(value), { status }),
+      codeWorkbenchBranchCurrent: async () => ({ ok: true }),
+      codeWorkbenchBranchCreate: async () => ({ ok: true }),
+      codeWorkbenchBranchDiff: async () => ({ ok: true }),
+      codeWorkbenchBranchRejectFile: async () => ({ ok: true }),
+      codeWorkbenchBranchSaveFile: async () => ({ ok: true }),
+      codeWorkbenchBranchPreview: async () => ({ ok: true }),
+      codeWorkbenchBranchMerge: async () => ({ ok: true }),
+      codeWorkbenchBranchDiscard: async () => ({ ok: true })
+    }
+  );
+  const routes = [
+    ['GET', '/api/code/branch/current', 'current'],
+    ['POST', '/api/code/branch/create', 'create'],
+    ['GET', '/api/code/branch/diff', 'diff'],
+    ['POST', '/api/code/branch/reject-file', 'reject'],
+    ['POST', '/api/code/branch/save-file', 'save'],
+    ['POST', '/api/code/branch/preview', 'preview'],
+    ['POST', '/api/code/branch/merge', 'merge'],
+    ['POST', '/api/code/branch/discard', 'discard']
+  ];
+  const kvValues = new Map([['token:valid-token', 'authenticated-user']]);
+  const env = { KV: { get: async key => kvValues.has(key) ? kvValues.get(key) : null } };
+  for (const [method, pathname] of routes) {
+    for (const authorization of ['', 'Bearer invalid-token', 'Bearer expired-token']) {
+      const request = {
+        method,
+        headers: new Headers(authorization ? { Authorization: authorization } : {}),
+        json: async () => ({ repo: 'owner/repo', token: '' })
+      };
+      const response = await route(request, env, new URL('https://worker.test' + pathname + '?repo=owner/repo'), pathname);
+      assert.ok(response instanceof Response, pathname + ' returns an HTTP response');
+      assert.equal(response.status, 401, pathname + ' rejects ' + (authorization || 'missing token'));
+      assert.match((await response.json()).msg, /未登录|token失效/);
+    }
+    const request = {
+      method,
+      headers: new Headers({ Authorization: 'Bearer valid-token' }),
+      json: async () => ({ repo: 'owner/repo', token: '' })
+    };
+    const response = await route(request, env, new URL('https://worker.test' + pathname + '?repo=owner/repo'), pathname);
+    assert.equal(response.status, 200, pathname + ' dispatches for a valid bearer token');
+  }
+});
