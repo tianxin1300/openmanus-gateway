@@ -833,6 +833,27 @@ async function codeVerifyStatus(env, user) {
   await codePersistRun(env, user, old);
   return { ok: true, ...old, log_key: codeRunLogKey(old.run_id || old.request_id), actions_url: old.run_url || ("https://github.com/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW) };
 }
+async function codeRetryRun(env, user, body = {}) {
+  const kind = body.kind === "deploy" ? "deploy" : "verify";
+  const key = codeVerifyKey(user) + (kind === "deploy" ? ":deploy" : "");
+  const old = env.KV ? await env.KV.get(key, "json").catch(() => null) : null;
+  const runId = String(body.run_id || "");
+  if (!old || !/^\d+$/.test(runId) || String(old.run_id || "") !== runId) return { ok: false, msg: "运行记录不匹配或没有真实 Actions run_id，未触发重试" };
+  if (old.status !== "completed" || !["failure", "cancelled", "timed_out", "action_required"].includes(String(old.conclusion || ""))) {
+    return { ok: false, msg: "只有已结束且失败/取消/超时的运行可以重试" };
+  }
+  const repo = old.repo || codeVerifyRepo(env);
+  if (!codeRepoOk(env, repo)) return { ok: false, msg: "运行仓库不在允许名单里" };
+  const rerun = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/actions/runs/" + encodeURIComponent(runId) + "/rerun-failed-jobs", { method: "POST" });
+  if (!rerun.ok) return { ok: false, status: rerun.status, msg: "请求 GitHub 重跑失败任务失败：" + rerun.msg };
+  old.status = "queued"; old.conclusion = null; old.state = "queued";
+  old.error_lines = []; old.logs = []; old.failed_step = "";
+  old.retry_count = Number(old.retry_count || 0) + 1;
+  old.retry_at = new Date().toISOString(); old.updated_at = old.retry_at;
+  if (env.KV) await env.KV.put(key, JSON.stringify(old), { expirationTtl: 86400 });
+  await codePersistRun(env, user, old);
+  return { ok: true, ...old, message: "已请求 GitHub 重跑这次运行中失败的任务，没有创建新的验证任务" };
+}
 async function codeGetFile(env, repo, path, ref) {   // = MCP get_file
   if (!env.GH_PAT) return { ok: false, msg: "GH_PAT 没有配置" };
   if (!codeRepoOk(env, repo)) return { ok: false, msg: "仓库 " + repo + " 不在允许名单里（Worker 变量 CODE_REPOS，逗号分隔）" };
@@ -8945,6 +8966,13 @@ async function handle(request, env, ctx) {
     }
 
     // ---- v108：复用现有 GitHub 仓库，触发独立 verify-project workflow 并把结果回传开发台 ----
+    if (path === "/api/code/retry" && request.method === "POST") {
+      const b = await request.json().catch(() => ({}));
+      const user = await userFromReq(request, env, url, String(b.token || ""));
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeRetryRun(env, user, b);
+      return json(r, r.ok ? 200 : (r.status || 400));
+    }
     if (path === "/api/code/verify" && request.method === "POST") {
       const b = await request.json().catch(() => ({}));
       const user = await userFromReq(request, env, url, String(b.token || ""));
