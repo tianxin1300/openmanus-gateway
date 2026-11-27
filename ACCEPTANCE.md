@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 81 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，因此 Node TAP 实际运行 83 项。`workbench-acceptance.test.cjs` 运行 39 项，`npm test` 合计 122 项。Playwright UI 文件另有 6 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入这 120 项。
+> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 81 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，按当前源码预计 Node TAP 展开为 83 项。`workbench-acceptance.test.cjs` 有 39 个静态测试声明，因此按源码预计 `npm test` 共 122 项；最终数量以本次 TAP 输出为准。Playwright UI 文件另有 6 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入这 120 项。
 
 ## 1. 唯一执行入口与判定规则
 
