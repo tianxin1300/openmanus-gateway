@@ -256,7 +256,7 @@
         if (j.pending.status === "repairing") autoRepairPoll = true;
         else if (j.pending.status === "verification_pending") autoRepairPoll = false;
         else if (j.pending.status === "verification_failed" && (j.pending.repair_error || Number(j.pending.repair_attempts || 0) >= 2)) autoRepairPoll = false;
-        render(j.pending); if (panelCollapsed) { panel.hidden = true; if (reopenBtn) panel.hidden = true; if (reopenBtn) reopenBtn.classList.add("on"); } scheduleVerificationPoll();
+        render(j.pending); if (panelCollapsed) { panel.hidden = true; if (reopenBtn) reopenBtn.classList.add("on"); } scheduleVerificationPoll();
       }
       else { currentPending = null; hide(); if (!quiet) toast("当前没有待处理的改动"); }
     }).catch(function (e) { if (!quiet) toast("刷新失败：" + (e && e.message || e)); })
