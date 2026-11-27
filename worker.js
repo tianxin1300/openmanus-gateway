@@ -606,7 +606,7 @@ async function codeWorkbenchBranchRejectFileUnlocked(env, user, body = {}) {
   if (!current.ok || !current.active || (body.branch && body.branch !== current.branch)) return { ok: false, msg: "临时分支已变化，请刷新后重试" };
   const guard = codePushGuard(env, user, repo, path);
   if (guard) return { ok: false, msg: guard };
-  const paths = [...new Set([path, String(body.previous_path || "")].filter(Boolean))];
+  const paths = [...new Set([String(body.previous_path || ""), path].filter(Boolean))];
   for (const target of paths) {
     if (!codePathOk(target)) return { ok: false, msg: "文件路径不合法" };
     const pathGuard = codePushGuard(env, user, repo, target);
