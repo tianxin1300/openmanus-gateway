@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 78 个测试用例，`workbench-acceptance.test.cjs` 有 39 个测试用例；Playwright UI 文件有 2 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行。数量以对应文件当前实际内容为准。
+> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 79 个测试用例，`workbench-acceptance.test.cjs` 有 39 个测试用例；Playwright UI 文件有 2 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行。数量以对应文件当前实际内容为准。
 
 ## 1. 唯一执行入口与判定规则
 
@@ -10,7 +10,7 @@
 npm test
 ```
 
-该命令运行 `node --test tests/*.test.cjs`，包括 `tests/code-mode-providers.test.cjs` 与 `tests/workbench-acceptance.test.cjs`。它不运行 `tests/workbench-ui.spec.cjs`；UI E2E 由 PR 工作流分别执行 Chromium 与 WebKit 的 iPhone 14 项目。AUTO-01～03、CHAIN-01～06 有专属测试；AUTO-04 当前没有专属行为测试，且代码中有防止将其误标为已验收的自检。WORKBENCH-01～15 的验收映射见下文。任何已声明专属测试失败、跳过、未执行或测试进程异常退出，对应项均不得判为通过。
+该命令运行 `node --test tests/*.test.cjs`，包括 `tests/code-mode-providers.test.cjs` 与 `tests/workbench-acceptance.test.cjs`。它不运行 `tests/workbench-ui.spec.cjs`；UI E2E 由 PR 工作流分别执行 Chromium 与 WebKit 的 iPhone 14 项目。AUTO-01～04、CHAIN-01～06 均有专属测试。WORKBENCH-01～15 的验收映射见下文。任何已声明专属测试失败、跳过、未执行或测试进程异常退出，对应项均不得判为通过。
 
 - **通过**：该项对应的专属 Node.js 自动化测试本次执行成功。
 - **未通过**：该项测试失败、被跳过、未执行，或测试无法完成。
@@ -18,7 +18,7 @@ npm test
 - 每项测试必须直接验证对应源代码行为/逻辑，不以文档文字、Actions 绿灯或其他项目的测试结果替代。
 - Actions 负责自动执行同一条 `npm test` 命令并保存日志；Actions 状态不能把失败测试改成通过。
 
-## 2. 自动验收项目（9 项有专属测试，1 项待补）
+## 2. 自动验收项目（10 项均有专属测试）
 
 ### AUTO-01 — 独立预览从当前编辑器内容生成
 
@@ -63,19 +63,17 @@ npm test
 
 **失败条件：** 任一编辑器实现缺少换行/横向溢出约束，或测试未执行。
 
-### AUTO-04 — 终端与可展开运行日志互斥且视口自适应
+### AUTO-04 — 终端与运行日志标签页互斥切换及视口自适应
 
-**自动化测试：** 当前无专属测试。现有自检明确要求文档不得将 AUTO-04 标为已通过。
+**自动化测试：** `ACCEPTANCE AUTO-04: terminal and run-log tabs switch exclusively and follow visual viewport changes`
 
 **测试覆盖：**
-- 终端与运行日志使用独立标签页及正确的 ARIA 关联。
-- 切换标签时只显示选中面板；运行日志 details 可展开/收起。
-- 收起/切回终端时终端面板恢复，不存在旧的日志扩高覆盖逻辑。
-- 视口 resize/scroll 监听同步布局高度与偏移量。
+- 终端与运行日志使用独立标签页，并具备正确的 `role`、`aria-controls` 与 `aria-selected` 状态。
+- 切换标签时只显示选中的面板；进入运行日志标签时加载运行历史。
+- 切回终端时恢复终端面板，运行日志面板隐藏。
+- `visualViewport` 的 resize/scroll 及 window resize 事件同步工作台高度与顶部偏移量。
 
-**通过条件：** 补齐并运行专属测试，覆盖上述全部行为后方可判为通过。
-
-**当前状态：** 待补专属自动化测试；不得因其他测试通过或 Actions 绿灯而判为通过。
+**通过条件：** 对应专属测试通过；测试同时验证标签切换状态、ARIA 状态、运行历史触发和视口变量更新。
 
 ### CHAIN-01 — 已生成状态与后续阶段隔离
 
@@ -167,7 +165,7 @@ npm test
 
 ## 5. 最终交付结论
 
-- **代码自动验收：** 当前 9 项有专属测试的 AUTO/CHAIN 项逐项判定；AUTO-04 待补专属测试。WORKBENCH-01～15 按各自列出的专属测试判定。不得将待补、未执行或失败项计为通过。
+- **代码自动验收：** AUTO-01～04、CHAIN-01～06 共 10 项均有专属测试，按本次执行结果逐项判定；WORKBENCH-01～15 按各自列出的专属测试判定。不得将未执行或失败项计为通过。
 - **最终交付：** 代码自动验收通过后，仍需按项目流程完成部署。
 
 ## 6. 开发工作台行为验收（WORKBENCH-01～05）
@@ -417,4 +415,4 @@ npm test
 - Node.js Worker 行为测试使用隔离 GitHub API/KV/ Durable Object 模拟器，不会修改真实 main。
 - UI E2E 使用浏览器路由 fixtures 模拟 API，不会真实调用后端写操作。
 - 真实 GitHub 权限、真实 Durable Object 部署配置、真实网络故障恢复和生产 Pages/Worker 健康仍需独立环境验收。
-- AUTO-04 当前无专属测试，不能列入已通过项。
+- AUTO-04 已有专属测试；是否通过仍以本次 `npm test` 实际结果为准。
