@@ -223,3 +223,59 @@ npm test
 | WORKBENCH-03 | 失败重试与局部回滚 | 重试复用原 run；回滚仅恢复清单内路径 |
 | WORKBENCH-04 | 文件级审核 | 拒绝文件不进入最终合并差异 |
 | WORKBENCH-05 | 并发修改冲突保护 | 旧基线触发冲突，main 不被覆盖 |
+
+
+## 7. 权限、幂等、多文件审核与失败清理（新增 4 项）
+
+新增测试位于 `tests/workbench-acceptance.test.cjs`。这些测试执行 Worker 中的实际工作台函数，GitHub/KV 操作使用隔离模拟，不修改真实仓库。
+
+### WORKBENCH-06 — 权限边界与操作者审计
+
+**自动化测试：** `ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, review, or merge; authorized actions are attributed`
+
+**测试覆盖：**
+- 非授权用户及自动化身份尝试创建临时分支、审核文件、合并推送。
+- 三类操作均必须在任何 GitHub 写请求前拒绝。
+- 授权创建记录 `created_by`。
+- 文件拒绝审核记录 `last_reviewed_by` 与 `review_events.actor`。
+- 合并历史记录 `actor`。
+
+**通过条件：** 未授权操作没有 GitHub 写调用；授权操作的创建、审核和合并历史均可追溯到认证用户。
+
+### WORKBENCH-07 — 重复执行与幂等性
+
+**自动化测试：** `ACCEPTANCE IDEMPOTENCY-01: repeated create reuses one branch and repeated merge cannot create a second commit`
+
+**测试覆盖：**
+- 同一用户/项目连续创建两次，第二次复用已有活动分支，不再创建新分支。
+- 同一临时分支合并成功后再次提交相同合并请求，不能再次创建提交或重复写入历史。
+
+**通过条件：** 分支创建调用一次、合并调用一次、历史只增加一条。
+
+**边界：** 本项覆盖顺序重复请求；尚不代表并发请求在 KV 竞态下已具备原子去重保证。
+
+### WORKBENCH-08 — 多文件审核及重命名/删除边界
+
+**自动化测试：** `ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rejects rename/delete side effects`
+
+**测试覆盖：**
+- 一次包含修改、新增、删除、重命名的多文件变更。
+- 只接受指定文件，其余文件不得进入最终比较结果。
+- 拒绝重命名时同时恢复 `previous_filename` 源路径，并移除目标路径。
+- 拒绝删除时恢复基线文件；拒绝新增时删除新增文件。
+- 审核人写入审核事件。
+
+**通过条件：** 最终合并差异只包含接受的文件；被拒绝文件的旧路径、新路径及删除/新增副作用均不能漏进合并。
+
+### WORKBENCH-09 — 失败后的状态清理
+
+**自动化测试：** `ACCEPTANCE CLEANUP-01: failed deletion retains recoverable state; successful cancel clears branch and state for the next task`
+
+**测试覆盖：**
+- GitHub 删除临时分支失败时，不能假装取消成功或清除 KV 分支记录。
+- 重试删除成功后，临时分支记录与审核状态清除。
+- 清理完成后，同一项目可以创建新的任务分支。
+
+**通过条件：** 删除失败保留可恢复状态；成功取消后旧状态清空，下一任务创建成功。
+
+**边界：** 当前自动测试覆盖分支记录与审核状态清理；真实 Durable Object 锁在断网、进程中断和过期告警下的恢复仍需单独端到端验收。
