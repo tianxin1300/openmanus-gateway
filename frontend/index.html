@@ -6161,7 +6161,7 @@ async function mcpGet(path) {
   return parseFile(await callTool(t, mkArgs(t, {owner: REPO.owner, repo: REPO.repo, path, branch: REPO.branch})));
 }
 async function mcpPut(path, content, message, sha) {
-  if (!activeBranchRecord || REPO.branch !== activeBranchRecord.branch || !/^code\//.test(REPO.branch)) throw new Error("已阻止直接写入 main：请先创建并使用当前项目的临时分支。");
+  if (!activeBranchRecord || activeBranchRecord.discard_recovery || REPO.branch !== activeBranchRecord.branch || !/^code\//.test(REPO.branch)) throw new Error("当前分支不可保存：请先完成临时分支审计清理，或创建新的临时分支。");
   const result = await wbApi("/api/code/branch/save-file", {
     method: "POST",
     body: JSON.stringify({ repo: workbenchRepoFull(), branch: REPO.branch, path, content, message, sha })
@@ -6190,11 +6190,12 @@ async function wbApi(path, options = {}) {
 function updateWorkbenchBranchUI() {
   const active = !!(activeBranchRecord && activeBranchRecord.branch);
   const label = g("wb-branch");
-  if (label) { label.textContent = active ? activeBranchRecord.branch : "无活动临时分支"; label.title = active ? activeBranchRecord.branch : ""; }
-  if (g("wb-save")) g("wb-save").disabled = !active;
-  if (g("wb-push")) g("wb-push").disabled = !active;
+  const discardRecovery = !!(active && activeBranchRecord.discard_recovery);
+  if (label) { label.textContent = active ? (activeBranchRecord.branch + (discardRecovery ? " · 审计待补写" : "")) : "无活动临时分支"; label.title = active ? activeBranchRecord.branch : ""; }
+  if (g("wb-save")) g("wb-save").disabled = !active || discardRecovery;
+  if (g("wb-push")) g("wb-push").disabled = !active || discardRecovery;
   if (g("wb-discard")) g("wb-discard").disabled = !active;
-  if (g("wb-branch-preview")) { g("wb-branch-preview").disabled = !active || REPO.repo !== "openmanus-gateway"; g("wb-branch-preview").title = REPO.repo === "openmanus-gateway" ? "构建当前临时分支的独立 Pages 预览" : "该项目仓库尚未配置 Cloudflare Pages 预览工作流"; }
+  if (g("wb-branch-preview")) { g("wb-branch-preview").disabled = !active || discardRecovery || REPO.repo !== "openmanus-gateway"; g("wb-branch-preview").title = discardRecovery ? "当前只允许重试丢弃审计清理" : (REPO.repo === "openmanus-gateway" ? "构建当前临时分支的独立 Pages 预览" : "该项目仓库尚未配置 Cloudflare Pages 预览工作流"); }
   if (g("wb-new-branch")) g("wb-new-branch").hidden = active;
 }
 async function ensureWorkbenchBranch() {
@@ -6322,6 +6323,7 @@ async function loadWorkbenchVersions() {
 }
 async function mergeWorkbenchBranch() {
   if (!activeBranchRecord) return say("当前没有活动临时分支。", true);
+  if (activeBranchRecord.discard_recovery) return say("当前临时分支已删除，只能重试丢弃审计清理，不能保存或合并。", true);
   if (dirty) { await save(); if (dirty) return; }
   const accepted = workbenchChanges.filter(file => workbenchDecisions[file.path] === true).map(file => file.path);
   if (!accepted.length && !["merged_cleanup_failed", "merged_history_failed", "merged_record_cleanup_failed"].includes(activeBranchRecord.status)) return say("还没有接受任何文件。请在改动预览里逐个接受文件，或直接丢弃分支。", true);
@@ -6366,8 +6368,9 @@ async function mergeWorkbenchBranch() {
 }
 async function discardWorkbenchBranch() {
   if (!activeBranchRecord) return;
-  if (dirty && !confirm("丢弃临时分支会删除当前分支，未保存的编辑也会丢失。继续？")) return;
-  if (!dirty && !confirm("确定删除 " + activeBranchRecord.branch + "？main 不会改变。")) return;
+  if (activeBranchRecord.discard_recovery) { if (!confirm("临时分支已删除。现在只重试补写操作者审计并清理状态记录，不会修改 main。继续？")) return; }
+  else if (dirty && !confirm("丢弃临时分支会删除当前分支，未保存的编辑也会丢失。继续？")) return;
+  else if (!dirty && !confirm("确定删除 " + activeBranchRecord.branch + "？main 不会改变。")) return;
   const button = g("wb-discard"); if (button) button.disabled = true;
   try {
     const result = await wbApi("/api/code/branch/discard", { method: "POST", body: JSON.stringify({ repo: workbenchRepoFull(), branch: activeBranchRecord.branch }) });
