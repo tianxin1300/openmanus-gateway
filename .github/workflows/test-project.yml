@@ -48,7 +48,7 @@ jobs:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const runKey = `${context.runId}-${context.runAttempt}`;
+            const runKey = `${context.runId}-${process.env.GITHUB_RUN_ATTEMPT || '1'}`;
             const baseBranch = `e2e/workbench-${runKey}-base`;
             const headBranch = `e2e/workbench-${runKey}-head`;
             const filePath = `e2e-workbench-${runKey}.txt`;
@@ -56,6 +56,7 @@ jobs:
             let baseCreated = false;
             let headCreated = false;
             let pullNumber = null;
+            let prPolicyBlocked = false;
             let failure = null;
             const mainBefore = (await github.rest.git.getRef({ owner, repo, ref: 'heads/main' })).data.object.sha;
 
@@ -87,18 +88,27 @@ jobs:
                 sha: commit.data.sha, force: false
               });
 
-              const pull = await github.rest.pulls.create({
-                owner, repo,
-                title: `[E2E cleanup] workbench GitHub API ${runKey}`,
-                head: headBranch,
-                base: baseBranch,
-                body: 'Disposable integration-test PR. This PR is created and closed by the workflow; it must never be merged.'
-              });
-              pullNumber = pull.data.number;
-              core.info(`Created disposable PR #${pullNumber} between ${headBranch} and ${baseBranch}`);
-              const check = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
-              if (check.data.state !== 'open' || check.data.merged) {
-                throw new Error('Disposable PR did not enter the expected open, unmerged state');
+              try {
+                const pull = await github.rest.pulls.create({
+                  owner, repo,
+                  title: `[E2E cleanup] workbench GitHub API ${runKey}`,
+                  head: headBranch,
+                  base: baseBranch,
+                  body: 'Disposable integration-test PR. This PR is created and closed by the workflow; it must never be merged.'
+                });
+                pullNumber = pull.data.number;
+                core.info(`Created disposable PR #${pullNumber} between ${headBranch} and ${baseBranch}`);
+                const check = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+                if (check.data.state !== 'open' || check.data.merged) {
+                  throw new Error('Disposable PR did not enter the expected open, unmerged state');
+                }
+              } catch (error) {
+                if (error.status === 403 && /not permitted to create or approve pull requests/i.test(error.message)) {
+                  prPolicyBlocked = true;
+                  core.warning('Branch/write E2E succeeded, but PR creation is blocked by the repository Actions setting "Allow GitHub Actions to create and approve pull requests".');
+                } else {
+                  throw error;
+                }
               }
             } catch (error) {
               failure = error;
@@ -135,4 +145,6 @@ jobs:
             }
 
             if (failure) throw failure;
-            core.info('PASS: disposable branches and PR were created, verified, closed, and deleted; main SHA remained unchanged.');
+            core.info('PASS: disposable branches and test commit were created and deleted; main SHA remained unchanged.');
+            if (prPolicyBlocked) core.warning('PR create/close E2E remains unverified until the repository Actions setting is enabled.');
+            else core.info('PASS: disposable PR was created, verified open/unmerged, and closed.');
