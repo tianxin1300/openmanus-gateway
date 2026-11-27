@@ -72,17 +72,10 @@ jobs:
           name = "CODE_CLAIMS"
           class_name = "CodeClaimDO"
 
-          [[durable_objects.bindings]]
-          name = "CODE_RUNNER"
-          class_name = "CodeRunnerDO"
-
           [[migrations]]
           tag = "workbench-e2e-v1"
-          new_sqlite_classes = ["CodeClaimDO", "CodeRunnerDO"]
+          new_sqlite_classes = ["CodeClaimDO"]
           EOF
-
-          printf '%s' "$GITHUB_TOKEN" | npx --yes wrangler@4 secret put GH_PAT --config wrangler.e2e.toml
-          printf '%s' "$WORKBENCH_E2E_SECRET" | npx --yes wrangler@4 secret put WORKBENCH_E2E_SECRET --config wrangler.e2e.toml
 
           curl -fsS -X PUT "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$KV_NAMESPACE_ID/values/$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote("token:"+os.environ["WORKER_TEST_TOKEN"], safe=""))')" \
             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
@@ -90,10 +83,12 @@ jobs:
             --data-binary "workbench-e2e" > /dev/null
 
           npx --yes wrangler@4 deploy --config wrangler.e2e.toml 2>&1 | tee /tmp/wrangler-e2e-deploy.log
+          echo "DO_PROVISIONED=true" >> "$GITHUB_ENV"
+          printf '%s' "$GITHUB_TOKEN" | npx --yes wrangler@4 secret put GH_PAT --config wrangler.e2e.toml
+          printf '%s' "$WORKBENCH_E2E_SECRET" | npx --yes wrangler@4 secret put WORKBENCH_E2E_SECRET --config wrangler.e2e.toml
           WORKER_URL="$(grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' /tmp/wrangler-e2e-deploy.log | tail -n 1)"
           test -n "$WORKER_URL" || { echo "::error::Could not determine isolated workers.dev URL"; exit 1; }
           echo "WORKER_URL=$WORKER_URL" >> "$GITHUB_ENV"
-          echo "DO_PROVISIONED=true" >> "$GITHUB_ENV"
           echo "Isolated Worker deployed: $WORKER_URL"
         env:
           KV_TITLE: ${{ format('openmanus-wb-e2e-{0}-{1}', github.run_id, github.run_attempt) }}
@@ -130,15 +125,14 @@ jobs:
 
           [[migrations]]
           tag = "workbench-e2e-cleanup-v2"
-          deleted_classes = ["CodeClaimDO", "CodeRunnerDO"]
+          deleted_classes = ["CodeClaimDO"]
           EOF
             npx --yes wrangler@4 deploy --config wrangler.e2e-cleanup.toml
           fi
 
-          npx --yes wrangler@4 delete --name "$WORKER_NAME" --force --config wrangler.e2e.toml || {
-            echo "::error::Failed to delete isolated Worker $WORKER_NAME"
-            exit 1
-          }
+          DELETE_WORKER="$(curl -sS -X DELETE "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          printf '%s' "$DELETE_WORKER" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("success") or any(e.get("code")==10007 for e in d.get("errors", [])), d.get("errors")'
 
           if [ -n "${KV_NAMESPACE_ID:-}" ]; then
             curl -fsS -X DELETE "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$KV_NAMESPACE_ID" \
