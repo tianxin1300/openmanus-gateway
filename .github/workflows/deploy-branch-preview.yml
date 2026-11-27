@@ -78,6 +78,17 @@ jobs:
           fi
           echo "PREVIEW_URL=$PREVIEW_URL" >> "$GITHUB_ENV"
           echo "Preview URL: $PREVIEW_URL"
+      - name: Verify fixed workbench preview URL returns HTTP 200
+        shell: bash
+        run: |
+          set -euo pipefail
+          HTTP_CODE="$(curl -s -o /dev/null -w "%{http_code}" https://code-workbench-git-workflow.zhineng-et5.pages.dev)"
+          echo "Fixed workbench preview HTTP status: $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "FAIL: fixed workbench preview URL did not return HTTP 200." >&2
+            exit 1
+          fi
+          echo "PASS: fixed workbench preview URL returned HTTP 200."
       - name: Verify preview HTTP 200 with curl
         shell: bash
         run: |
