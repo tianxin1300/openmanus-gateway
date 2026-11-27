@@ -825,6 +825,51 @@ function codeVerifyErrorLines(text) {
   const indexes = selected.size ? [...selected].sort((a, b) => a - b) : lines.map((_, i) => i);
   return indexes.slice(-60).map((i) => codeVerifyRedact(lines[i]).slice(0, 1000));
 }
+function codeRepairSourceContext(path, source, edits, logs) {
+  const lines = String(source || "").split(/\r?\n/), ranges = [];
+  const add = (center, before, after) => {
+    const start = Math.max(0, center - before), end = Math.min(lines.length - 1, center + after);
+    if (end < start) return;
+    ranges.push([start, end]);
+  };
+  const escapedPath = String(path || "").replace(/[.*+?^${}()|[\]\\]/g, "\\async function codeRepairPendingFromVerification(env, user, job) {");
+  const location = new RegExp("(?:^|[\\s(])" + escapedPath + ":(\\d+)(?::\\d+)?");
+  for (const log of logs || []) {
+    const match = location.exec(String(log || ""));
+    if (match) add(Number(match[1]) - 1, 24, 36);
+  }
+  const stop = new Set(["function", "const", "return", "string", "value", "async", "await", "false", "true", "null", "undefined", "assert", "equal", "test"]);
+  const keywords = new Set();
+  for (const edit of edits || []) {
+    if (String(edit.path || "") !== String(path || "")) continue;
+    for (const token of (String(edit.old || "") + " " + String(edit.new || "")).match(/[A-Za-z_$][A-Za-z0-9_$]{4,}/g) || []) {
+      if (token.length >= 6 && !stop.has(token.toLowerCase())) keywords.add(token);
+    }
+  }
+  for (const keyword of keywords) {
+    let hits = 0;
+    for (let i = 0; i < lines.length && hits < 4; i++) {
+      if (lines[i].includes(keyword)) { add(i, 24, 36); hits++; }
+    }
+  }
+  if (!ranges.length) { add(0, 0, 100); if (lines.length > 100) add(lines.length - 80, 60, 79); }
+  ranges.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const range of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && range[0] <= last[1] + 2) last[1] = Math.max(last[1], range[1]);
+    else merged.push(range.slice());
+  }
+  let remaining = 260, out = [];
+  for (const [start, end] of merged) {
+    if (remaining <= 0) break;
+    const takeEnd = Math.min(end, start + remaining - 1);
+    out.push(lines.slice(start, takeEnd + 1).map((line, index) => String(start + index + 1).padStart(5, " ") + " | " + line).join("\n"));
+    remaining -= takeEnd - start + 1;
+  }
+  return out.join("\n...\n").slice(0, 18000);
+}
+
 async function codeRepairPendingFromVerification(env, user, job) {
   const claimed = await codeClaimCall(env, user, "repair-claim", {
     pending_id: String(job.pending_id || ""), request_id: String(job.request_id || ""),
@@ -854,10 +899,11 @@ async function codeRepairPendingFromVerification(env, user, job) {
       if (!item.file.ok || !item.file.exists) return await finish("verification_failed", { ok: false, reply: "自动修复读取 " + item.path + " 失败：" + (item.file.msg || "文件不存在") }, pend.edits);
       files[item.path] = item.file.text; shas[item.path] = item.file.sha;
     }
-    const source = Object.keys(files).map((path) => "### " + path + "\n\n" + codeCut(files[path], 10000)).join("\n\n");
-    const logs = (job.error_lines || []).slice(0, 60).map((line) => codeVerifyRedact(line)).join("\n");
+    const logs = (job.error_lines || []).slice(0, 60).map((line) => codeVerifyRedact(line));
+    const source = Object.keys(files).map((path) => "### " + path + "\n\n" + codeRepairSourceContext(path, files[path], pend.edits || [], logs)).join("\n\n");
+    const originalChanges = (pend.edits || []).map((edit) => "### 原始修改 " + edit.path + "\n" + codeCut(edit.new || "", 1600)).join("\n\n");
     const system = "你是 OpenManus 仓库的自动测试修复代理。你必须依据真实 GitHub Actions 失败日志和下面给出的临时分支源码修复根因。只允许修改提供的文件；不能删除、跳过或弱化测试，不能用假数据绕过测试，不能修改密钥或受保护文件。输出必须只包含一个或多个精确修改块，格式：\n<<<<<<< SEARCH 文件路径\n原文中唯一且连续的片段\n=======\n替换后的完整片段\n>>>>>>> REPLACE\nSEARCH 必须逐字匹配当前源码。不要输出整文件，不要声称已经运行测试；修复后系统会重新运行 Actions 验证。若日志和源码不足以安全修复，只回复一行 ASK: 加上最关键的缺失信息。";
-    const prompt = "原始改动目标：" + String(pend.summary || "未提供") + "\n验证任务：" + String(job.request_id || "") + "\n失败步骤：" + String(job.failed_step || "未知") + "\n待验证 commit：" + String(job.expected_sha || "") + "\nActions 真实失败日志：\n" + logs + "\n\n临时分支源码：\n" + source + "\n\n请只修复这些失败直接相关的问题，保留所有既有功能和测试。";
+    const prompt = "原始改动目标：" + String(pend.summary || "未提供") + "\n验证任务：" + String(job.request_id || "") + "\n失败步骤：" + String(job.failed_step || "未知") + "\n待验证 commit：" + String(job.expected_sha || "") + "\nActions 真实失败日志：\n" + logs.join("\n") + "\n\n初始修改块：\n" + originalChanges + "\n\n按失败路径和修改标识符从完整文件中截取的相关源码（每行带行号）：\n" + source + "\n\n必须先对照失败测试和相关实现定位根因。不要要求用户再次提供已经包含在上下文中的源码；如果仍缺少信息，只问一个具体问题。请只修复这些失败直接相关的问题，保留所有既有功能和测试。";
     const model = await codeLLM(env, [{ role: "system", content: system }, { role: "user", content: prompt }], 150000);
     if (!model.text) return await finish("verification_failed", { ok: false, reply: "自动修复模型调用失败：" + (model.tried || []).join("；") }, pend.edits);
     if (/^\s*ASK\s*[:：]/i.test(model.text)) return await finish("verification_failed", { ok: false, reply: "自动修复需要更多上下文：" + codeCut(model.text, 500) }, pend.edits);
