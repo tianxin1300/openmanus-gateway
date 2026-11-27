@@ -6162,9 +6162,11 @@ async function mcpGet(path) {
 }
 async function mcpPut(path, content, message, sha) {
   if (!activeBranchRecord || REPO.branch !== activeBranchRecord.branch || !/^code\//.test(REPO.branch)) throw new Error("已阻止直接写入 main：请先创建并使用当前项目的临时分支。");
-  const tools = await mcpTools(), t = pickTool(tools, "update_file", /(update|write|put)_?file|create_or_update/i);
-  if (!t) throw new Error("MCP 里没有 update_file（现有工具：" + tools.map(x => x.name).join("、") + "）");
-  return callTool(t, mkArgs(t, {owner: REPO.owner, repo: REPO.repo, path, branch: REPO.branch, content, message, sha}));
+  const result = await wbApi("/api/code/branch/save-file", {
+    method: "POST",
+    body: JSON.stringify({ repo: workbenchRepoFull(), branch: REPO.branch, path, content, message, sha })
+  });
+  return JSON.stringify({ content: { sha: result.sha || "" } });
 }
 
 const WORKBENCH_PROJECTS = {
