@@ -231,6 +231,7 @@ test('temporary branch preview is built from the staged branch and uses the Page
   assert.match(deployWorkflow, /--branch "\$DEPLOY_REF"/);
   const frozenDeployWorkflow = fs.readFileSync(path.join(root, '.github/workflows/deploy-project.yml'), 'utf8');
   assert.match(frozenDeployWorkflow, /--branch main/);
+  assert.doesNotMatch(deployWorkflow, /--branch main/);
 });
 
 test('developer workbench edits only isolated project branches and cannot save directly to main', () => {
