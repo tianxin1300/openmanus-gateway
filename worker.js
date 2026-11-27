@@ -1206,6 +1206,51 @@ async function codeProject(env, user, proj, req, history, ui) {
   if (ui) return { ok: true, pending: true, model, reply: head + "已生成 " + final.done.length + " 处改动（" + tag + "）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行").join("\n") + tail };
   return { ok: true, pending: true, model, reply: head + "改动预览（" + tag + "，共 " + final.done.length + " 处）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行\n- " + codeCut(d.old, 400).replace(/\n/g, "\n- ") + "\n+ " + codeCut(d.new, 400).replace(/\n/g, "\n+ ")).join("\n\n") + tail + "\n\n要推上去吗？" };
 }
+async function codeQueuePendingVerification(env, user, pend, finish, edits) {
+  const ref = codeVerifyRef("heads/" + String(pend.branch || ""));
+  if (!ref) return await finish("failed", { ok: false, pending: true, reply: "验证未启动：临时分支名不合法，修改仍保留。" }, edits);
+  const head = await codeGhApi(env, codeGitRefUrl(pend.repo, ref));
+  const expectedSha = String(head.data && head.data.object && head.data.object.sha || "");
+  if (!head.ok || !expectedSha) return await finish("failed", { ok: false, pending: true, reply: "验证未启动：无法读取临时分支当前 commit SHA，修改仍保留。" }, edits);
+  const started = await codeVerifyStart(env, user, { ref: pend.branch, pending_id: pend.id, expected_sha: expectedSha });
+  if (!started.ok) return await finish("failed", { ok: false, pending: true, reply: "验证启动失败，未合并，临时分支保留：" + (started.msg || "未知错误") }, edits);
+  const verification = {
+    verify_request_id: started.request_id,
+    verify_run_id: "",
+    verify_run_url: started.actions_url || "",
+    verify_expected_sha: expectedSha,
+    verify_head_sha: "",
+    verify_started_at: Date.now(),
+    verify_expires_at: Date.now() + 20 * 60 * 1000,
+    verify_conclusion: "",
+    verify_error_lines: [],
+    verify_failed_step: ""
+  };
+  return await finish("verification_pending", {
+    ok: true, pending: true, verification_pending: true, status: "verification_pending",
+    request_id: started.request_id, expected_sha: expectedSha, actions_url: started.actions_url,
+    reply: "修改已写入临时分支，GitHub Actions 正在执行 npm install、npm test、npm run build。验证通过后还需要你再次确认合并。"
+  }, edits, verification);
+}
+
+async function codeMergeVerifiedPending(env, user, pend, finish) {
+  const ref = codeVerifyRef("heads/" + String(pend.branch || ""));
+  const head = ref ? await codeGhApi(env, codeGitRefUrl(pend.repo, ref)) : { ok: false };
+  const currentSha = String(head.data && head.data.object && head.data.object.sha || "");
+  if (!head.ok || !currentSha || currentSha !== String(pend.verify_head_sha || "")) {
+    return await finish("verification_failed", { ok: false, pending: true, status: "verification_failed", reply: "❌ 验证通过后临时分支内容又发生变化，commit SHA 不一致，拒绝合并。请重新验证。" }, pend.edits);
+  }
+  const base = pend.baseBranch || String(env.CODE_PUSH_BRANCH || "main");
+  const merged = await codeMergeTempBranch(env, pend.repo, pend.branch, base, "AI: " + pend.summary);
+  if (!merged.ok) return await finish("conflict", { ok: false, pending: true, conflict: true, status: "conflict", reply: "验证已通过，但合并失败：" + merged.msg + "。临时分支仍保留。" }, pend.edits);
+  const commitSha = String((merged.data && merged.data.sha) || "");
+  const rows = await codeHistoryLoad(env, user);
+  const record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: base, commit_sha: commitSha, previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: pend.edits.map((e) => e.path), preview_url: pend.preview_url || codeTempPreview(pend.branch) };
+  await codeHistorySave(env, user, [record, ...rows]);
+  const removed = await codeDeleteBranch(env, pend.repo, pend.branch);
+  return await finish("applied", { ok: true, pushed: true, consumed: true, status: "applied", merged: true, commit_sha: commitSha, branch_deleted: !!removed.ok, history_id: record.id, reply: "✅ 已通过 Actions 验证并合并到 " + base + (removed.ok ? "，临时分支已删除。" : "；临时分支删除失败，请稍后清理：" + (removed.msg || "")) }, []);
+}
+
 async function codeConfirm(env, user, yes, input = {}) {
   const pending = await codePendingLoad(env, user);
   if (!pending || !Array.isArray(pending.edits) || !pending.edits.length) return { ok: false, reply: "没有待推送的修改（可能放了超过 1 小时，已经过期）。" };
@@ -1217,8 +1262,8 @@ async function codeConfirm(env, user, yes, input = {}) {
   if (!claim.ok || !claim.claimed) return { ok: false, pending: !!claim.pending, conflict: !!claim.conflict, busy: !!claim.busy, reply: claim.msg || "待推送内容已变化，请刷新预览后再操作。" };
   const selected = Array.isArray(input.accepted_paths) ? new Set(input.accepted_paths.map(String)) : null;
   const pend = selected ? { ...claim.pending, edits: claim.pending.edits.filter((e) => selected.has(e.path)) } : claim.pending;
-  const finish = async (status, result, edits) => {
-    const done = await codeClaimCall(env, user, "finish", { pending_id: pendingId, operation_id: operationId, status, result, edits });
+  const finish = async (status, result, edits, verification) => {
+    const done = await codeClaimCall(env, user, "finish", { pending_id: pendingId, operation_id: operationId, status, result, edits, verification });
     return done.ok ? (done.result || result) : { ...result, ok: false, pending: true, reply: result.reply + "（状态写入失败，请刷新确认）" };
   };
   if (!yes) {
@@ -1227,6 +1272,9 @@ async function codeConfirm(env, user, yes, input = {}) {
     const note = removed.ok ? "临时分支已删除" : removed.status === 404 ? "临时分支本来就不存在" : "⚠️ 临时分支删除失败（" + removed.msg + "），可稍后在 GitHub 手动删 " + pend.branch;
     return await finish("discarded", { ok: true, discarded: true, consumed: true, status: "discarded", branch_deleted: !!removed.ok, branch_already_gone: removed.status === 404, reply: "好，这次的修改已丢弃：" + note + "，没推到主分支。" }, pend.edits);
   }
+  const claimedFrom = String(claim.pending && claim.pending.claimed_from_status || "awaiting_approval");
+  if (yes && claimedFrom === "verification_passed") return await codeMergeVerifiedPending(env, user, pend, finish);
+  if (yes && claimedFrom === "verification_failed") return await codeQueuePendingVerification(env, user, pend, finish, pend.edits);
   if (!pend.edits.length) {
     const removed = await codeDeleteBranch(env, claim.pending.repo, claim.pending.branch);
     if (!removed.ok) return await finish("failed", { ok: false, pending: true, status: "failed", reply: "❌ 没有接受的文件，且临时分支删除失败，请重试。" }, claim.pending.edits);
@@ -1266,14 +1314,7 @@ async function codeConfirm(env, user, yes, input = {}) {
     }
     editsForApply = pend.edits.filter((e) => !resolved.has(e.path));
     paths = paths.filter((path) => !resolved.has(path));
-    if (!paths.length) {
-      const merged = await codeMergeTempBranch(env, pend.repo, pend.branch, pend.baseBranch || String(env.CODE_PUSH_BRANCH || "main"), "AI: " + pend.summary);
-      if (!merged.ok) return await finish("conflict", { ok: false, pending: true, conflict: true, reply: "冲突解决后仍无法合并：" + merged.msg }, pend.edits);
-      const rows = await codeHistoryLoad(env, user), record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: pend.baseBranch || "main", commit_sha: String((merged.data && merged.data.sha) || ""), previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: Object.keys(files), preview_url: pend.preview_url || codeTempPreview(pend.branch) };
-      await codeHistorySave(env, user, [record, ...rows]);
-      const removed = await codeDeleteBranch(env, pend.repo, pend.branch);
-      return await finish("applied", { ok: true, pushed: true, consumed: true, status: "applied", merged: true, commit_sha: record.commit_sha, branch_deleted: !!removed.ok, history_id: record.id, reply: "✅ 冲突已解决并合并到 " + (pend.baseBranch || "main") }, []);
-    }
+    if (!paths.length) return await codeQueuePendingVerification(env, user, pend, finish, pend.edits);
     const applied = codeApply(files, editsForApply);
     if (applied.errs.length) return await finish("conflict", { ok: false, pending: true, conflict: true, conflicts: paths.map((path) => ({ path, mine: codeCut((pend.edits.find((e) => e.path === path) || {}).new || "", 12000), theirs: codeCut(files[path] || "", 12000), merge: "" })), reply: "⚠️ 没推送：你确认之前文件已经变化，有 " + applied.errs.length + " 处对不上原文。下面可逐文件选择我的 / 他的 / 合并。" }, pend.edits);
     const lines = [], failed = [], succeeded = [];
@@ -1288,14 +1329,7 @@ async function codeConfirm(env, user, yes, input = {}) {
       const remaining = pend.edits.filter((e) => failed.includes(e.path));
       return await finish("partial", { ok: false, pending: true, partial: true, pushed: succeeded.length > 0, status: "partial", reply: lines.join("\n") + "\n⚠️ 已保留未成功的文件修改，可以重试。" }, remaining);
     }
-    const merged = await codeMergeTempBranch(env, pend.repo, pend.branch, pend.baseBranch || String(env.CODE_PUSH_BRANCH || "main"), "AI: " + pend.summary);
-    if (!merged.ok) return await finish("conflict", { ok: false, pending: true, conflict: true, status: "conflict", reply: lines.join("\n") + "\n❌ 临时分支未能合并到 " + (pend.baseBranch || "main") + "：" + merged.msg + "。临时分支仍保留，可重试或删除。" }, pend.edits);
-    const commitSha = String((merged.data && merged.data.sha) || "");
-    const rows = await codeHistoryLoad(env, user);
-    const record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: pend.baseBranch || "main", commit_sha: commitSha, previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: paths, preview_url: pend.preview_url || codeTempPreview(pend.branch) };
-    await codeHistorySave(env, user, [record, ...rows]);
-    const removed = await codeDeleteBranch(env, pend.repo, pend.branch);
-    return await finish("applied", { ok: true, pushed: true, consumed: true, status: "applied", merged: true, commit_sha: commitSha, branch_deleted: !!removed.ok, history_id: record.id, reply: lines.join("\n") + "\n✅ 已合并到 " + (pend.baseBranch || "main") + (removed.ok ? "，临时分支已删除。" : "；临时分支删除失败，请稍后清理：" + removed.msg) }, []);
+    return await codeQueuePendingVerification(env, user, pend, finish, pend.edits);
   } catch (e) {
     return await finish("failed", { ok: false, pending: true, reply: "❌ 推送过程出错，修改仍保留，可重试：" + String(e && e.message || e).slice(0, 160) }, pend.edits);
   }
