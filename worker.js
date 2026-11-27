@@ -659,7 +659,10 @@ async function codeWorkbenchBranchMerge(env, user, body = {}) {
   }
   const head = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + record.baseBranch));
   const previousSha = String(head.data && head.data.object && head.data.object.sha || "");
-  if (!head.ok || !previousSha) return { ok: false, msg: "读取 main 当前版本失败：" + (head.msg || "缺少 SHA") };
+  if (!head.ok || !previousSha) return { ok: false, msg: "读取 " + record.baseBranch + " 当前版本失败：" + (head.msg || "缺少 SHA") };
+  if (record.baseCommit && previousSha !== record.baseCommit) {
+    return { ok: false, conflict: true, base_advanced: true, base_commit: record.baseCommit, current_base_commit: previousSha, msg: record.baseBranch + " 已在创建临时分支后发生变化。为防止旧基线覆盖新修改，已阻止合并；请先同步基线并重新审核改动。" };
+  }
   const merged = await codeMergeTempBranch(env, repo, record.branch, record.baseBranch, String(body.summary || "Workbench: merge " + record.project));
   if (!merged.ok) return { ok: false, conflict: merged.status === 409, files, msg: "合并失败，临时分支保留：" + merged.msg };
   let commitSha = String(merged.data && merged.data.sha || "");
