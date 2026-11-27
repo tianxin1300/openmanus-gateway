@@ -176,13 +176,13 @@ test('project isolation: code edits use a temporary branch before merging to the
 });
 
 test('rollback creates a new commit and never force-moves the base branch', () => {
-  const wrapperStart = workerSource.indexOf('async function codeRollback(');
   const implementationStart = workerSource.indexOf('async function codeRollbackUnlocked(');
-  const end = workerSource.indexOf('const CODE_DEPLOY_WORKFLOW', implementationStart);
-  assert.ok(wrapperStart >= 0 && implementationStart > wrapperStart && end > implementationStart);
-  const wrapper = workerSource.slice(wrapperStart, implementationStart);
+  const wrapperStart = workerSource.indexOf('async function codeRollback(', implementationStart);
+  const end = workerSource.indexOf('const CODE_DEPLOY_WORKFLOW', wrapperStart);
+  assert.ok(implementationStart >= 0 && wrapperStart > implementationStart && end > wrapperStart);
+  const wrapper = workerSource.slice(wrapperStart, end);
   assert.match(wrapper, /codeWorkbenchWithLock/);
-  const rollback = workerSource.slice(implementationStart, end);
+  const rollback = workerSource.slice(implementationStart, wrapperStart);
   assert.match(rollback, /\/git\/commits\//);
   assert.match(rollback, /method: "POST"/);
   assert.match(rollback, /parents: \[currentSha\]/);
@@ -257,7 +257,7 @@ test('developer workbench edits only isolated project branches and cannot save d
   assert.match(frontendSource, /activeBranchRecord\.branch/);
   assert.match(frontendSource, /只保存到当前项目临时分支/);
   assert.match(frontendSource, /没有活动临时分支，已阻止写入 main/);
-  assert.match(frontendSource, /已阻止直接写入 main/);
+  assert.match(frontendSource, /if \(!activeBranchRecord \|\| activeBranchRecord\.discard_recovery \|\| REPO\.branch !== activeBranchRecord\.branch \|\| !\/^code\\\\\\/\.test\(REPO\.branch\)\) throw new Error\(/);
   assert.match(frontendSource, /accepted_paths: accepted/);
   assert.match(frontendSource, /\/api\/code\/branch\/discard/);
   assert.match(frontendSource, /\/api\/code\/branch\/merge/);
