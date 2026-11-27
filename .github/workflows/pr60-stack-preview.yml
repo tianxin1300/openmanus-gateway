@@ -183,6 +183,7 @@ jobs:
           echo "::add-mask::$GH_PAT"
           printf '%s' "$GH_PAT" | npx --yes wrangler@4 secret put GH_PAT --config wrangler.pr60-preview.toml
           printf '%s' "pr60-preview-${GITHUB_SHA:0:8}" | npx --yes wrangler@4 secret put CODE_OWNER --config wrangler.pr60-preview.toml
+          sleep 10 # allow the isolated Worker secret version to propagate before exercising code mode
           AUTH=(-H "Authorization: Bearer $LOGIN_TOKEN" -H 'Accept: application/json')
           CLEANED=false
           cleanup() {
