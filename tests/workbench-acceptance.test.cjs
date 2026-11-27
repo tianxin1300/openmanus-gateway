@@ -1578,3 +1578,74 @@ test('ACCEPTANCE WORKBENCH-AUTH-ROUTE-01: workbench HTTP routes reject missing, 
     assert.equal(response.status, 200, pathname + ' dispatches for a valid bearer token');
   }
 });
+
+
+function makeProjectSwitchHarness({ dirty: initialDirty, confirmResult }) {
+  const calls = [];
+  const projectSelect = { value: 'openmanus-gateway' };
+  const fileLabel = { textContent: 'old/path.js' };
+  const decisions = { 'old/path.js': true, 'other.js': false };
+  const oldRecord = { repo: 'tianxin1300/openmanus-gateway', branch: 'code/old-project' };
+  const sandbox = {
+    WORKBENCH_PROJECTS: {
+      'openmanus-gateway': { owner: 'tianxin1300', repo: 'openmanus-gateway' },
+      jiuyibanlv: { owner: 'tianxin1300', repo: 'jiuyibanlv' }
+    },
+    REPO: { owner: 'tianxin1300', repo: 'openmanus-gateway', branch: 'code/old-project' },
+    dirty: initialDirty,
+    confirm: () => confirmResult,
+    g: id => id === 'wb-project' ? projectSelect : (id === 'wb-file' ? fileLabel : null),
+    activeBranchRecord: oldRecord,
+    workbenchDecisions: decisions,
+    FILE: 'old/path.js',
+    curSha: 'old-file-sha',
+    updateWorkbenchBranchUI: () => calls.push(['update-ui', sandbox.REPO.repo]),
+    workbenchRepoFull() { return this.REPO.owner + '/' + this.REPO.repo; },
+    ensureWorkbenchBranch: async () => {
+      calls.push(['ensure-branch', sandbox.REPO.owner + '/' + sandbox.REPO.repo]);
+      sandbox.activeBranchRecord = { repo: sandbox.workbenchRepoFull(), branch: 'code/new-project' };
+      sandbox.REPO.branch = 'code/new-project';
+      return sandbox.activeBranchRecord;
+    },
+    loadFile: async () => calls.push(['load-file', sandbox.workbenchRepoFull(), sandbox.FILE]),
+    loadWorkbenchTree: async () => calls.push(['load-tree', sandbox.workbenchRepoFull()]),
+    loadWorkbenchChanges: async () => calls.push(['load-changes', sandbox.workbenchRepoFull()]),
+    loadWorkbenchVersions: async () => calls.push(['load-versions', sandbox.workbenchRepoFull()]),
+    say: message => calls.push(['say', message])
+  };
+  const source = sourceOfFrontend(frontend, 'async function switchWorkbenchProject(', '\\ng("wb-file-search")');
+  vm.runInNewContext(source + '\\nglobalThis.__switchProject = switchWorkbenchProject;', sandbox);
+  return { sandbox, calls, projectSelect, fileLabel, decisions, oldRecord };
+}
+
+test('ACCEPTANCE WORKBENCH-PROJECT-01: cancelling a dirty project switch preserves the current branch and edits', async () => {
+  const h = makeProjectSwitchHarness({ dirty: true, confirmResult: false });
+  await h.sandbox.__switchProject('jiuyibanlv');
+  assert.deepEqual({ ...h.sandbox.REPO }, { owner: 'tianxin1300', repo: 'openmanus-gateway', branch: 'code/old-project' });
+  assert.equal(h.sandbox.activeBranchRecord, h.oldRecord);
+  assert.deepEqual({ ...h.decisions }, { 'old/path.js': true, 'other.js': false });
+  assert.equal(h.sandbox.FILE, 'old/path.js');
+  assert.equal(h.sandbox.curSha, 'old-file-sha');
+  assert.equal(h.sandbox.dirty, true);
+  assert.equal(h.projectSelect.value, 'openmanus-gateway');
+  assert.equal(h.calls.some(call => call[0] === 'ensure-branch'), false);
+});
+
+test('ACCEPTANCE WORKBENCH-PROJECT-02: switching projects clears old branch state and loads the new project branch', async () => {
+  const h = makeProjectSwitchHarness({ dirty: true, confirmResult: true });
+  await h.sandbox.__switchProject('jiuyibanlv');
+  assert.deepEqual({ ...h.sandbox.REPO }, { owner: 'tianxin1300', repo: 'jiuyibanlv', branch: 'code/new-project' });
+  assert.deepEqual({ ...h.sandbox.activeBranchRecord }, { repo: 'tianxin1300/jiuyibanlv', branch: 'code/new-project' });
+  assert.deepEqual({ ...h.decisions }, {});
+  assert.equal(h.sandbox.FILE, 'frontend/index.html');
+  assert.equal(h.sandbox.curSha, null);
+  assert.equal(h.sandbox.dirty, false);
+  assert.equal(h.fileLabel.textContent, 'frontend/index.html');
+  assert.deepEqual(h.calls.filter(call => call[0] === 'ensure-branch'), [['ensure-branch', 'tianxin1300/jiuyibanlv']]);
+  assert.deepEqual(h.calls.filter(call => ['load-file', 'load-tree', 'load-changes', 'load-versions'].includes(call[0])).map(call => call.slice(0, 2)), [
+    ['load-file', 'tianxin1300/jiuyibanlv'],
+    ['load-tree', 'tianxin1300/jiuyibanlv'],
+    ['load-changes', 'tianxin1300/jiuyibanlv'],
+    ['load-versions', 'tianxin1300/jiuyibanlv']
+  ]);
+});
