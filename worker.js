@@ -845,7 +845,7 @@ async function codeRepairPendingFromVerification(env, user, job) {
     const paths = [...new Set([
       ...(pend.edits || []).map((e) => String(e.path || "")),
       ...tree.files.filter((path) => (job.error_lines || []).some((line) => String(line).includes(path)))
-    ])].filter((path) => path && codePathOk(path) && !codePathProtected(path)).slice(0, 8);
+    ])].filter((path) => path && codePathOk(path) && !codePathProtected(path)).slice(0, 5);
     if (!paths.length) return await finish("verification_failed", { ok: false, reply: "自动修复未找到可安全读取的失败相关文件。" }, pend.edits);
     const files = {}, shas = {};
     const loaded = await Promise.all(paths.map(async (path) => ({ path, bad: codePushGuard(env, user, pend.repo, path), file: await codeGetFile(env, pend.repo, path, pend.branch) })));
