@@ -1366,7 +1366,13 @@ async function userFromReq(request, env, url, bodyToken) {
   if (!env.KV) return null;
   const m = /^Bearer (.+)$/.exec(request.headers.get("Authorization") || "");
   if (m && m[1] && env.AGENT_TOOL_KEY && env.AGENT_USER && AG_RE.test(url.pathname) && sameStr(m[1], String(env.AGENT_TOOL_KEY))) return String(env.AGENT_USER);   // v90：Dify / n8n 的服务密钥，只放行 AG_RE 里的路径
-  const token = (m && m[1]) || bodyToken || (request.method === "GET" ? url.searchParams.get("token") : "") || "";
+  const bearer = m && m[1];
+  if (bearer && bearer.startsWith("omcron_")) {
+    if (request.method !== "POST" || url.pathname !== "/v1/chat/completions") return null;
+    const hash = await sha256Hex(bearer);
+    return await env.KV.get("automation_token:" + hash);
+  }
+  const token = bearer || bodyToken || (request.method === "GET" ? url.searchParams.get("token") : "") || "";
   return token ? await env.KV.get("token:" + token) : null;
 }
 
@@ -7958,6 +7964,30 @@ async function handle(request, env, ctx) {
       return dbgRes(dv);
     }
 
+    // ---- Cron Issue Agent 专用长期令牌（与 30 天登录令牌完全分离）----
+    if (path === "/api/automation-token" && ["GET", "POST", "DELETE"].includes(request.method)) {
+      if (!env.KV) return json({ ok: false, msg: "KV 没有绑定" }, 500);
+      const user = await userFromReq(request, env, url);
+      if (!user) return json({ ok: false, msg: "请使用正常登录令牌管理自动化令牌" }, 401);
+      const indexKey = "automation_token_index:" + user;
+      const current = await env.KV.get(indexKey, "json");
+      if (request.method === "GET") {
+        return json({ ok: true, active: !!(current && current.hash), created_at: current && current.created_at || null, last4: current && current.last4 || null });
+      }
+      if (request.method === "DELETE") {
+        if (current && current.hash) await env.KV.delete("automation_token:" + current.hash);
+        await env.KV.delete(indexKey);
+        return json({ ok: true, revoked: !!(current && current.hash) });
+      }
+      if (current && current.hash) await env.KV.delete("automation_token:" + current.hash);
+      const token = "omcron_" + rand(32);
+      const hash = await sha256Hex(token);
+      const createdAt = new Date().toISOString();
+      await env.KV.put("automation_token:" + hash, user);
+      await env.KV.put(indexKey, JSON.stringify({ hash, created_at: createdAt, last4: token.slice(-4) }));
+      return json({ ok: true, token, created_at: createdAt, last4: token.slice(-4), expires: null });
+    }
+
     // ---- 账号（v23：加限速，防撞库/刷注册）----
     if ((path === "/api/register" || path === "/api/login") && request.method === "POST") {
       if (!env.KV) return json({ ok: false, msg: "KV 没有绑定" });
@@ -9034,6 +9064,8 @@ async function handle(request, env, ctx) {
 
     // ---- 对话（SSE 流式）----
     if (path === "/v1/chat/completions" && request.method === "POST") {
+      const authHeader = request.headers.get("Authorization") || "";
+      if (/^Bearer\\s+omcron_/.test(authHeader) && !(await userFromReq(request, env, url))) return json({ error: "自动化令牌无效或已撤销", choices: [{ message: { role: "assistant", content: "❌ 自动化令牌无效或已撤销" } }] }, 401);
       if (env.REQUIRE_LOGIN === "1" && !(await userFromReq(request, env, url))) return json({ error: "请先登录", choices: [{ message: { role: "assistant", content: "❌ 请先登录" } }] }, 401);
       const raw = await request.text();
       if (raw.length > 400000) return json({ error: "请求太大", choices: [{ message: { role: "assistant", content: "❌ 请求太大" } }] }, 413);
