@@ -6317,12 +6317,17 @@ async function mergeWorkbenchBranch() {
   if (!activeBranchRecord) return say("当前没有活动临时分支。", true);
   if (dirty) { await save(); if (dirty) return; }
   const accepted = workbenchChanges.filter(file => workbenchDecisions[file.path] === true).map(file => file.path);
-  if (!accepted.length) return say("还没有接受任何文件。请在改动预览里逐个接受文件，或直接丢弃分支。", true);
+  if (!accepted.length && activeBranchRecord.status !== "merged_cleanup_failed") return say("还没有接受任何文件。请在改动预览里逐个接受文件，或直接丢弃分支。", true);
   const button = g("wb-push"); if (button) button.disabled = true;
   try {
     const result = await wbApi("/api/code/branch/merge", { method: "POST", body: JSON.stringify({ repo: workbenchRepoFull(), branch: activeBranchRecord.branch, accepted_paths: accepted, summary: "Workbench: " + accepted.length + " files" }) });
-    say(result.reply || (result.merged ? "已合并到 main" : "没有待合并改动"));
-    activeBranchRecord = null; REPO.branch = "main"; updateWorkbenchBranchUI();
+    say(result.reply || result.msg || (result.merged ? "已合并到 main" : "没有待合并改动"));
+    if (result.branch_deleted === false) {
+      const current = await wbApi("/api/code/branch/current?repo=" + encodeURIComponent(workbenchRepoFull()), { cache: "no-store" });
+      activeBranchRecord = current.active ? current : null;
+      REPO.branch = activeBranchRecord ? activeBranchRecord.branch : "main";
+    } else { activeBranchRecord = null; REPO.branch = "main"; }
+    updateWorkbenchBranchUI();
     workbenchChanges = []; Object.keys(workbenchDecisions).forEach(key => delete workbenchDecisions[key]);
     await Promise.all([loadWorkbenchTree(), loadWorkbenchChanges(), loadWorkbenchVersions(), loadFile()]);
   } catch (error) {
