@@ -6192,7 +6192,7 @@ function updateWorkbenchBranchUI() {
   if (g("wb-save")) g("wb-save").disabled = !active;
   if (g("wb-push")) g("wb-push").disabled = !active;
   if (g("wb-discard")) g("wb-discard").disabled = !active;
-  if (g("wb-branch-preview")) g("wb-branch-preview").disabled = !active || REPO.repo !== "openmanus-gateway";
+  if (g("wb-branch-preview")) { g("wb-branch-preview").disabled = !active || REPO.repo !== "openmanus-gateway"; g("wb-branch-preview").title = REPO.repo === "openmanus-gateway" ? "构建当前临时分支的独立 Pages 预览" : "该项目仓库尚未配置 Cloudflare Pages 预览工作流"; }
   if (g("wb-new-branch")) g("wb-new-branch").hidden = active;
 }
 async function ensureWorkbenchBranch() {
@@ -6310,8 +6310,7 @@ async function loadWorkbenchVersions() {
         try {
           const result = await wbApi("/api/code/rollback", { method: "POST", body: JSON.stringify({ id: row.id }) });
           say(result.reply || "回滚提交已创建");
-          await Promise.all([loadWorkbenchVersions(), loadWorkbenchTree()]);
-          await ensureWorkbenchBranch(); await Promise.all([loadWorkbenchTree(), loadWorkbenchChanges(), loadFile()]);
+          await ensureWorkbenchBranch(); await Promise.all([loadWorkbenchVersions(), loadWorkbenchTree(), loadWorkbenchChanges(), loadFile()]);
         } catch (error) { rollback.disabled = false; say("回滚失败：" + (error.message || String(error)), true); }
       });
       item.appendChild(rollback); host.appendChild(item);
