@@ -502,7 +502,8 @@ function codeTempBranch(project) {
   const tag = String(project || "project").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "project";
   return "code/" + tag + "-" + Date.now().toString(36) + "-" + rand(8);
 }
-function codeTempPreview(branch) {
+function codeTempPreview(branch, repo) {
+  if (String(repo || "") !== "tianxin1300/openmanus-gateway") return "";
   const slug = String(branch || "").replace(/\//g, "-").replace(/[^A-Za-z0-9-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase();
   return slug ? "https://" + slug + ".zhineng.pages.dev" : "";
 }
@@ -1197,11 +1198,13 @@ async function codeProject(env, user, proj, req, history, ui) {
     if (!staged.ok) { await codeDeleteBranch(env, proj.repo, temp.branch); return { ok: false, reply: "❌ 临时分支暂存失败：" + path + "：" + staged.msg + "；临时分支已清理。" }; }
   }
   const previewRequestId = "preview-" + pendingId.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 100);
-  const previewDispatch = await codeGhApi(env, "https://api.github.com/repos/" + proj.repo + "/actions/workflows/deploy-project.yml/dispatches", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ref: temp.branch, inputs: { request_id: previewRequestId, ref: temp.branch } })
-  });
-  const previewUrl = previewDispatch.ok ? codeTempPreview(temp.branch) : "";
+  const previewDispatch = proj.repo === "tianxin1300/openmanus-gateway"
+    ? await codeGhApi(env, "https://api.github.com/repos/" + proj.repo + "/actions/workflows/deploy-project.yml/dispatches", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ref: temp.branch, inputs: { request_id: previewRequestId, ref: temp.branch } })
+      })
+    : { ok: false, msg: "该项目仓库尚未配置独立 Pages 预览工作流" };
+  const previewUrl = previewDispatch.ok ? codeTempPreview(temp.branch, proj.repo) : "";
   const pending = { id: pendingId, project: tag, repo: proj.repo, branch: temp.branch, baseBranch: temp.base, baseCommit: temp.sha, staged_on_branch: true, preview_url: previewUrl, preview_error: previewDispatch.ok ? "" : previewDispatch.msg, preview_request_id: previewRequestId, status: "awaiting_approval", edits: good.map((g, i) => ({ path: final.done[i] ? final.done[i].path : g.path, line: final.done[i] ? final.done[i].line : 0, old: g.old, new: g.new })), baseSha, summary, warn: previewDispatch.ok ? warn : [...warn, "临时预览构建未能启动：" + previewDispatch.msg], at: Date.now(), updatedAt: Date.now(), created_at: Date.now() };
   const created = await codePendingCreate(env, user, pending);
   if (!created.ok) { await codeDeleteBranch(env, proj.repo, temp.branch); return { ok: false, pending: !!created.pending, reply: created.msg || "已有待推送修改，请先处理完成" }; }
@@ -1309,7 +1312,7 @@ async function codeConfirm(env, user, yes, input = {}) {
     if (!paths.length) {
       const merged = await codeMergeTempBranch(env, pend.repo, pend.branch, pend.baseBranch || String(env.CODE_PUSH_BRANCH || "main"), "AI: " + pend.summary);
       if (!merged.ok) return await finish("conflict", { ok: false, pending: true, conflict: true, reply: "冲突解决后仍无法合并：" + merged.msg }, pend.edits);
-      const rows = await codeHistoryLoad(env, user), record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: pend.baseBranch || "main", commit_sha: String((merged.data && merged.data.sha) || ""), previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: Object.keys(files), preview_url: pend.preview_url || codeTempPreview(pend.branch) };
+      const rows = await codeHistoryLoad(env, user), record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: pend.baseBranch || "main", commit_sha: String((merged.data && merged.data.sha) || ""), previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: Object.keys(files), preview_url: pend.preview_url || codeTempPreview(pend.branch, pend.repo) };
       await codeHistorySave(env, user, [record, ...rows]);
       const removed = await codeDeleteBranch(env, pend.repo, pend.branch);
       return await finish("applied", { ok: true, pushed: true, consumed: true, status: "applied", merged: true, commit_sha: record.commit_sha, branch_deleted: !!removed.ok, history_id: record.id, reply: "✅ 冲突已解决并合并到 " + (pend.baseBranch || "main") }, []);
@@ -1332,7 +1335,7 @@ async function codeConfirm(env, user, yes, input = {}) {
     if (!merged.ok) return await finish("conflict", { ok: false, pending: true, conflict: true, status: "conflict", reply: lines.join("\n") + "\n❌ 临时分支未能合并到 " + (pend.baseBranch || "main") + "：" + merged.msg + "。临时分支仍保留，可重试或删除。" }, pend.edits);
     const commitSha = String((merged.data && merged.data.sha) || "");
     const rows = await codeHistoryLoad(env, user);
-    const record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: pend.baseBranch || "main", commit_sha: commitSha, previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: paths, preview_url: pend.preview_url || codeTempPreview(pend.branch) };
+    const record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: pend.baseBranch || "main", commit_sha: commitSha, previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: paths, preview_url: pend.preview_url || codeTempPreview(pend.branch, pend.repo) };
     await codeHistorySave(env, user, [record, ...rows]);
     const removed = await codeDeleteBranch(env, pend.repo, pend.branch);
     return await finish("applied", { ok: true, pushed: true, consumed: true, status: "applied", merged: true, commit_sha: commitSha, branch_deleted: !!removed.ok, history_id: record.id, reply: lines.join("\n") + "\n✅ 已合并到 " + (pend.baseBranch || "main") + (removed.ok ? "，临时分支已删除。" : "；临时分支删除失败，请稍后清理：" + removed.msg) }, []);
