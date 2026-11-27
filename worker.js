@@ -9624,6 +9624,7 @@ export class CodeClaimDO {
       if (attempts >= 2) { p.repair_error = "自动修复已达到 2 次上限"; p.updatedAt = now; current.version = Number(current.version || 0) + 1; p.version = current.version; await this.save(current); return this.response({ ok: true, limit_reached: true, pending: p, version: current.version }); }
       p.status = "repairing"; p.repair_attempts = attempts + 1; p.repair_started_at = now; p.repair_expires_at = now + 8 * 60 * 1000; p.repair_error = ""; p.updatedAt = now;
       current.version = Number(current.version || 0) + 1; p.version = current.version;
+      await this.storage.setAlarm(p.repair_expires_at);
       await this.save(current);
       return this.response({ ok: true, pending: p, version: current.version });
     }
