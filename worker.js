@@ -545,6 +545,7 @@ async function codeWorkbenchBranchCreate(env, user, body = {}) {
   const repo = String(body.repo || ""), project = String(body.project || repo.split("/").pop() || "project").slice(0, 80);
   const base = codeVerifyRef(body.base || "main");
   if (!env.KV || !codeRepoOk(env, repo) || !base) return { ok: false, msg: "项目仓库、KV 或基线分支不合法" };
+  const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
   const key = codeWorkbenchBranchKey(user, repo);
   const old = await env.KV.get(key, "json").catch(() => null);
   if (old && old.branch) {
@@ -588,6 +589,7 @@ async function codeWorkbenchBranchRejectFile(env, user, body = {}) {
   return { ok: true, rejected: true, path };
 }
 async function codeWorkbenchBranchPreview(env, user, repo) {
+  const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
   const current = await codeWorkbenchBranchCurrent(env, user, repo);
   if (!current.ok || !current.active) return { ok: false, msg: "当前项目没有活动临时分支" };
   if (repo !== "tianxin1300/openmanus-gateway") return { ok: false, msg: "该项目仓库尚未配置 Cloudflare Pages 预览工作流" };
@@ -606,6 +608,7 @@ async function codeWorkbenchBranchPreview(env, user, repo) {
 async function codeWorkbenchBranchDiscard(env, user, body = {}) {
   const repo = String(body.repo || "");
   if (!codeRepoOk(env, repo) || !env.KV) return { ok: false, msg: "项目仓库或 KV 配置不可用" };
+  const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
   const key = codeWorkbenchBranchKey(user, repo), record = await env.KV.get(key, "json").catch(() => null);
   if (!record || !record.branch) return { ok: true, discarded: true, already_absent: true };
   if (body.branch && body.branch !== record.branch) return { ok: false, msg: "临时分支已变化，拒绝删除其他分支" };
@@ -617,6 +620,7 @@ async function codeWorkbenchBranchDiscard(env, user, body = {}) {
 async function codeWorkbenchBranchMerge(env, user, body = {}) {
   const repo = String(body.repo || "");
   if (!codeRepoOk(env, repo) || !env.KV) return { ok: false, msg: "项目仓库或 KV 配置不可用" };
+  const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
   const key = codeWorkbenchBranchKey(user, repo), record = await env.KV.get(key, "json").catch(() => null);
   if (!record || !record.branch || (body.branch && body.branch !== record.branch)) return { ok: false, msg: "当前项目没有匹配的临时分支" };
   if (record.status === "merged_cleanup_failed") {
@@ -631,6 +635,7 @@ async function codeWorkbenchBranchMerge(env, user, body = {}) {
   let files = Array.isArray(compared.data && compared.data.files) ? compared.data.files.map((f) => f.filename) : [];
   if (Array.isArray(body.accepted_paths)) {
     const accepted = new Set(body.accepted_paths.map((p) => String(p)));
+    for (const path of files.filter((p) => accepted.has(p))) { const guard = codePushGuard(env, user, repo, path); if (guard) return { ok: false, msg: "文件 " + path + " 不允许合并：" + guard }; }
     for (const path of files.filter((p) => !accepted.has(p))) {
       const rejected = await codeWorkbenchBranchRejectFile(env, user, { repo, path, branch: record.branch });
       if (!rejected.ok) return { ok: false, msg: "拒绝文件 " + path + " 失败：" + rejected.msg };
