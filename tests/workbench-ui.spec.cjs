@@ -168,6 +168,47 @@ test("file review, reject one file, accept another, and push only accepted paths
   await expect(page.locator("#wb-version-list")).toContainText("Playwright UI push");
 });
 
+test("terminal and run-log tabs switch exclusively and follow mobile viewport resizing", async ({ page }) => {
+  const state = fixtures();
+  await installApiFixtures(page, state);
+  await openWorkbench(page);
+
+  const terminalTab = page.locator("#wb-terminal-tab");
+  const logsTab = page.locator("#wb-runlogs-tab");
+  const terminal = page.locator("#wb-terminal");
+  const logs = page.locator("#wb-runlogs");
+
+  await expect(terminalTab).toHaveAttribute("aria-selected", "true");
+  await expect(logsTab).toHaveAttribute("aria-selected", "false");
+  await expect(terminal).toBeVisible();
+  await expect(logs).toBeHidden();
+
+  await logsTab.click();
+  await expect(logsTab).toHaveAttribute("aria-selected", "true");
+  await expect(terminalTab).toHaveAttribute("aria-selected", "false");
+  await expect(logs).toBeVisible();
+  await expect(terminal).toBeHidden();
+
+  await terminalTab.click();
+  await expect(terminalTab).toHaveAttribute("aria-selected", "true");
+  await expect(logsTab).toHaveAttribute("aria-selected", "false");
+  await expect(terminal).toBeVisible();
+  await expect(logs).toBeHidden();
+
+  const viewportMatchesLayout = async () => page.evaluate(() => {
+    const viewport = window.visualViewport;
+    const height = Math.max(240, viewport ? viewport.height : window.innerHeight);
+    const top = Math.max(0, viewport ? viewport.offsetTop : 0);
+    const style = getComputedStyle(document.documentElement);
+    return style.getPropertyValue("--wb-visual-height").trim() === height + "px"
+      && style.getPropertyValue("--wb-visual-top").trim() === top + "px";
+  });
+  await expect.poll(viewportMatchesLayout).toBe(true);
+
+  await page.setViewportSize({ width: 390, height: 640 });
+  await expect.poll(viewportMatchesLayout).toBe(true);
+});
+
 test("discard preserves main, then history rollback creates a new active branch", async ({ page }) => {
   const state = fixtures();
   state.history = [{
