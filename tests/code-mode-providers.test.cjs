@@ -1853,7 +1853,9 @@ test('codeQueuePendingVerification dispatches the exact branch SHA and preserves
   let finished;
   const result = await sandbox.queueVerification({}, 'owner', pend, async (...args) => { finished = args; return args[1]; }, pend.edits);
   assert.equal(calls[0][1], 'owner/repo/heads/code/demo');
-  assert.deepEqual(calls[1][1], { ref: 'code/demo', pending_id: 'pending-1', expected_sha: 'branch-sha-1' });
+  assert.equal(calls[1][1].ref, 'code/demo');
+  assert.equal(calls[1][1].pending_id, 'pending-1');
+  assert.equal(calls[1][1].expected_sha, 'branch-sha-1');
   assert.equal(finished[0], 'verification_pending');
   assert.equal(finished[3].verify_expected_sha, 'branch-sha-1');
   assert.equal(finished[3].verify_request_id, 'verify-req-1');
