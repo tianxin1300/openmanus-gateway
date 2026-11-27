@@ -95,6 +95,9 @@ jobs:
           npx --yes wrangler@4 deploy --config wrangler.e2e.toml 2>&1 | tee /tmp/wrangler-e2e-deploy.log
           echo "DO_PROVISIONED=true" >> "$GITHUB_ENV"
           printf '%s' "$GITHUB_TOKEN" | npx --yes wrangler@4 secret put GH_PAT --config wrangler.e2e.toml
+          # Publish once more so the active Worker version includes the newly uploaded GH_PAT secret.
+          npx --yes wrangler@4 deploy --config wrangler.e2e.toml
+          sleep 2
           WORKER_URL="$(grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' /tmp/wrangler-e2e-deploy.log | tail -n 1)"
           test -n "$WORKER_URL" || { echo "::error::Could not determine isolated workers.dev URL"; exit 1; }
           echo "WORKER_URL=$WORKER_URL" >> "$GITHUB_ENV"
