@@ -833,6 +833,23 @@ test('codeLLM: rate-limited model is skipped and the next OpenRouter model succe
   assert.equal(result.from, 'OpenRouter · custom/healthy');
   assert.ok(result.tried.some(entry => entry.includes('custom/rate-limited HTTP 429')));
 });
+test('codeLLM: 429 and 5xx retry the same model with the next key before model fallback', async () => {
+  for (const status of [429, 503]) {
+    const { subject, calls } = loadCodeLLM((call, index) =>
+      index === 0 ? failure(status) : success('same model recovered'));
+    const result = await subject.codeLLM({
+      ...toterEnv, OPENROUTER_KEYS: 'or-key-a,or-key-b',
+      CODE_MODELS: 'custom/transient,custom/next'
+    }, messages);
+    assert.deepEqual(calls.map(call => [call.body.model, call.options.headers.Authorization]), [
+      ['custom/transient', 'Bearer or-key-a'],
+      ['custom/transient', 'Bearer or-key-b']
+    ], '429 and 5xx continue with the next key for the same model');
+    assert.equal(result.text, 'same model recovered');
+    assert.equal(result.from, 'OpenRouter · custom/transient');
+    assert.ok(result.tried.some(entry => entry.includes('custom/transient HTTP ' + status)));
+  }
+});
 
 test('codeLLM: timeout skips the remaining keys for that model and advances to the next model', async () => {
   const { subject, calls, timeouts } = loadCodeLLM((call, index) => {
