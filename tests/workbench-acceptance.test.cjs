@@ -172,3 +172,207 @@ test('ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restore
   assert.equal(createdCommit.parents[0], 'current-commit');
   assert.equal(movedRef, 'rollback-commit');
 });
+
+
+test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, review, or merge; authorized actions are attributed', async () => {
+  const repo = 'tianxin1300/openmanus-gateway';
+  const guard = runFunction(sourceOf('function codePushGuard(', '// 口令:'), 'codePushGuard', {
+    codeRepoOk: () => true, codePathOk: () => true, codePathProtected: () => false
+  });
+  const env = { GH_PAT: 'test-token', CODE_OWNER: 'owner', CODE_REPOS: repo, KV: {
+    get: async () => ({ branch: 'code/owned', repo, baseCommit: 'base', baseBranch: 'main', project: 'p' }),
+    put: async () => {}, delete: async () => {}
+  }};
+  let writes = 0;
+  const create = runFunction(sourceOf('async function codeWorkbenchBranchCreate(', 'async function codeWorkbenchBranchDiff('), 'codeWorkbenchBranchCreate', {
+    codeRepoOk: () => true, codePushGuard: guard, codeVerifyRef: x => x,
+    codeWorkbenchBranchKey: () => 'key', codeCreateTempBranch: async () => { writes++; return { ok: true, branch: 'code/new', base: 'main', sha: 'base' }; },
+    codeGitRefUrl: () => 'https://api.github.com/ref',
+    codeGhApi: async () => { writes++; return { ok: true }; }
+  });
+  const reject = runFunction(sourceOf('async function codeWorkbenchBranchRejectFile(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchRejectFile', {
+    codeRepoOk: () => true, codePathOk: () => true, codePushGuard: guard,
+    codeWorkbenchBranchCurrent: async () => ({ ok: true, active: true, branch: 'code/owned', baseCommit: 'base' }),
+    codeWorkbenchBranchKey: () => 'key', codeGetFile: async () => { writes++; return { ok: true, exists: true, text: 'x', sha: 'blob' }; },
+    codeUpdateFile: async () => { writes++; return { ok: true }; }
+  });
+  const merge = runFunction(sourceOf('async function codeWorkbenchBranchMerge(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMerge', {
+    codeRepoOk: () => true, codePushGuard: guard, codeWorkbenchBranchKey: () => 'key',
+    codeGhApi: async () => { writes++; return { ok: true, data: {} }; },
+    codeMergeTempBranch: async () => { writes++; return { ok: true, data: { sha: 'merged' } }; }
+  });
+  assert.equal((await create(env, 'intruder', { repo, project: 'p' })).ok, false);
+  assert.equal((await reject(env, 'automation-bot', { repo, path: 'a.js' })).ok, false);
+  assert.equal((await merge(env, 'intruder', { repo, branch: 'code/owned' })).ok, false);
+  assert.equal(writes, 0, 'unauthorized calls must not reach GitHub writes');
+
+  const createdKV = { value: null, async put(_k, v) { this.value = JSON.parse(v); }, async get() { return null; } };
+  const authorizedCreate = runFunction(sourceOf('async function codeWorkbenchBranchCreate(', 'async function codeWorkbenchBranchDiff('), 'codeWorkbenchBranchCreate', {
+    codeRepoOk: () => true, codePushGuard: () => '', codeVerifyRef: x => x,
+    codeWorkbenchBranchKey: () => 'key', codeCreateTempBranch: async () => ({ ok: true, branch: 'code/authorized', base: 'main', sha: 'base' }),
+    codeTempPreview: () => '', codeGitRefUrl: () => '', codeGhApi: async () => ({ ok: true }),
+  });
+  const authorizedEnv = { ...env, KV: createdKV };
+  const made = await authorizedCreate(authorizedEnv, 'owner', { repo, project: 'p' });
+  assert.equal(made.ok, true);
+  assert.equal(createdKV.value.created_by, 'owner', 'branch creation audit records the authenticated actor');
+
+  const history = [];
+  const authorizedMerge = runFunction(sourceOf('async function codeWorkbenchBranchMerge(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMerge', {
+    codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
+    codeGhApi: async (_env, url) => {
+      if (url.includes('/compare/')) return { ok: true, data: { files: [{ filename: 'a.js' }] } };
+      if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: 'base' } } };
+      throw new Error('unexpected ' + url);
+    },
+    codeMergeTempBranch: async () => ({ ok: true, data: { sha: 'merged-sha' } }),
+    codeHistoryLoad: async () => history, codeHistorySave: async (_e, _u, rows) => history.splice(0, history.length, ...rows),
+    codeDeleteBranch: async () => ({ ok: true }), codeGitRefUrl: (r, ref) => 'https://api.github.com/repos/' + r + '/git/ref/' + ref,
+    codeVerifyRef: x => x, codePathOk: () => true
+  });
+  const mergeEnv = { KV: { get: async () => ({ project: 'p', repo, branch: 'code/p', baseBranch: 'main', baseCommit: 'base' }), delete: async () => {} } };
+  const merged = await authorizedMerge(mergeEnv, 'owner', { repo, branch: 'code/p' });
+  assert.equal(merged.ok, true);
+  assert.equal(history[0].actor, 'owner', 'merge history records the authenticated actor');
+});
+
+test('ACCEPTANCE IDEMPOTENCY-01: repeated create reuses one branch and repeated merge cannot create a second commit', async () => {
+  const repo = 'tianxin1300/openmanus-gateway';
+  let record = null, branchCreates = 0, mergeCalls = 0, history = [];
+  const kv = {
+    async get() { return record; },
+    async put(_k, value) { record = JSON.parse(value); },
+    async delete() { record = null; }
+  };
+  const create = runFunction(sourceOf('async function codeWorkbenchBranchCreate(', 'async function codeWorkbenchBranchDiff('), 'codeWorkbenchBranchCreate', {
+    codeRepoOk: () => true, codePushGuard: () => '', codeVerifyRef: x => x,
+    codeWorkbenchBranchKey: () => 'key', codeTempBranch: () => 'code/p-idempotent',
+    codeCreateTempBranch: async () => { branchCreates++; return { ok: true, branch: 'code/p-idempotent', base: 'main', sha: 'base' }; },
+    codeGitRefUrl: () => 'https://api.github.com/ref',
+    codeGhApi: async () => ({ ok: true, data: { object: { sha: 'base' } } }),
+    codeTempPreview: () => ''
+  });
+  const env = { KV: kv };
+  const first = await create(env, 'owner', { repo, project: 'p' });
+  const second = await create(env, 'owner', { repo, project: 'p' });
+  assert.equal(first.ok, true); assert.equal(second.ok, true);
+  assert.equal(second.existing, true);
+  assert.equal(branchCreates, 1, 'duplicate create must reuse the active branch');
+
+  const merge = runFunction(sourceOf('async function codeWorkbenchBranchMerge(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMerge', {
+    codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
+    codeGhApi: async (_env, url) => {
+      if (url.includes('/compare/')) return { ok: true, data: { files: [{ filename: 'a.js' }] } };
+      if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: 'base' } } };
+      throw new Error('unexpected ' + url);
+    },
+    codeMergeTempBranch: async () => { mergeCalls++; return { ok: true, data: { sha: 'once-only-sha' } }; },
+    codeHistoryLoad: async () => history, codeHistorySave: async (_e, _u, rows) => history.splice(0, history.length, ...rows),
+    codeDeleteBranch: async () => ({ ok: true }), codeGitRefUrl: (r, ref) => 'https://api.github.com/repos/' + r + '/git/ref/' + ref,
+    codeVerifyRef: x => x, codePathOk: () => true
+  });
+  const mergeEnv = { KV: kv };
+  const one = await merge(mergeEnv, 'owner', { repo, branch: record.branch });
+  const two = await merge(mergeEnv, 'owner', { repo, branch: record.branch });
+  assert.equal(one.ok, true);
+  assert.equal(two.ok, false, 'a completed merge replay must not be accepted as a second merge');
+  assert.equal(mergeCalls, 1);
+  assert.equal(history.length, 1);
+});
+
+test('ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rejects rename/delete side effects', async () => {
+  const repo = 'tianxin1300/openmanus-gateway';
+  const files = {
+    'keep.js': { base: 'base-keep', branch: 'edited-keep' },
+    'add.js': { base: null, branch: 'new-add' },
+    'old-name.js': { base: 'original-name', branch: null },
+    'new-name.js': { base: null, branch: 'renamed-content' },
+    'deleted.js': { base: 'must-stay', branch: null }
+  };
+  const record = { repo, branch: 'code/mixed', baseBranch: 'main', baseCommit: 'base', project: 'mixed' };
+  const kv = { async get() { return record; }, async put() {}, async delete() {} };
+  const deletedPaths = [], restored = [];
+  const reject = runFunction(sourceOf('async function codeWorkbenchBranchRejectFile(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchRejectFile', {
+    codeRepoOk: () => true, codePathOk: () => true, codePushGuard: () => '',
+    codeWorkbenchBranchCurrent: async () => ({ ok: true, active: true, ...record }),
+    codeWorkbenchBranchKey: () => 'key',
+    codeGetFile: async (_e, _r, p, ref) => {
+      const row = files[p]; if (!row) return { ok: true, exists: false };
+      const value = ref === 'base' ? row.base : row.branch;
+      return value == null ? { ok: true, exists: false } : { ok: true, exists: true, text: value, sha: p + '-sha' };
+    },
+    codeUpdateFile: async (_e, _r, p, value) => { files[p].branch = value; restored.push(p); return { ok: true }; },
+    codeGhApi: async (_e, url, options) => {
+      const p = decodeURIComponent(url.split('/contents/')[1] || '');
+      deletedPaths.push(p); files[p].branch = null; return { ok: true };
+    }
+  });
+  const renameRejected = await reject({ KV: kv }, 'owner', { repo, path: 'new-name.js', previous_path: 'old-name.js', branch: record.branch });
+  assert.equal(renameRejected.ok, true);
+  assert.equal(files['old-name.js'].branch, 'original-name', 'renamed source path is restored');
+  assert.equal(files['new-name.js'].branch, null, 'renamed destination path is removed');
+  assert.deepEqual(restored, ['old-name.js']);
+  assert.ok(deletedPaths.some(p => p.endsWith('new-name.js')));
+
+  // The merge coordinator must pass previous_filename to the reject operation.
+  const changes = [
+    { filename: 'keep.js', status: 'modified' },
+    { filename: 'add.js', status: 'added' },
+    { filename: 'new-name.js', previous_filename: 'old-name.js', status: 'renamed' },
+    { filename: 'deleted.js', status: 'removed' }
+  ];
+  let compareCount = 0, mergeFiles = [], rejected = [];
+  const merge = runFunction(sourceOf('async function codeWorkbenchBranchMerge(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMerge', {
+    codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
+    codeGhApi: async (_env, url) => {
+      if (url.includes('/compare/')) return { ok: true, data: { files: compareCount++ === 0 ? changes : [{ filename: 'keep.js' }, { filename: 'add.js' }] } };
+      if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: 'base' } } };
+      throw new Error('unexpected ' + url);
+    },
+    codeWorkbenchBranchRejectFile: async (_e, _u, body) => { rejected.push(body); return { ok: true }; },
+    codeMergeTempBranch: async (_e, _r, _b, _base, _msg) => { mergeFiles = ['keep.js', 'add.js']; return { ok: true, data: { sha: 'merged' } }; },
+    codeHistoryLoad: async () => [], codeHistorySave: async () => {}, codeDeleteBranch: async () => ({ ok: true }),
+    codeGitRefUrl: (r, ref) => 'https://api.github.com/repos/' + r + '/git/ref/' + ref,
+    codeVerifyRef: x => x, codePathOk: () => true
+  });
+  const merged = await merge({ KV: kv }, 'owner', { repo, branch: record.branch, accepted_paths: ['keep.js', 'add.js'] });
+  assert.equal(merged.ok, true);
+  assert.deepEqual(rejected.map(x => x.path).sort(), ['deleted.js', 'new-name.js']);
+  const renameCall = rejected.find(x => x.path === 'new-name.js');
+  assert.equal(renameCall.previous_path, 'old-name.js', 'rename source is included in rejection');
+  assert.deepEqual(mergeFiles, ['keep.js', 'add.js']);
+});
+
+test('ACCEPTANCE CLEANUP-01: failed deletion retains recoverable state; successful cancel clears branch and state for the next task', async () => {
+  const repo = 'tianxin1300/openmanus-gateway';
+  let record = { repo, branch: 'code/cleanup', project: 'cleanup', status: 'active' };
+  let deleteFails = true, deletes = 0;
+  const kv = {
+    async get() { return record; },
+    async delete() { record = null; },
+    async put(_k, value) { record = JSON.parse(value); }
+  };
+  const discard = runFunction(sourceOf('async function codeWorkbenchBranchDiscard(', 'async function codeWorkbenchBranchMerge('), 'codeWorkbenchBranchDiscard', {
+    codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
+    codeDeleteBranch: async () => { deletes++; return deleteFails ? { ok: false, status: 500, msg: 'simulated failure' } : { ok: true }; }
+  });
+  const env = { KV: kv };
+  const failed = await discard(env, 'owner', { repo, branch: record.branch });
+  assert.equal(failed.ok, false);
+  assert.ok(record && record.branch, 'failed GitHub deletion must retain the branch record for retry');
+  deleteFails = false;
+  const cancelled = await discard(env, 'owner', { repo, branch: record.branch });
+  assert.equal(cancelled.ok, true);
+  assert.equal(record, null, 'successful cancellation clears review state');
+  assert.equal(deletes, 2);
+
+  // A fresh task can create a new isolated branch after cancellation.
+  const create = runFunction(sourceOf('async function codeWorkbenchBranchCreate(', 'async function codeWorkbenchBranchDiff('), 'codeWorkbenchBranchCreate', {
+    codeRepoOk: () => true, codePushGuard: () => '', codeVerifyRef: x => x,
+    codeWorkbenchBranchKey: () => 'key', codeCreateTempBranch: async () => ({ ok: true, branch: 'code/next-task', base: 'main', sha: 'base2' }),
+    codeTempPreview: () => '', codeGitRefUrl: () => '', codeGhApi: async () => ({ ok: true })
+  });
+  const next = await create(env, 'owner', { repo, project: 'next-task' });
+  assert.equal(next.ok, true);
+  assert.equal(next.branch, 'code/next-task');
+});
