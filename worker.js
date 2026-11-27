@@ -912,19 +912,21 @@ async function codeVerifyStatus(env, user, ctx) {
   old.logs = Array.isArray(old.error_lines) ? old.error_lines : [];
   old.preview_url = codeVerifyPreview(env, old.run_id);
   old.state = old.status === "completed" ? (old.conclusion === "success" ? "success" : "failure") : "running";
+  let repairStarted = false;
   if (old.pending_id && old.run_id && old.status === "completed") {
     const verification = await codeClaimCall(env, user, "verification", { pending_id: old.pending_id, request_id: old.request_id, run_id: String(old.run_id), run_url: old.run_url, expected_sha: old.expected_sha, actual_sha: String(old.head_sha || ""), conclusion: old.conclusion || "failure", error_lines: old.error_lines || [], failed_step: old.failed_step || "" });
     if (!verification.ok && !verification.conflict) old.verification_error = verification.msg || "无法更新待处理验证状态";
     if (verification.ok) {
       old.pending_status = verification.pending && verification.pending.status || "";
       if (old.pending_status === "verification_failed" && old.conclusion !== "success" && old.head_sha && old.head_sha === old.expected_sha) {
-        const repair = codeRepairPendingFromVerification(env, user, old).catch((e) => console.error("[code] automatic repair failed", String(e && e.message || e).slice(0, 200)));
-        if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(repair); else await repair;
         old.auto_repair_started = true;
+        if (env.KV) await env.KV.put(codeVerifyKey(user), JSON.stringify(old), { expirationTtl: 86400 });
+        old.auto_repair_result = await codeRepairPendingFromVerification(env, user, old).catch((e) => ({ ok: false, reply: "自动修复异常：" + String(e && e.message || e).slice(0, 200) }));
+        repairStarted = true;
       }
     }
   }
-  if (env.KV) await env.KV.put(codeVerifyKey(user), JSON.stringify(old), { expirationTtl: 86400 });
+  if (env.KV && !repairStarted) await env.KV.put(codeVerifyKey(user), JSON.stringify(old), { expirationTtl: 86400 });
   await codePersistRun(env, user, old);
   return { ok: true, ...old, log_key: codeRunLogKey(old.run_id || old.request_id), actions_url: old.run_url || ("https://github.com/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW) };
 }
