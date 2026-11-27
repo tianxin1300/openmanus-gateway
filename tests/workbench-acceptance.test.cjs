@@ -12,7 +12,7 @@ function sourceOf(start, end) {
   return worker.slice(a, b);
 }
 function runFunction(source, name, globals) {
-  const sandbox = { ...globals, URL, Date, Math, JSON, Set, Map, Promise, console, setInterval, clearInterval, crypto: globals.crypto || require('node:crypto').webcrypto, codeWorkbenchWithLock: globals.codeWorkbenchWithLock || (async (_env, _user, _repo, _operation, run) => run()) };
+  const sandbox = { ...globals, URL, Date, Math, JSON, Set, Map, Promise, console, setInterval: globals.setInterval || setInterval, clearInterval: globals.clearInterval || clearInterval, crypto: globals.crypto || require('node:crypto').webcrypto, codeWorkbenchWithLock: globals.codeWorkbenchWithLock || (async (_env, _user, _repo, _operation, run) => run()) };
   vm.runInNewContext(source + '\nglobalThis.__tested = ' + name + ';', sandbox);
   return sandbox.__tested;
 }
