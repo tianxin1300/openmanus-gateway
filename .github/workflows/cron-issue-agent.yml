@@ -34,9 +34,11 @@ jobs:
         run: |
           test -n "$OPENMANUS_API_URL" || { echo "::error::Missing OPENMANUS_API_URL secret"; exit 1; }
           test -n "$OPENMANUS_USER_TOKEN" || { echo "::error::Missing OPENMANUS_USER_TOKEN secret"; exit 1; }
-          case "$OPENMANUS_API_URL" in
-            https://openmanus-gateway-pr60-preview.*.workers.dev) ;;
-            *) echo "::error::OPENMANUS_API_URL is not the PR #60 isolated preview Worker"; exit 1 ;;
+          API_HOST="$(python3 -c 'import os,urllib.parse; print(urllib.parse.urlparse(os.environ["OPENMANUS_API_URL"].rstrip("/")).hostname or "")')"
+          echo "Configured API host: $API_HOST"
+          case "$API_HOST" in
+            openmanus-gateway-pr60-preview.*.workers.dev) ;;
+            *) echo "::error::OPENMANUS_API_URL must point to the PR #60 preview Worker"; exit 1 ;;
           esac
 
       - name: Verify Cron token can call code-mode endpoint
