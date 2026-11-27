@@ -60,6 +60,15 @@ jobs:
             let failure = null;
             const mainBefore = (await github.rest.git.getRef({ owner, repo, ref: 'heads/main' })).data.object.sha;
 
+            // Recover disposable refs left by the immediately preceding harness-cleanup bug.
+            for (const branch of [
+              'e2e/workbench-45987441179-1-head',
+              'e2e/workbench-45987441179-1-base'
+            ]) {
+              try { await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` }); }
+              catch (error) { if (error.status !== 404) throw error; }
+            }
+
             try {
               await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${baseBranch}`, sha: baseSha });
               baseCreated = true;
@@ -125,7 +134,7 @@ jobs:
                   core.error(`Failed to close disposable PR #${pullNumber}: ${error.message}`);
                 }
               }
-              for (const [branch, created] of [[headBranch, headCreated], [baseBranch, baseCreated], [casHeadBranch, casHeadCreated], [casBaseBranch, casBaseCreated]]) {
+              for (const [branch, created] of [[headBranch, headCreated], [baseBranch, baseCreated]]) {
                 if (!created) continue;
                 try {
                   await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` });
@@ -282,7 +291,7 @@ jobs:
             } catch (error) {
               failure = error;
             } finally {
-              for (const [branch, created] of [[headBranch, headCreated], [baseBranch, baseCreated]]) {
+              for (const [branch, created] of [[headBranch, headCreated], [baseBranch, baseCreated], [casHeadBranch, casHeadCreated], [casBaseBranch, casBaseCreated]]) {
                 if (!created) continue;
                 try { await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` }); }
                 catch (error) { failure = failure || error; core.error(`Failed to clean ${branch}: ${error.message}`); }
