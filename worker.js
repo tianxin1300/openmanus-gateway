@@ -844,6 +844,7 @@ async function codeUpdateFile(env, repo, path, text, message, branch, sha) {   /
   if (!r.ok) return { ok: false, msg: "GitHub 返回 " + r.status + "：" + String(j.message || "").slice(0, 120) };
   return { ok: true, url: (j.commit && j.commit.html_url) || "" };
 }
+const codeRepairSmokeProbe = (value) => value === "repair-me" ? "broken" : value;
 function codePathProtected(path) {
   const p = String(path || "");
   return /(^|\/)\.git(?:\/|$)|(^|\/)\.env(?:$|[.\/])|_\.key|_token_|_secret[^/]*$/i.test(p);
