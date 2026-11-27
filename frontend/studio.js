@@ -94,7 +94,11 @@
     ".om-st a{color:inherit;text-decoration:underline}",
     ".om-btn{height:38px;min-width:86px;padding:0 18px;border-radius:10px;border:1px solid var(--line,#dfe9df);background:#fff;color:#43506a;font-size:14px;font-weight:700;cursor:pointer}",
     ".om-btn.om-yes{background:var(--accent,#287447);color:#fff;border-color:transparent}",
-    ".om-btn:disabled{opacity:.5;cursor:default}"
+    ".om-btn:disabled{opacity:.5;cursor:default}",
+    "#om-both-start{height:30px;padding:0 12px;border:1px solid #d8cfee;border-radius:13px;background:#f2effb;color:#5d4a9b;font:inherit;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer}",
+    "#om-both-start:disabled{opacity:.55;cursor:wait}",
+    "#om-both-status{flex:1 1 100%;min-width:0;font-size:11px;color:var(--muted,#71867a);white-space:pre-wrap;overflow-wrap:anywhere}",
+    "#om-both-status a{color:inherit;text-decoration:underline}"
   ].join("\n");
   (document.head || document.documentElement).appendChild(css);
 
@@ -127,6 +131,9 @@
     PROJECTS.forEach(function (p) { var o = el("option", "", p); o.value = p; sel.appendChild(o); });
     sel.value = state.project;
     hintEl = el("span", "om-hint", "改完先预览，点「推」才推");
+    var bothBtn = el("button", "", "同时启动"); bothBtn.id = "om-both-start"; bothBtn.type = "button";
+    var bothStatus = el("span", ""); bothStatus.id = "om-both-status"; bothStatus.setAttribute("role", "status"); bothStatus.setAttribute("aria-live", "polite");
+    bothBtn.addEventListener("click", startBoth);
     sel.addEventListener("change", function () { state.project = sel.value; ls(KEY_PROJ, state.project); toast("代码模式：现在改「" + state.project + "」"); });
     box.addEventListener("click", function () {
       state.on = !state.on; ls(KEY_ON, state.on ? "1" : "0"); syncToggle();
@@ -135,10 +142,75 @@
     });
     var inner = document.getElementById("composer-inner");
     if (inner) {
-      var bar = el("div"); bar.id = "om-code-bar"; bar.appendChild(box); bar.appendChild(sel); bar.appendChild(hintEl);
+      var bar = el("div"); bar.id = "om-code-bar"; bar.appendChild(box); bar.appendChild(sel); bar.appendChild(hintEl); bar.appendChild(bothBtn); bar.appendChild(bothStatus);
       inner.insertBefore(bar, inner.firstChild);   // 放在输入框区域最上面；输入框收起时它也跟着收起
     } else { box.classList.add("om-float"); document.body.appendChild(box); document.body.appendChild(sel); sel.style.cssText = "position:fixed;left:130px;bottom:94px;z-index:999"; }   // 页面上没有输入框区域时的备用位置
     syncToggle();
+  }
+
+  /* ---------- 主页「同时启动」事件按钮：直接触发 Pages + Worker 后端任务 ---------- */
+  var bothPollTimer = 0, bothBusy = false, bothButton = null, bothStatusNode = null;
+  function setBothStatus(message, href) {
+    if (!bothStatusNode) return;
+    while (bothStatusNode.firstChild) bothStatusNode.removeChild(bothStatusNode.firstChild);
+    bothStatusNode.appendChild(document.createTextNode(String(message || "")));
+    if (href && /^https:\/\//.test(href)) {
+      bothStatusNode.appendChild(document.createTextNode(" · "));
+      var a = el("a", "", "查看 Actions"); a.href = href; a.target = "_blank"; a.rel = "noopener noreferrer";
+      bothStatusNode.appendChild(a);
+    }
+  }
+  function bothStateLabel(j) {
+    var runs = Array.isArray(j && j.runs) ? j.runs : [];
+    var parts = runs.map(function (r) {
+      var name = r.kind === "worker" ? "Worker" : "Pages";
+      var status = r.conclusion || r.status || "queued";
+      return name + "：" + status;
+    });
+    return (j.state || j.status || "queued") + (parts.length ? "（" + parts.join("；") + "）" : "");
+  }
+  function refreshBothStatus(quiet) {
+    return api("/api/code/both", { method: "GET", cache: "no-store" })
+      .then(function (r) { return r.json().catch(function () { return { ok: false, msg: "状态响应无法解析（HTTP " + r.status + "）" }; }); })
+      .then(function (j) {
+        if (!j || !j.ok) { if (!quiet) setBothStatus(j && j.msg || "读取部署状态失败"); return null; }
+        var id = j.request_id || j.run_id || "任务编号暂不可用";
+        setBothStatus("任务 " + id + " · " + bothStateLabel(j), j.actions_url || j.run_url);
+        if (j.state === "success" || j.state === "failure") {
+          if (bothPollTimer) clearInterval(bothPollTimer);
+          bothPollTimer = 0;
+          if (bothButton) { bothButton.disabled = false; bothButton.textContent = "同时启动"; }
+        } else if (!bothPollTimer) {
+          bothPollTimer = setInterval(function () { refreshBothStatus(true); }, 5000);
+        }
+        return j;
+      })
+      .catch(function (e) { if (!quiet) setBothStatus("状态读取失败：" + (e && e.message || e)); return null; });
+  }
+  function startBoth() {
+    if (bothBusy) return;
+    if (bothButton) { bothButton.disabled = true; bothButton.textContent = "启动中…"; }
+    bothBusy = true; setBothStatus("正在请求后端启动 Pages + Worker…");
+    api("/api/code/both", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ref: "main" }) })
+      .then(function (r) { return r.json().catch(function () { return { ok: false, msg: "服务器返回非 JSON 响应（HTTP " + r.status + "）" }; }); })
+      .then(function (j) {
+        if (!j || !j.ok) {
+          setBothStatus((j && j.msg) || "同时启动失败" + (j && j.active_request_id ? " · 现有任务 " + j.active_request_id : ""));
+          if (bothButton) { bothButton.disabled = false; bothButton.textContent = "同时启动"; }
+          return;
+        }
+        var id = j.request_id || j.run_id || "任务编号暂不可用";
+        setBothStatus("已提交任务 " + id + " · " + bothStateLabel(j), j.actions_url || j.run_url);
+        if (!bothPollTimer && j.state !== "success" && j.state !== "failure") {
+          bothPollTimer = setInterval(function () { refreshBothStatus(true); }, 5000);
+        }
+        refreshBothStatus(true);
+      })
+      .catch(function (e) {
+        setBothStatus("启动请求失败：" + (e && e.message || e));
+        if (bothButton) { bothButton.disabled = false; bothButton.textContent = "同时启动"; }
+      })
+      .finally(function () { bothBusy = false; if (bothButton && bothButton.textContent === "启动中…") { bothButton.disabled = false; bothButton.textContent = "同时启动"; } });
   }
 
   /* ---------- 开着代码模式时，聊天请求带上 code_mode ---------- */
@@ -288,7 +360,7 @@
     refreshPending(true);
   }
 
-  function init() { mountToggle(); if (state.on) setTimeout(check, 800); }
+  function init() { mountToggle(); if (typeof document.getElementById === "function") { bothButton = document.getElementById("om-both-start"); bothStatusNode = document.getElementById("om-both-status"); if (bothStatusNode) refreshBothStatus(true); } if (state.on) setTimeout(check, 800); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 
   window.omStudio = { state: state, check: check, hide: hide, enable: function () { if (!state.on && box) box.click(); }, disable: function () { if (state.on && box) box.click(); } };
