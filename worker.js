@@ -502,7 +502,11 @@ async function codeLLM(env, msgs, budgetMs) {
         const text = c && c.message && typeof c.message.content === "string" ? c.message.content.trim() : "";
         if (!text) { tried.push(t.name + "·" + t.model + " 空回复"); continue; }
         return { text, from: t.name + " · " + t.model, truncated: c.finish_reason === "length", tried };
-      } catch (e) { tried.push(t.name + "·" + t.model + " " + (e && e.name === "TimeoutError" ? "超时" : String(e && e.message || e).slice(0, 60))); }
+      } catch (e) {
+        const timedOut = e && e.name === "TimeoutError";
+        tried.push(t.name + "·" + t.model + " " + (timedOut ? "超时" : String(e && e.message || e).slice(0, 60)));
+        if (timedOut) break; // A model timeout skips its remaining keys and advances to the next model.
+      }
     }
   }
   return { text: "", tried };
