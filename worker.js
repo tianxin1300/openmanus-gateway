@@ -534,7 +534,7 @@ async function codeHistorySave(env, user, rows) { if (env.KV) await env.KV.put(c
 const codeWorkbenchBranchKey = (user, repo) => "code:workbench-branch:" + String(user || "").slice(0, 120) + ":" + String(repo || "").slice(0, 120);
 async function codeWorkbenchWithLock(env, user, repo, operation, run) {
   if (!env.CODE_CLAIMS) return { ok: false, msg: "CODE_CLAIMS Durable Object 未绑定，拒绝无锁执行工作台写操作" };
-  const lockId = "workbench:" + String(repo) + ":" + String(operation);
+  const lockId = "workbench:" + String(repo);
   const token = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + "-" + String(Math.random()).slice(2);
   const acquired = await codeClaimCall(env, user, "branch-lock", { lock_id: lockId, token });
   if (!acquired || !acquired.ok) return { ok: false, busy: !!(acquired && acquired.busy), msg: acquired && acquired.msg || "工作台操作锁获取失败" };
@@ -9710,7 +9710,7 @@ export class CodeClaimDO {
       const locks = (await this.storage.get("workbench_locks")) || {};
       const currentLock = locks[lockId];
       if (currentLock && Number(currentLock.expires_at) > now) return this.response({ ok: false, busy: true, msg: "同一项目操作正在执行，请稍后重试" }, 409);
-      locks[lockId] = { token, expires_at: now + 300000 };
+      locks[lockId] = { token, expires_at: now + 600000 };
       await this.storage.put("workbench_locks", locks);
       return this.response({ ok: true, acquired: true, expires_at: locks[lockId].expires_at });
     }
