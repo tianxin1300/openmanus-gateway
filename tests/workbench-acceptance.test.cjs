@@ -12,7 +12,7 @@ function sourceOf(start, end) {
   return worker.slice(a, b);
 }
 function runFunction(source, name, globals) {
-  const sandbox = { ...globals, URL, Date, Math, JSON, Set, Map, Promise, console, setInterval: globals.setInterval || setInterval, clearInterval: globals.clearInterval || clearInterval, crypto: globals.crypto || require('node:crypto').webcrypto, codeWorkbenchWithLock: globals.codeWorkbenchWithLock || (async (_env, _user, _repo, _operation, run) => run()) };
+  const sandbox = { ...globals, URL, Date, Math, JSON, Set, Map, Promise, console, setInterval: globals.setInterval || setInterval, clearInterval: globals.clearInterval || clearInterval, crypto: globals.crypto || require('node:crypto').webcrypto, codeGitRefWriteUrl: globals.codeGitRefWriteUrl || ((repo, ref) => 'https://api.github.com/repos/' + repo + '/git/refs/' + String(ref).split('/').map(encodeURIComponent).join('/')), codeWorkbenchWithLock: globals.codeWorkbenchWithLock || (async (_env, _user, _repo, _operation, run) => run()) };
   vm.runInNewContext(source + '\nglobalThis.__tested = ' + name + ';', sandbox);
   return sandbox.__tested;
 }
@@ -205,7 +205,7 @@ test('ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restore
         createdCommit = body;
         return { ok: true, data: { sha: 'rollback-commit' } };
       }
-      if (url.endsWith('/git/ref/heads/main') && options.method === 'PATCH') {
+      if (url.endsWith('/git/refs/heads/main') && options.method === 'PATCH') {
         movedRef = JSON.parse(options.body).sha;
         return { ok: true };
       }
@@ -917,7 +917,7 @@ test('ACCEPTANCE MERGE-CAS-01: merge updates the target ref only from the exact 
       if (url.endsWith('/merges')) return { ok: true, data: { sha: previewSha, commit: { tree: { sha: treeSha } } } };
       if (url.endsWith('/git/commits') && options.method === 'POST') return { ok: true, data: { sha: finalSha } };
       if (url.endsWith('/heads/main') && options.method === 'PATCH') return { ok: true, data: {} };
-      if (url.includes('/git/ref/heads/main') && options.method === 'PATCH') return { ok: true, data: {} };
+      if (url.includes('/git/refs/heads/main') && options.method === 'PATCH') return { ok: true, data: {} };
       throw new Error('unexpected API call: ' + options.method + ' ' + url);
     }
   });
@@ -929,7 +929,7 @@ test('ACCEPTANCE MERGE-CAS-01: merge updates the target ref only from the exact 
   assert.equal(commitCall[2].tree, treeSha);
   assert.deepEqual(commitCall[2].parents, [baseSha, headSha]);
   const deleteIndex = calls.findIndex(x => x[0] === 'DELETE');
-  const updateIndex = calls.findIndex(x => x[0] === 'PATCH' && x[1].includes('/git/ref/heads/main'));
+  const updateIndex = calls.findIndex(x => x[0] === 'PATCH' && x[1].includes('/git/refs/heads/main'));
   assert.ok(deleteIndex >= 0 && updateIndex > deleteIndex, 'scratch ref is cleaned before target ref update');
   assert.equal(calls[updateIndex][2].force, false, 'target ref update must be fast-forward only');
 });
@@ -947,7 +947,7 @@ test('ACCEPTANCE MERGE-CAS-02: base advancement after merge calculation is rejec
       if (url.endsWith('/git/refs')) return { ok: true, data: {} };
       if (url.endsWith('/merges')) return { ok: true, data: { sha: 'c'.repeat(40), commit: { tree: { sha: treeSha } } } };
       if (url.endsWith('/git/commits')) return { ok: true, data: { sha: 'e'.repeat(40) } };
-      if (url.includes('/git/ref/heads/main') && options.method === 'PATCH') {
+      if (url.includes('/git/refs/heads/main') && options.method === 'PATCH') {
         patched = true;
         return { ok: false, status: 422, msg: 'Update is not a fast forward' };
       }
@@ -995,7 +995,7 @@ test('ACCEPTANCE MERGE-CAS-04: failed scratch cleanup prevents target ref mutati
       if (url.endsWith('/heads/code/review')) return { ok: true, data: { object: { sha: headSha } } };
       if (url.endsWith('/git/refs')) return { ok: true, data: {} };
       if (url.endsWith('/merges')) return { ok: true, data: { sha: 'c'.repeat(40), commit: { tree: { sha: 'd'.repeat(40) } } } };
-      if (url.includes('/git/ref/heads/main') && options.method === 'PATCH') targetPatch = true;
+      if (url.includes('/git/refs/heads/main') && options.method === 'PATCH') targetPatch = true;
       throw new Error('target branch must not be updated');
     }
   });
@@ -1060,7 +1060,7 @@ test('ACCEPTANCE MERGE-CAS-05: thrown scratch cleanup errors block target ref mu
       if (url.endsWith('/git/refs')) return { ok: true, data: {} };
       if (url.endsWith('/merges')) return { ok: true, data: { sha: 'c'.repeat(40), commit: { tree: { sha: 'd'.repeat(40) } } } };
       if (url.endsWith('/git/commits')) return { ok: true, data: { sha: 'e'.repeat(40) } };
-      if (url.includes('/git/ref/heads/main') && options.method === 'PATCH') targetPatch = true;
+      if (url.includes('/git/refs/heads/main') && options.method === 'PATCH') targetPatch = true;
       throw new Error('unexpected API call');
     }
   });
@@ -1106,5 +1106,19 @@ test('ACCEPTANCE MERGE-CAS-07: scratch branch creation failure stops before merg
   assert.match(result.msg, /创建隔离合并基线失败/);
   assert.equal(calls.some(x => x[0].endsWith('/merges')), false);
   assert.equal(calls.some(x => x[0].endsWith('/git/commits')), false);
-  assert.equal(calls.some(x => x[0].includes('/git/ref/heads/main') && x[1] === 'PATCH'), false);
+  assert.equal(calls.some(x => x[0].includes('/git/refs/heads/main') && x[1] === 'PATCH'), false);
+});
+
+test('ACCEPTANCE GIT-REF-WRITE-01: branch deletion uses GitHub write-ref endpoint', async () => {
+  const calls = [];
+  const remove = runFunction(sourceOf('async function codeDeleteBranch(', 'async function codeMergeTempBranch('), 'codeDeleteBranch', {
+    codeGitRefWriteUrl: (_repo, ref) => 'https://api.github.com/repos/owner/repo/git/refs/' + ref,
+    codeGhApi: async (_env, url, options = {}) => { calls.push([url, options.method]); return { ok: true, status: 204 }; }
+  });
+  const result = await remove({}, 'owner/repo', 'code/project-test');
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, [['https://api.github.com/repos/owner/repo/git/refs/heads/code/project-test', 'DELETE']]);
+  const invalid = await remove({}, 'owner/repo', 'main');
+  assert.equal(invalid.ok, false);
+  assert.equal(calls.length, 1, 'invalid branch names must not reach GitHub');
 });
