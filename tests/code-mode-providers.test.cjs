@@ -270,6 +270,16 @@ test('workbench branch APIs persist project isolation, reject files on branch, a
   assert.match(workerSource, /path === "\/api\/code\/branch\/discard"/);
 });
 
+test('workbench branch lookup preserves KV records on transient GitHub errors', () => {
+  const current = extract(workerSource, 'async function codeWorkbenchBranchCurrent(', 'async function codeWorkbenchBranchCreate(');
+  assert.match(current, /if \(ref\.status === 404\)\s*\{[\s\S]*?env\.KV\.delete\(key\)/);
+  assert.match(current, /GitHub 临时分支状态检查失败，已保留本地分支记录/);
+  assert.doesNotMatch(current, /if \(!ref\.ok\)\s*\{\s*await env\.KV\.delete\(key\)/);
+  const create = extract(workerSource, 'async function codeWorkbenchBranchCreate(', 'async function codeWorkbenchBranchDiff(');
+  assert.match(create, /if \(ref\.status !== 404\) return \{ ok: false, msg:/);
+  assert.match(create, /检查已有临时分支失败，原记录已保留/);
+});
+
 test('project temp branches use readable repo names and decimal timestamps', () => {
   assert.match(workerSource, /return "code\/" \+ tag \+ "-" \+ Date\.now\(\) \+ "-" \+ rand\(8\)/);
   assert.match(workerSource, /codeCreateTempBranch\(env, proj\.repo, proj\.repo\.split\("\/"\)\.pop\(\), branch\)/);
