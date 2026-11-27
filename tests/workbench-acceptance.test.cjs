@@ -317,9 +317,22 @@ test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, review, o
     codeGhApi: async () => { writes++; return { ok: true, data: {} }; },
     codeMergeTempBranch: async () => { writes++; return { ok: true, data: { sha: 'merged' } }; }
   });
+  const save = runFunction(sourceOf('async function codeWorkbenchBranchSaveFileUnlocked(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchSaveFileUnlocked', {
+    codeRepoOk: () => true, codePathOk: () => true, codePushGuard: guard,
+    codeWorkbenchBranchCurrent: async () => ({ ok: true, active: true, branch: 'code/owned' }),
+    codeGetFile: async () => { writes++; return { ok: true, exists: true, sha: 'blob' }; },
+    codeUpdateFile: async () => { writes++; return { ok: true }; }
+  });
+  const rollback = runFunction(sourceOf('async function codeRollbackUnlocked(', 'async function codeRollback('), 'codeRollbackUnlocked', {
+    codeHistoryLoad: async () => [{ id: 'history', repo, baseBranch: 'main', previous_sha: 'old-sha', files: ['a.js'] }],
+    codeRepoOk: () => true, codeVerifyRef: x => x, codePushGuard: guard,
+    codeGhApi: async () => { writes++; return { ok: true, data: {} }; }
+  });
   assert.equal((await create(env, 'intruder', { repo, project: 'p' })).ok, false);
   assert.equal((await reject(env, 'automation-bot', { repo, path: 'a.js' })).ok, false);
   assert.equal((await merge(env, 'intruder', { repo, branch: 'code/owned' })).ok, false);
+  assert.equal((await save(env, 'intruder', { repo, branch: 'code/owned', path: 'a.js', content: 'x', sha: 'a'.repeat(40) })).ok, false);
+  assert.equal((await rollback(env, 'intruder', { id: 'history' })).ok, false);
   assert.equal(writes, 0, 'unauthorized calls must not reach GitHub writes');
 
   const createdKV = { value: null, async put(_k, v) { this.value = JSON.parse(v); }, async get() { return null; } };
