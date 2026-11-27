@@ -499,3 +499,27 @@ test('ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01: create and merge refuse to run w
   assert.equal((await create(noBinding, 'owner', { repo: 'tianxin1300/openmanus-gateway' })).ok, false);
   assert.equal((await merge(noBinding, 'owner', { repo: 'tianxin1300/openmanus-gateway' })).ok, false);
 });
+
+
+test('ACCEPTANCE WORKBENCH-LOCK-SCOPE-01: review and discard also acquire the repository write lock', async () => {
+  const calls = [];
+  const lock = async (_env, _user, repo, operation, run) => {
+    calls.push({ repo, operation });
+    return run();
+  };
+  const reject = runFunction(sourceOf('async function codeWorkbenchBranchRejectFile(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchRejectFile', {
+    codeWorkbenchWithLock: lock,
+    codeWorkbenchBranchRejectFileUnlocked: async () => ({ ok: true, reviewed: true })
+  });
+  const discard = runFunction(sourceOf('async function codeWorkbenchBranchDiscard(', 'async function codeWorkbenchBranchMergeUnlocked('), 'codeWorkbenchBranchDiscard', {
+    codeWorkbenchWithLock: lock,
+    codeWorkbenchBranchDiscardUnlocked: async () => ({ ok: true, discarded: true })
+  });
+  assert.equal((await reject({}, 'reviewer', { repo: 'owner/repo', path: 'a.js' })).reviewed, true);
+  assert.equal((await discard({}, 'owner', { repo: 'owner/repo' })).discarded, true);
+  assert.deepEqual(calls, [
+    { repo: 'owner/repo', operation: 'review' },
+    { repo: 'owner/repo', operation: 'discard' }
+  ]);
+  assert.match(worker, /codeWorkbenchBranchRejectFileUnlocked\(env, user, \{ repo, path, previous_path:/);
+});
