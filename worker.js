@@ -1032,7 +1032,7 @@ async function codeClaimState(env, user) {
   return await r.json().catch(() => ({ ok: false, msg: "Durable Object 返回了无效响应" }));
 }
 function codePendingActive(p) {
-  return p && Array.isArray(p.edits) && p.edits.length && ["awaiting_approval", "applying", "partial", "conflict", "failed", "verification_pending", "verification_passed", "verification_failed"].includes(p.status || "awaiting_approval");
+  return p && Array.isArray(p.edits) && p.edits.length && ["awaiting_approval", "applying", "partial", "conflict", "failed", "verification_pending", "verification_passed", "verification_failed", "repairing"].includes(p.status || "awaiting_approval");
 }
 async function codePendingLoad(env, user) {
   const d = await codeClaimState(env, user);
@@ -1119,7 +1119,7 @@ async function codePendingSweep(env) {
 
 function codePendingView(p) {
   if (!p || !Array.isArray(p.edits) || !p.edits.length || !["awaiting_approval", "applying", "partial", "conflict", "failed", "verification_pending", "verification_passed", "verification_failed"].includes(p.status || "awaiting_approval")) return null;
-  return { id: p.id || "", pending_id: p.id || "", version: Number(p.version) || 1, project: p.project || "", status: p.status || "awaiting_approval", repo: p.repo, branch: p.branch, baseBranch: p.baseBranch || "main", preview_url: p.preview_url || codeTempPreview(p.branch), summary: p.summary, at: p.at, updatedAt: p.updatedAt || p.at, verify_request_id: p.verify_request_id || "", verify_run_id: p.verify_run_id || "", verify_run_url: p.verify_run_url || "", verify_expected_sha: p.verify_expected_sha || "", verify_head_sha: p.verify_head_sha || "", verify_error_lines: p.verify_error_lines || [], verify_failed_step: p.verify_failed_step || "", warn: p.warn || [], edits: p.edits.map((e) => ({ path: e.path, line: e.line || 0, old: codeCut(e.old, 4000), new: codeCut(e.new, 4000) })) };
+  return { id: p.id || "", pending_id: p.id || "", version: Number(p.version) || 1, project: p.project || "", status: p.status || "awaiting_approval", repo: p.repo, branch: p.branch, baseBranch: p.baseBranch || "main", preview_url: p.preview_url || codeTempPreview(p.branch), summary: p.summary, at: p.at, updatedAt: p.updatedAt || p.at, verify_request_id: p.verify_request_id || "", verify_run_id: p.verify_run_id || "", verify_run_url: p.verify_run_url || "", verify_expected_sha: p.verify_expected_sha || "", verify_head_sha: p.verify_head_sha || "", verify_error_lines: p.verify_error_lines || [], verify_failed_step: p.verify_failed_step || "", repair_attempts: Number(p.repair_attempts || 0), repair_error: p.repair_error || "", warn: p.warn || [], edits: p.edits.map((e) => ({ path: e.path, line: e.line || 0, old: codeCut(e.old, 4000), new: codeCut(e.new, 4000) })) };
 }
 const codeBalanceWarn = (a, b) => ["{}", "()", "[]"].filter((p) => { const d = (t) => t.split(p[0]).length - t.split(p[1]).length; return d(a) !== d(b); });
 const codeCut = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n) + "…（共 " + s.length + " 字）" : s; };
@@ -9423,7 +9423,7 @@ export class CodeClaimDO {
     const verificationActive = value.pending && value.pending.status === "verification_pending" && value.pending.verify_expires_at > Date.now();
     if (!verificationActive && ((value.expires_at && value.expires_at <= Date.now()) || (createdAt && Date.now() - createdAt >= CODE_PENDING_TTL_MS))) {
       const p = value.pending;
-      if (p && ["applying", "discarding"].includes(p.status)) {
+      if (p && ["applying", "discarding", "repairing"].includes(p.status)) {
         await this.storage.setAlarm(Date.now() + 60000);
         return value;
       }
@@ -9449,7 +9449,7 @@ export class CodeClaimDO {
     const expiresAt = value.expires_at || (createdAt ? createdAt + CODE_PENDING_TTL_MS : 0);
     if (p && p.status === "verification_pending" && p.verify_expires_at > Date.now()) { await this.storage.setAlarm(Math.min(p.verify_expires_at, Date.now() + 60000)); return; }
     if (expiresAt && expiresAt > Date.now()) { await this.storage.setAlarm(expiresAt); return; }
-    if (p && ["applying", "discarding"].includes(p.status)) {
+    if (p && ["applying", "discarding", "repairing"].includes(p.status)) {
       await this.storage.setAlarm(Date.now() + 60000);
       return;
     }
@@ -9474,7 +9474,7 @@ export class CodeClaimDO {
     if (action === "create") {
       const current = await this.load(), incoming = body.pending;
       if (!incoming || !incoming.id || !incoming.project || !Array.isArray(incoming.edits) || !incoming.edits.length) return this.response({ ok: false, msg: "缺少有效 pending" }, 400);
-      if (current && current.pending && ["awaiting_approval", "applying", "discarding", "partial", "conflict", "failed", "verification_pending", "verification_passed", "verification_failed"].includes(current.pending.status || "awaiting_approval")) return this.response({ ok: false, conflict: true, pending: current.pending, msg: "已有待处理修改" }, 409);
+      if (current && current.pending && ["awaiting_approval", "applying", "discarding", "partial", "conflict", "failed", "verification_pending", "verification_passed", "verification_failed", "repairing"].includes(current.pending.status || "awaiting_approval")) return this.response({ ok: false, conflict: true, pending: current.pending, msg: "已有待处理修改" }, 409);
       incoming.status = "awaiting_approval"; incoming.version = 1; incoming.updatedAt = now;
       if (!incoming.created_at) incoming.created_at = now;   // v108：记录创建时间，10 分钟后自动过期
       await this.save({ pending: incoming, created_at: now, version: 1, claims: {}, results: {}, expires_at: now + CODE_PENDING_TTL_MS });
@@ -9507,6 +9507,34 @@ export class CodeClaimDO {
       delete current.claims[operationId];
       await this.save(current);
       return this.response({ ok: true, result, pending: p, version: current.version });
+    }
+    if (action === "repair-claim") {
+      const current = await this.load(), p = current && current.pending;
+      const pendingId = String(body.pending_id || ""), requestId = String(body.request_id || ""), runId = String(body.run_id || "");
+      if (!current || !p || p.id !== pendingId || p.status !== "verification_failed" || p.verify_request_id !== requestId || p.verify_run_id !== runId) return this.response({ ok: false, conflict: true, msg: "失败验证已变化，不能启动自动修复" }, 409);
+      const attempts = Number(p.repair_attempts || 0);
+      if (attempts >= 2) return this.response({ ok: false, limit_reached: true, pending: p, msg: "自动修复已达到 2 次上限" }, 409);
+      p.status = "repairing"; p.repair_attempts = attempts + 1; p.repair_started_at = now; p.repair_error = ""; p.updatedAt = now;
+      current.version = Number(current.version || 0) + 1; p.version = current.version;
+      await this.save(current);
+      return this.response({ ok: true, pending: p, version: current.version });
+    }
+    if (action === "repair-finish") {
+      const current = await this.load(), p = current && current.pending;
+      if (!current || !p || p.id !== String(body.pending_id || "") || p.status !== "repairing") return this.response({ ok: false, conflict: true, msg: "自动修复占位已变化" }, 409);
+      const verification = body.verification && typeof body.verification === "object" ? body.verification : null;
+      if (body.ok === true && verification && verification.verify_request_id && verification.verify_expected_sha) {
+        Object.assign(p, verification); p.status = "verification_pending"; p.repair_error = "";
+        current.expires_at = now + 20 * 60 * 1000; p.verify_expires_at = current.expires_at;
+        await this.storage.setAlarm(current.expires_at);
+      } else {
+        p.status = "verification_failed"; p.repair_error = String(body.error || "模型未能生成可应用的修复").slice(0, 1200);
+        p.created_at = now; current.created_at = now; current.expires_at = now + CODE_PENDING_TTL_MS;
+        await this.storage.setAlarm(current.expires_at);
+      }
+      p.updatedAt = now; current.version = Number(current.version || 0) + 1; p.version = current.version;
+      await this.save(current);
+      return this.response({ ok: true, pending: p, version: current.version });
     }
     if (action === "verification") {
       const current = await this.load(), p = current && current.pending;
