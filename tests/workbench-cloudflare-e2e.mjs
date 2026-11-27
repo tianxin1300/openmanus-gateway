@@ -65,7 +65,7 @@ async function deleteRef(branch) {
   try {
     await gh(`git/refs/heads/${branch.split("/").map(encodeURIComponent).join("/")}`, "DELETE");
   } catch (error) {
-    if (error.status !== 404) throw error;
+    if (!(error.status === 404 || (error.status === 422 && /Reference does not exist/i.test(error.message)))) throw error;
   }
 }
 
