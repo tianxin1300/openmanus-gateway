@@ -104,7 +104,7 @@ testCase('041','失败清理','discard record + ref 404','recovery active','保�
 const deleteSource = sliceSource('async function codeDeleteBranch', 'async function codeMergeTempBranch');
 const deleteFn = evaluate(deleteSource,'codeDeleteBranch',{codeGhApi:async(_e,url,opt)=>({ok:true,url,method:opt.method})});
 testCase('042','失败清理','branch=main','reject','只允许 code/ 临时分支','删除 main 被放行',async()=>{const r=await deleteFn.codeDeleteBranch({},'owner/repo','main');assert.equal(r.ok,false);});
-testCase('043','失败清理','branch=code/task-1','delete refs','DELETE 使用 git/refs 路径','删除请求路径不正确',async()=>{const r=await deleteFn.codeDeleteBranch({},'owner/repo','code/task-1');assert.equal(r.method,'DELETE');assert.match(r.url,/git\\/refs\\/heads\\/code\\/task-1$/);});
+testCase('043','失败清理','branch=code/task-1','delete refs','DELETE 使用 git/refs 路径','删除请求路径不正确',async()=>{const r=await deleteFn.codeDeleteBranch({},'owner/repo','code/task-1');assert.equal(r.method,'DELETE');assert.match(r.url,/git\/refs\/heads\/code\/task-1$/);});
 testCase('044','失败清理','branch=code/../main','reject','非法路径不发 GitHub 请求','路径穿越删除被允许',async()=>{let calls=0;const f=evaluate(deleteSource,'codeDeleteBranch',{codeGhApi:async()=>{calls++;return{ok:true}}});const r=await f.codeDeleteBranch({},'owner/repo','code/../main');assert.equal(r.ok,false);assert.equal(calls,0);});
 
 // 5. 分支隔离：创建分支必须基于指定基线 SHA，失败不能伪报成功。
@@ -150,12 +150,12 @@ const previewFns = evaluate(previewSource,'codeVerifyPreview');
 for(const [id,env,expected] of [
 ['071','{"CODE_PREVIEW_URL":"https://preview.example/run/{run_id}"}','https://preview.example/run/run%201'],['072','{"PREVIEW_URL":"http://preview.example/{run_id}"}','http://preview.example/run%201']
 ])testCase(id,'预览隔离',env,'codeVerifyPreview',expected,'不安全 URL 被返回或 run_id 未编码',()=>{const r=previewFns.codeVerifyPreview(JSON.parse(env),'run 1');assert.equal(r,expected);});
-testCase('071','预览隔离','repo=other/repo','reject','非配置仓库不触发 Pages 工作流','其他仓库触发预览部署',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/repo !== "tianxin1300\/openmanus-gateway"/);});
-testCase('072','预览隔离','preview dispatch HTTP 500','reject','部署启动失败返回失败','预览 dispatch 失败被报成功',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/if \(!dispatched\.ok\) return \{ ok: false/);});
-testCase('071','预览隔离','preview audit actor','audit','记录 preview_started_by 和 actor','预览操作无操作者记录',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/preview_started_by:\s*String\(user\)|preview_started_by = String\(user\)/);assert.match(s,/actor:\s*String\(user\)/);});
-testCase('072','预览隔离','preview event history cap','bounded','预览事件最多保留 100 条','审计事件无上限增长',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/slice\(-100\)/);});
-testCase('073','预览隔离','branch preview URL slug','safe slug','只为目标仓库生成 branch slug URL','其他仓库获得生产预览 URL',()=>{const s=sliceSource('function codeTempPreview','async function codeCreateTempBranch');assert.match(s,/tianxin1300\/openmanus-gateway/);assert.match(s,/branch-/);});
-testCase('074','预览隔离','main protection','preview uses active branch','dispatch ref 绑定活动临时分支','预览错误引用 main',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/ref: current\.branch/);});
+testCase('073','预览隔离','repo=other/repo','reject','非配置仓库不触发 Pages 工作流','其他仓库触发预览部署',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/repo !== "tianxin1300\/openmanus-gateway"/);});
+testCase('074','预览隔离','preview dispatch HTTP 500','reject','部署启动失败返回失败','预览 dispatch 失败被报成功',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/if \(!dispatched\.ok\) return \{ ok: false/);});
+testCase('075','预览隔离','preview audit actor','audit','记录 preview_started_by 和 actor','预览操作无操作者记录',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/preview_started_by:\s*String\(user\)|preview_started_by = String\(user\)/);assert.match(s,/actor:\s*String\(user\)/);});
+testCase('076','预览隔离','preview event history cap','bounded','预览事件最多保留 100 条','审计事件无上限增长',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/slice\(-100\)/);});
+testCase('077','预览隔离','branch preview URL slug','safe slug','只为目标仓库生成 branch slug URL','其他仓库获得生产预览 URL',()=>{const s=sliceSource('function codeTempPreview','async function codeCreateTempBranch');assert.match(s,/tianxin1300\/openmanus-gateway/);assert.match(s,/branch-/);});
+testCase('078','预览隔离','main protection','preview uses active branch','dispatch ref 绑定活动临时分支','预览错误引用 main',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/ref: current\.branch/);});
 
 // 9. 文件树、搜索、逐文件审核、提交一致性：核对实际前端函数和后端路径契约。
 const wbScript = /<script\b(?=[^>]*\bid=["']wb-devbench["'])[^>]*>([\s\S]*?)<\/script\s*>/i.exec(frontend);
