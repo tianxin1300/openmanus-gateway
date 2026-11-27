@@ -815,6 +815,69 @@ test('ACCEPTANCE MULTI-REVIEW-RECOVERY-01: failed rename rejection preserves a r
 });
 
 
+test('ACCEPTANCE RENAME-REJECT-RESTORE-FAIL-01: failed source restoration never deletes the renamed destination or records a completed review', async () => {
+  const repo = 'tianxin1300/openmanus-gateway';
+  const record = { repo, branch: 'code/rename-restore-fail', baseBranch: 'main', baseCommit: 'base', project: 'rename-restore-fail' };
+  const files = {
+    'old-name.js': { base: 'original-source', branch: null },
+    'new-name.js': { base: null, branch: 'renamed-content' }
+  };
+  let restoreFails = true;
+  let destinationDeleteCalls = 0;
+  let auditWrites = 0;
+  const reject = runFunction(
+    sourceOf('async function codeWorkbenchBranchRejectFileUnlocked(', 'async function codeWorkbenchBranchPreview('),
+    'codeWorkbenchBranchRejectFileUnlocked',
+    {
+      codeRepoOk: () => true,
+      codePathOk: () => true,
+      codePushGuard: () => '',
+      codeWorkbenchBranchCurrent: async () => ({ ok: true, active: true, ...record }),
+      codeWorkbenchBranchKey: () => 'rename-record',
+      codeGhUrl: (_repo, path) => 'https://api.github.com/repos/' + repo + '/contents/' + path,
+      codeGetFile: async (_env, _repo, path, ref) => {
+        const entry = files[path];
+        const value = ref === record.baseCommit ? entry.base : entry.branch;
+        return value == null
+          ? { ok: true, exists: false }
+          : { ok: true, exists: true, text: value, sha: path + '-sha' };
+      },
+      codeUpdateFile: async (_env, _repo, path, value) => {
+        if (restoreFails) return { ok: false, msg: 'simulated source restore failure' };
+        files[path].branch = value;
+        return { ok: true };
+      },
+      codeGhApi: async () => {
+        destinationDeleteCalls++;
+        files['new-name.js'].branch = null;
+        return { ok: true };
+      }
+    }
+  );
+  const kv = {
+    async get() { return { ...record }; },
+    async put() { auditWrites++; }
+  };
+  const env = { KV: kv };
+  const body = { repo, path: 'new-name.js', previous_path: 'old-name.js', branch: record.branch };
+
+  const first = await reject(env, 'reviewer', body);
+  assert.equal(first.ok, false);
+  assert.equal(first.msg, '恢复基线文件失败：simulated source restore failure');
+  assert.equal(files['old-name.js'].branch, null, 'failed source restore leaves source untouched');
+  assert.equal(files['new-name.js'].branch, 'renamed-content', 'destination remains intact when source restoration fails');
+  assert.equal(destinationDeleteCalls, 0, 'destination deletion must not run after source restoration failure');
+  assert.equal(auditWrites, 0, 'failed rename rejection must not be audited as complete');
+
+  restoreFails = false;
+  const second = await reject(env, 'reviewer', body);
+  assert.equal(second.ok, true);
+  assert.equal(files['old-name.js'].branch, 'original-source');
+  assert.equal(files['new-name.js'].branch, null);
+  assert.equal(destinationDeleteCalls, 1);
+  assert.equal(auditWrites, 1, 'only the successful retry records the review');
+});
+
 test('ACCEPTANCE CREATE-CLEANUP-01: KV persistence failure cleans the new branch or reports an orphan', async () => {
   const makeCreate = (cleanupOk, cleanupThrows = false) => runFunction(sourceOf('async function codeWorkbenchBranchCreateUnlocked(', 'async function codeWorkbenchBranchCreate('), 'codeWorkbenchBranchCreateUnlocked', {
     codeVerifyRef: x => x, codeRepoOk: () => true, codePushGuard: () => '',
