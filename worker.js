@@ -854,7 +854,7 @@ async function codeVerifyStatus(env, user) {
   old.preview_url = codeVerifyPreview(env, old.run_id);
   old.state = old.status === "completed" ? (old.conclusion === "success" ? "success" : "failure") : "running";
   if (old.pending_id && old.run_id && old.status === "completed") {
-    const verification = await codeClaimCall(env, user, "verification", { pending_id: old.pending_id, run_id: String(old.run_id), expected_sha: old.expected_sha, actual_sha: String(old.head_sha || ""), conclusion: old.conclusion || "failure", error_lines: old.error_lines || [], failed_step: old.failed_step || "" });
+    const verification = await codeClaimCall(env, user, "verification", { pending_id: old.pending_id, request_id: old.request_id, run_id: String(old.run_id), run_url: old.run_url, expected_sha: old.expected_sha, actual_sha: String(old.head_sha || ""), conclusion: old.conclusion || "failure", error_lines: old.error_lines || [], failed_step: old.failed_step || "" });
     if (!verification.ok && !verification.conflict) old.verification_error = verification.msg || "无法更新待处理验证状态";
     if (verification.ok) old.pending_status = verification.pending && verification.pending.status || "";
   }
@@ -1207,9 +1207,9 @@ async function codeProject(env, user, proj, req, history, ui) {
   return { ok: true, pending: true, model, reply: head + "改动预览（" + tag + "，共 " + final.done.length + " 处）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行\n- " + codeCut(d.old, 400).replace(/\n/g, "\n- ") + "\n+ " + codeCut(d.new, 400).replace(/\n/g, "\n+ ")).join("\n\n") + tail + "\n\n要推上去吗？" };
 }
 async function codeQueuePendingVerification(env, user, pend, finish, edits) {
-  const ref = codeVerifyRef("heads/" + String(pend.branch || ""));
-  if (!ref) return await finish("failed", { ok: false, pending: true, reply: "验证未启动：临时分支名不合法，修改仍保留。" }, edits);
-  const head = await codeGhApi(env, codeGitRefUrl(pend.repo, ref));
+  const branch = String(pend.branch || "");
+  if (!/^code\/[A-Za-z0-9._\/-]+$/.test(branch)) return await finish("failed", { ok: false, pending: true, reply: "验证未启动：临时分支名不合法，修改仍保留。" }, edits);
+  const head = await codeGhApi(env, codeGitRefUrl(pend.repo, "heads/" + branch));
   const expectedSha = String(head.data && head.data.object && head.data.object.sha || "");
   if (!head.ok || !expectedSha) return await finish("failed", { ok: false, pending: true, reply: "验证未启动：无法读取临时分支当前 commit SHA，修改仍保留。" }, edits);
   const started = await codeVerifyStart(env, user, { ref: pend.branch, pending_id: pend.id, expected_sha: expectedSha });
@@ -1234,8 +1234,9 @@ async function codeQueuePendingVerification(env, user, pend, finish, edits) {
 }
 
 async function codeMergeVerifiedPending(env, user, pend, finish) {
-  const ref = codeVerifyRef("heads/" + String(pend.branch || ""));
-  const head = ref ? await codeGhApi(env, codeGitRefUrl(pend.repo, ref)) : { ok: false };
+  const branch = String(pend.branch || "");
+  const validBranch = /^code\/[A-Za-z0-9._\/-]+$/.test(branch);
+  const head = validBranch ? await codeGhApi(env, codeGitRefUrl(pend.repo, "heads/" + branch)) : { ok: false };
   const currentSha = String(head.data && head.data.object && head.data.object.sha || "");
   if (!head.ok || !currentSha || currentSha !== String(pend.verify_head_sha || "")) {
     return await finish("verification_failed", { ok: false, pending: true, status: "verification_failed", reply: "❌ 验证通过后临时分支内容又发生变化，commit SHA 不一致，拒绝合并。请重新验证。" }, pend.edits);
@@ -9502,8 +9503,9 @@ export class CodeClaimDO {
     if (action === "verification") {
       const current = await this.load(), p = current && current.pending;
       const pendingId = String(body.pending_id || ""), runId = String(body.run_id || ""), expectedSha = String(body.expected_sha || ""), actualSha = String(body.actual_sha || "");
-      if (!current || !p || p.id !== pendingId || p.status !== "verification_pending" || !runId || p.verify_run_id !== runId || !expectedSha || p.verify_expected_sha !== expectedSha) return this.response({ ok: false, conflict: true, msg: "验证结果与当前待处理提交不匹配，拒绝标记通过" }, 409);
+      if (!current || !p || p.id !== pendingId || p.status !== "verification_pending" || !runId || String(p.verify_request_id || "") !== String(body.request_id || "") || (p.verify_run_id && p.verify_run_id !== runId) || !expectedSha || p.verify_expected_sha !== expectedSha) return this.response({ ok: false, conflict: true, msg: "验证结果与当前待处理提交不匹配，拒绝标记通过" }, 409);
       const conclusion = String(body.conclusion || "success");
+      p.verify_run_id = runId; p.verify_run_url = String(body.run_url || p.verify_run_url || "");
       p.status = conclusion === "success" && actualSha === expectedSha ? "verification_passed" : "verification_failed";
       p.verify_conclusion = conclusion; p.verify_head_sha = actualSha; p.verify_completed_at = now; p.verify_error_lines = Array.isArray(body.error_lines) ? body.error_lines.slice(0, 60) : []; p.verify_failed_step = String(body.failed_step || "").slice(0, 160); p.updatedAt = now; current.version = Number(current.version || 0) + 1;
       await this.save(current);
