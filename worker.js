@@ -564,7 +564,9 @@ async function codeMergeTempBranch(env, repo, branch, base, message, expectedBas
     }
     if (!mergeTreeSha) return { ok: false, msg: "GitHub 未返回隔离合并文件树，拒绝更新目标分支。" };
   } finally {
-    const cleanup = await codeDeleteBranch(env, repo, scratch);
+    let cleanup;
+    try { cleanup = await codeDeleteBranch(env, repo, scratch); }
+    catch (cleanupError) { cleanup = { ok: false, msg: cleanupError && cleanupError.message || "GitHub 清理请求异常" }; }
     if (!cleanup.ok && cleanup.status !== 404) {
       return { ok: false, scratch_cleanup_failed: true, scratch_branch: scratch, msg: "隔离合并计算完成，但清理临时合并分支失败；目标分支尚未更新：" + cleanup.msg };
     }
