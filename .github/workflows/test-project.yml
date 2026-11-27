@@ -47,16 +47,13 @@ jobs:
           REQUEST_ID: test-project-${{ github.run_id }}-${{ github.run_attempt }}
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
           echo "Dispatching deploy-branch-preview.yml for ref: $TARGET_REF"
-          if gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-branch-preview.yml/dispatches" \\
-            -f ref="$TARGET_REF" \\
-            -f inputs[ref]="$TARGET_REF" \\
-            -f inputs[request_id]="$REQUEST_ID"; then
-            echo "Workflow dispatch accepted by GitHub."
-          else
-            echo "::warning::GitHub did not accept deploy-branch-preview.yml dispatch. See API error above."
-          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-branch-preview.yml/dispatches" \
+            -f "ref=${TARGET_REF}" \
+            -f "inputs[ref]=${TARGET_REF}" \
+            -f "inputs[request_id]=${REQUEST_ID}"
+          echo "Workflow dispatch accepted by GitHub."
 
       - name: Install Playwright and Wrangler
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
