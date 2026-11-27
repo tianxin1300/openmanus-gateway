@@ -5905,14 +5905,46 @@ const bestPlace = (list, q) => {
 #wb-terminal-shortcuts button:hover,#wb-terminal-shortcuts button[aria-pressed="true"]{background:#35445a;border-color:#58749e;color:#fff}
 #wb-terminal-shortcuts button:focus-visible{outline:2px solid #8db6f4;outline-offset:2px}
 @media(max-width:520px){#wb-terminal-shortcuts{flex-basis:38px;gap:4px;padding:3px 6px}#wb-terminal-shortcuts button{flex-basis:48px;width:48px;min-width:48px;height:30px;min-height:30px;padding:0 4px;font-size:11px}}
+
+#wb-left{display:flex!important;min-width:0}
+#wb-files{flex:0 0 218px;width:218px;min-width:0;display:flex;flex-direction:column;gap:6px;padding:8px;background:#1b2230;border-right:1px solid #354052;overflow:hidden;color:#dce4ef}
+.wb-files-head{font-size:12px;font-weight:750;color:#c9d7ea;padding:2px 3px}
+#wb-file-search{flex:none;width:100%;height:32px;border:1px solid #3b4659;border-radius:7px;background:#252e3d;color:#eef3fb;padding:0 8px;font-size:12px;outline:none}
+#wb-file-list{flex:1 1 0;min-height:80px;overflow:auto;overscroll-behavior:contain}
+#wb-file-list button{display:block;width:100%;padding:6px 7px;margin:1px 0;border:0;border-radius:5px;background:transparent;color:#c3cede;text-align:left;font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#wb-file-list button:hover,#wb-file-list button.on{background:#2c3b52;color:#fff}
+#wb-change-details,#wb-version-details{flex:none;max-height:190px;overflow:auto;border-top:1px solid #354052;padding-top:5px}
+#wb-change-details summary,#wb-version-details summary{cursor:pointer;font-size:11px;font-weight:700;color:#cbd7e8;padding:4px}
+#wb-change-list,#wb-version-list{font-size:10px;color:#c1ccdc;overflow-wrap:anywhere}
+.wb-change-row,.wb-version-row{padding:6px 4px;border-top:1px solid #30394a}
+.wb-change-path{font:10px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere;color:#e0e8f4}
+.wb-change-meta{font-size:10px;color:#9eabc0;margin:3px 0}
+.wb-change-actions{display:flex;gap:4px}
+.wb-change-actions button,.wb-version-row button{min-height:25px;padding:3px 7px!important;font-size:10px!important;border-radius:5px!important}
+.wb-change-actions .on{background:#285b42!important;border-color:#4b9b70!important;color:#e8fff0!important}
+.wb-change-actions .reject{background:#57333b!important;border-color:#87515c!important;color:#ffe8eb!important}
+#wb-editor{flex:1 1 0;min-width:0}
+#wb-project{height:30px;max-width:112px;padding:0 6px;border:1px solid #3b4659;border-radius:7px;background:#252e3d;color:#e7edf7;font-size:11px}
+#wb-branch{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9fc3f4;font:10px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#wb-bar #wb-push{background:#426fbd!important;color:#fff!important}
+#wb-bar #wb-discard{background:#57333b!important;color:#ffe8eb!important}
+#wb-bar button:disabled{opacity:.35!important}
+@media(max-width:1100px){#wb-files{flex:0 0 150px;width:150px;padding:6px}#wb-change-details,#wb-version-details{max-height:145px}#wb-branch{max-width:95px}}
+@media(max-width:520px){#wb-files{flex-basis:128px;width:128px}#wb-project{max-width:78px;font-size:10px}#wb-branch{max-width:72px}#wb-bar{overflow-x:auto!important;overflow-y:hidden!important}#wb-bar button{flex:none!important}}
 </style>
 <!-- 开发台：全宽编辑器与统一运行日志；本地预览在独立全屏工作区显示 -->
 <div id="wb" role="dialog" aria-hidden="true" aria-label="开发台">
   <div id="wb-bar">
-    <strong>开发台</strong><span id="wb-file">frontend/index.html</span><span id="wb-state"></span>
+    <strong>开发台</strong>
+    <select id="wb-project" aria-label="选择项目"><option value="openmanus-gateway">聚合体</option><option value="jiuyibanlv">就医伴侣</option></select>
+    <span id="wb-file">frontend/index.html</span><span id="wb-branch">尚未创建临时分支</span><span id="wb-state"></span>
     <span class="sp"></span>
     <button id="wb-reload" class="sec" type="button" title="重新从 GitHub 读取 index.html（会丢掉未保存的修改）">重新读取</button>
-    <button id="wb-save" type="button" title="把编辑器里的内容通过 MCP update_file 推到 GitHub main（Ctrl/Cmd+S）">保存到 GitHub</button>
+    <button id="wb-save" type="button" title="只保存到当前项目临时分支（Ctrl/Cmd+S）">保存到临时分支</button>
+    <button id="wb-push" class="sec" type="button" title="把已接受文件合并到 main">推</button>
+    <button id="wb-discard" class="sec" type="button" title="删除当前项目临时分支，不改 main">丢弃</button>
+    <button id="wb-new-branch" class="sec" type="button" title="为当前项目创建新的临时分支" hidden>新建分支</button>
+    <button id="wb-branch-preview" class="sec" type="button" title="构建当前临时分支的独立 Pages 预览">临时预览</button>
     <button id="wb-both" class="sec" type="button" title="触发 GitHub Actions：前端 build 与 Worker deploy 并行执行，日志收纳在统一运行日志">同时启动</button>
     <button id="wb-local-preview" class="sec" type="button" title="在独立页面打开当前编辑器内容">独立预览</button>
     <button id="wb-ci" class="sec" type="button" title="触发 GitHub Actions：checkout → npm install → npm test → npm run build，并把结果回传到开发台">运行 / 验证</button>
@@ -5922,7 +5954,16 @@ const bestPlace = (list, q) => {
   </div>
   <div id="wb-chain" aria-label="状态链"></div>
   <div id="wb-main">
-    <div id="wb-left"><div id="wb-editor"></div></div>
+    <div id="wb-left">
+      <aside id="wb-files" aria-label="项目文件与改动">
+        <div class="wb-files-head">文件树</div>
+        <input id="wb-file-search" type="search" placeholder="搜索文件…" aria-label="搜索项目文件">
+        <div id="wb-file-list"></div>
+        <details id="wb-change-details" open><summary>改动预览</summary><div id="wb-change-list">尚无文件改动</div></details>
+        <details id="wb-version-details"><summary>历史版本</summary><div id="wb-version-list">正在读取历史版本…</div></details>
+      </aside>
+      <div id="wb-editor"></div>
+    </div>
     <div id="wb-right">
     <div class="wb-rhead">
         <button class="wb-tab on" type="button" data-wbtab="prev">实时预览</button>
