@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 81 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，按当前源码预计 Node TAP 展开为 83 项。`workbench-acceptance.test.cjs` 有 43 个静态测试声明，因此按源码预计 `npm test` 共 126 项；最终数量以本次 TAP 输出为准。Playwright UI 文件另有 10 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
+> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 81 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，按当前源码预计 Node TAP 展开为 83 项。`workbench-acceptance.test.cjs` 有 44 个静态测试声明，因此按源码预计 `npm test` 共 127 项；最终数量以本次 TAP 输出为准。Playwright UI 文件另有 10 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
 
 ## 1. 唯一执行入口与判定规则
 
@@ -259,7 +259,7 @@ npm test
 
 ### WORKBENCH-08 — 多文件审核及重命名/删除边界
 
-**自动化测试：** `ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rejects rename/delete side effects`；`ACCEPTANCE WORKBENCH-RENAME-DIFF-01`；Playwright `rejecting a renamed file sends the previous filename so the source path can be restored`；`failed renamed-file rejection keeps the row retryable after restoring its source path`；`ACCEPTANCE RENAME-REJECT-MERGE-01: real rename rejection restores the source and excludes both paths from merge`
+**自动化测试：** `ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rejects rename/delete side effects`；`ACCEPTANCE WORKBENCH-RENAME-DIFF-01`、`ACCEPTANCE RENAME-REJECT-MERGE-01`；Playwright `rejecting a renamed file sends the previous filename so the source path can be restored`；`failed renamed-file rejection keeps the row retryable after restoring its source path`；`ACCEPTANCE RENAME-REJECT-MERGE-01: real rename rejection restores the source and excludes both paths from merge`
 
 **测试覆盖：**
 - 一次包含修改、新增、删除、重命名的多文件变更。
@@ -386,7 +386,7 @@ npm test
 
 以下清单按当前分支测试源文件逐项核对。测试名称是验收映射依据；如代码中的测试名称变化，必须同步更新本文件。
 
-### 14.1 Node.js 工作台行为测试（43 项）
+### 14.1 Node.js 工作台行为测试（44 项）
 
 文件：`tests/workbench-acceptance.test.cjs`
 
@@ -401,7 +401,7 @@ npm test
 | 合并后恢复与清理 | `ACCEPTANCE MERGE-HISTORY-RECOVERY-01`、`ACCEPTANCE MERGE-CLEANUP-01`、`ACCEPTANCE MERGE-RECORD-CLEANUP-01` |
 | 合并 CAS 与 Git ref 边界 | `ACCEPTANCE MERGE-CAS-01`～`MERGE-CAS-07`、`ACCEPTANCE GIT-REF-WRITE-01`、`ACCEPTANCE WORKBENCH-CAS-CONFLICT-01` |
 
-**计数说明：** 上述分组对应文件内 43 个 `test(...)` 用例。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
+**计数说明：** 上述分组对应文件内 44 个 `test(...)` 用例。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
 
 ### 14.2 Playwright UI E2E（10 个场景 × 2 个浏览器项目）
 
