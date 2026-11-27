@@ -291,7 +291,7 @@ test('ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rej
     'deleted.js': { base: 'must-stay', branch: null }
   };
   const record = { repo, branch: 'code/mixed', baseBranch: 'main', baseCommit: 'base', project: 'mixed' };
-  const kv = { async get() { return record; }, async put() {}, async delete() {} };
+  const kv = { async get() { return record; }, async put(_k, value) { Object.assign(record, JSON.parse(value)); }, async delete() {} };
   const deletedPaths = [], restored = [];
   const reject = runFunction(sourceOf('async function codeWorkbenchBranchRejectFile(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchRejectFile', {
     codeRepoOk: () => true, codePathOk: () => true, codePushGuard: () => '',
@@ -315,6 +315,8 @@ test('ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rej
   assert.equal(files['new-name.js'].branch, null, 'renamed destination path is removed');
   assert.deepEqual(restored, ['old-name.js']);
   assert.ok(deletedPaths.some(p => p.endsWith('new-name.js')));
+  assert.equal(record.last_reviewed_by, 'owner');
+  assert.equal(record.review_events[0].actor, 'owner', 'file review audit records the authenticated reviewer');
 
   // The merge coordinator must pass previous_filename to the reject operation.
   const changes = [
