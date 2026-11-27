@@ -105,7 +105,7 @@ const deleteSource = sliceSource('async function codeDeleteBranch', 'async funct
 const deleteFn = evaluate(deleteSource,'codeDeleteBranch',{codeGhApi:async(_e,url,opt)=>({ok:true,url,method:opt.method})});
 testCase('042','失败清理','branch=main','reject','只允许 code/ 临时分支','删除 main 被放行',async()=>{const r=await deleteFn.codeDeleteBranch({},'owner/repo','main');assert.equal(r.ok,false);});
 testCase('043','失败清理','branch=code/task-1','delete refs','DELETE 使用 git/refs 路径','删除请求路径不正确',async()=>{const r=await deleteFn.codeDeleteBranch({},'owner/repo','code/task-1');assert.equal(r.method,'DELETE');assert.match(r.url,/git\/refs\/heads\/code\/task-1$/);});
-testCase('044','失败清理','branch=code/../main','reject','非法路径不发 GitHub 请求','路径穿越删除被允许',async()=>{let calls=0;const f=evaluate(deleteSource,'codeDeleteBranch',{codeGhApi:async()=>{calls++;return{ok:true}}});const r=await f.codeDeleteBranch({},'owner/repo','code/../main');assert.equal(r.ok,false);assert.equal(calls,0);});
+testCase('044','失败清理','branch=code/../main; code/./main; code//main','reject','拒绝父目录、当前目录和空路径段，且不发 GitHub 请求','非法路径段删除被允许',async()=>{let calls=0;const f=evaluate(deleteSource,'codeDeleteBranch',{codeGhApi:async()=>{calls++;return{ok:true}}});for(const branch of ['code/../main','code/./main','code//main']){const r=await f.codeDeleteBranch({},'owner/repo',branch);assert.equal(r.ok,false,branch);}assert.equal(calls,0);const valid=await f.codeDeleteBranch({},'owner/repo','code/task-1');assert.equal(valid.ok,true);assert.equal(calls,1);});
 
 // 5. 分支隔离：创建分支必须基于指定基线 SHA，失败不能伪报成功。
 const createSource = sliceSource('async function codeCreateTempBranch', 'async function codeDeleteBranch');
