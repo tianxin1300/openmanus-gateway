@@ -719,6 +719,29 @@ async function codeWorkbenchBranchRejectFile(env, user, body = {}) {
   const repo = String(body.repo || "");
   return codeWorkbenchWithLock(env, user, repo, "review", () => codeWorkbenchBranchRejectFileUnlocked(env, user, body));
 }
+async function codeWorkbenchBranchSaveFileUnlocked(env, user, body = {}) {
+  const repo = String(body.repo || ""), path = String(body.path || ""), branch = String(body.branch || "");
+  if (!codeRepoOk(env, repo) || !codePathOk(path) || !/^code\\/[A-Za-z0-9._/-]+$/.test(branch) || typeof body.content !== "string") {
+    return { ok: false, msg: "仓库、分支、文件路径或文件内容不合法" };
+  }
+  const guard = codePushGuard(env, user, repo, path);
+  if (guard) return { ok: false, msg: guard };
+  if (!/^[0-9a-f]{40}$/i.test(String(body.sha || ""))) return { ok: false, msg: "缺少有效文件 SHA，请重新读取文件后再保存" };
+  const current = await codeWorkbenchBranchCurrent(env, user, repo);
+  if (!current.ok || !current.active || current.branch !== branch) return { ok: false, conflict: true, status: 409, msg: "临时分支已变化，请刷新后重新读取文件" };
+  const file = await codeGetFile(env, repo, path, branch);
+  if (!file.ok || !file.exists) return { ok: false, msg: "读取当前临时分支文件失败：" + (file.msg || "文件不存在") };
+  if (String(file.sha || "") !== String(body.sha)) return { ok: false, conflict: true, status: 409, current_sha: file.sha || "", msg: "文件已被其他操作修改；为防止覆盖，请重新读取后再保存" };
+  const saved = await codeUpdateFile(env, repo, path, body.content, String(body.message || ("Workbench: update " + path)), branch, file.sha);
+  if (!saved.ok) return { ok: false, msg: "保存到临时分支失败：" + (saved.msg || "GitHub 写入失败") };
+  const updated = await codeGetFile(env, repo, path, branch);
+  if (!updated.ok || !updated.exists || !updated.sha) return { ok: false, saved: true, msg: "文件已写入，但读取新 SHA 失败；请重新读取文件确认状态" };
+  return { ok: true, saved: true, sha: updated.sha, url: saved.url || "" };
+}
+async function codeWorkbenchBranchSaveFile(env, user, body = {}) {
+  const repo = String(body.repo || "");
+  return codeWorkbenchWithLock(env, user, repo, "save", () => codeWorkbenchBranchSaveFileUnlocked(env, user, body));
+}
 async function codeWorkbenchBranchPreview(env, user, repo) {
   const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
   const current = await codeWorkbenchBranchCurrent(env, user, repo);
@@ -9404,6 +9427,12 @@ async function handle(request, env, ctx) {
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
       const r = await codeWorkbenchBranchRejectFile(env, user, b);
       return json(r, r.ok ? 200 : 400);
+    }
+    if (path === "/api/code/branch/save-file" && request.method === "POST") {
+      const b = await request.json().catch(() => ({})), user = await userFromReq(request, env, url, String(b.token || ""));
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeWorkbenchBranchSaveFile(env, user, b);
+      return json(r, r.ok ? 200 : (r.conflict ? 409 : 400));
     }
     if (path === "/api/code/branch/preview" && request.method === "POST") {
       const b = await request.json().catch(() => ({})), user = await userFromReq(request, env, url, String(b.token || ""));
