@@ -311,7 +311,7 @@
     (p.warn || []).forEach(function (w) { body.appendChild(el("div", "om-warn", "⚠️ " + w + "（可能是括号写漏了，推之前请留意）")); });
     p.edits.forEach(function (e) {
       var card = el("div", "om-edit");
-      card.appendChild(el("div", "om-file", e.path + (e.line ? " · 第 " + e.line + " 行" : "")));
+      card.appendChild(el("div", "om-file", e.path + (e.line ? " · 第 " + e.line + " 行" : "") + (e.auto_repair ? " · 模型自动修复" : "")));
       card.appendChild(diffBox(e.old, e.new)); body.appendChild(card);
     });
     if (p.status === "verification_pending") {
