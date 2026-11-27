@@ -1,0 +1,163 @@
+name: pr60-stack-preview
+run-name: PR #60 stack preview · ${{ github.event.pull_request.head.sha }}
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr60-stack-preview
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    if: github.event.pull_request.number == 60
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DEPLOY_REF: ${{ github.event.pull_request.head.ref }}
+      DEPLOY_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install, test and build the exact shared source
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+          npm run build
+
+      - name: Create isolated preview KV namespace
+        id: preview-kv
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 kv namespace create "openmanus-gateway-pr60-preview" --json > /tmp/preview-kv.json
+          KV_ID="$(python3 -c 'import json; d=json.load(open("/tmp/preview-kv.json")); print(d["id"])')"
+          test -n "$KV_ID"
+          echo "kv_id=$KV_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Build isolated Worker preview config
+        env:
+          PREVIEW_KV_ID: ${{ steps.preview-kv.outputs.kv_id }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          config = Path("wrangler.toml").read_text()
+          config = config.replace('name = "openmanus-gateway"', 'name = "openmanus-gateway-pr60-preview"', 1)
+          config = config.replace('id = "b7af651ce05a42049c6da51921ccbcd7"', f'id = "{os.environ["PREVIEW_KV_ID"]}"', 1)
+          Path("wrangler.pr60-preview.toml").write_text(config)
+          PY
+
+      - name: Deploy Worker preview from the same PR SHA
+        id: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 deploy --config wrangler.pr60-preview.toml 2>&1 | tee /tmp/worker-deploy.log
+          WORKER_URL="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.workers\.dev' /tmp/worker-deploy.log | tail -n 1)"
+          test -n "$WORKER_URL" || { echo "::error::Could not determine preview Worker URL"; exit 1; }
+          echo "url=$WORKER_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy Pages preview from the same PR SHA
+        id: pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 pages deploy . --project-name zhineng --branch pr-60-stack-preview 2>&1 | tee /tmp/pages-deploy.log
+          PAGES_URL="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.pages\.dev' /tmp/pages-deploy.log | head -n 1)"
+          test -n "$PAGES_URL" || { echo "::error::Could not determine Pages preview URL"; exit 1; }
+          echo "url=$PAGES_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify automation-token API end to end on isolated preview
+        env:
+          WORKER_URL: ${{ steps.worker.outputs.url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          USER="pr60-preview-${GITHUB_SHA:0:8}"
+          PASSWORD="$(openssl rand -hex 24)"
+          REGISTER="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/register" -H 'Content-Type: application/json' -d "$(jq -nc --arg user "$USER" --arg pw "$PASSWORD" '{user:$user,pw:$pw}')")"
+          LOGIN_TOKEN="$(printf '%s' "$REGISTER" | jq -r '.token // empty')"
+          test -n "$LOGIN_TOKEN" || { echo "::error::Preview test account registration did not return a login token"; exit 1; }
+          AUTH=(-H "Authorization: Bearer $LOGIN_TOKEN" -H 'Accept: application/json')
+          BEFORE="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/automation-token" "${AUTH[@]}")"
+          test "$(printf '%s' "$BEFORE" | jq -r '.ok and (.active == false)')" = "true"
+          CREATED="$(curl --fail-with-body --silent --show-error -X POST "$WORKER_URL/api/automation-token" "${AUTH[@]}")"
+          AUTOMATION_TOKEN="$(printf '%s' "$CREATED" | jq -r '.token // empty')"
+          test "${AUTOMATION_TOKEN#omcron_}" != "$AUTOMATION_TOKEN" || { echo "::error::Preview automation token was not created"; exit 1; }
+          test "$(printf '%s' "$CREATED" | jq -r '.expires == null')" = "true"
+          ACTIVE="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/automation-token" "${AUTH[@]}")"
+          test "$(printf '%s' "$ACTIVE" | jq -r '.active and (.last4 | length == 4)')" = "true"
+          STATUS="$(curl --silent --output /tmp/automation-denied.json --write-out '%{http_code}' "$WORKER_URL/api/automation-token" -H "Authorization: Bearer $AUTOMATION_TOKEN")"
+          test "$STATUS" = "401" || { echo "::error::Automation token unexpectedly accessed its management endpoint"; exit 1; }
+          curl --fail-with-body --silent --show-error -X DELETE "$WORKER_URL/api/automation-token" "${AUTH[@]}" >/tmp/automation-revoke.json
+          AFTER="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/automation-token" "${AUTH[@]}")"
+          test "$(printf '%s' "$AFTER" | jq -r '.ok and (.active == false)')" = "true"
+          echo "PASS: isolated preview register -> GET -> POST create -> GET active -> automation-token scope denial -> DELETE revoke -> GET inactive"
+          echo "Test account and tokens existed only in the isolated preview KV namespace."
+
+      - name: Publish paired preview URLs on PR #60
+        if: success()
+        uses: actions/github-script@v7
+        env:
+          PAGES_URL: ${{ steps.pages.outputs.url }}
+          WORKER_URL: ${{ steps.worker.outputs.url }}
+          DEPLOY_SHA: ${{ env.DEPLOY_SHA }}
+        with:
+          script: |
+            const pages = new URL(process.env.PAGES_URL);
+            pages.searchParams.set("gateway", process.env.WORKER_URL);
+            const marker = "<!-- pr60-stack-preview -->";
+            const body = marker + "\\n## PR #60 前后端联动预览\\n" +
+              "- Commit: \`" + process.env.DEPLOY_SHA + "\`\\n" +
+              "- 前端 Pages 预览： " + pages.toString() + "\\n" +
+              "- Worker 预览 API： " + process.env.WORKER_URL + "\\n" +
+              "- 隔离 KV：独立预览命名空间，不连接正式用户数据\\n" +
+              "- API 验证：注册预览账号、读取状态、生成、检查权限隔离、撤销，全部通过。\\n" +
+              "仅预览，不合并 main，不部署正式 Worker。";
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
+            const old = comments.data.find(c => c.body.includes(marker));
+            if (old) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: old.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "## PR #60 paired preview"
+            echo "- Exact source SHA: $DEPLOY_SHA"
+            echo "- Worker preview: ${{ steps.worker.outputs.url || 'not deployed' }}"
+            echo "- Pages preview: ${{ steps.pages.outputs.url || 'not deployed' }}"
+            echo "- Result: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
