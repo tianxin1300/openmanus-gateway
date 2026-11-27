@@ -167,12 +167,140 @@ test('editor delivery: pending work is resumable and deployment state is not ove
 test('project isolation: code edits use a temporary branch before merging to the base branch', () => {
   assert.match(workerSource, /async function codeCreateTempBranch\(env, repo, project, base = "main"\)/);
   assert.match(workerSource, /ref: "refs\/heads\/" \+ branch/);
-  assert.match(workerSource, /async function codeMergeTempBranch\(env, repo, branch, base, message\)/);
+  assert.match(workerSource, /async function codeMergeTempBranch\(env, repo, branch, base, message, expectedBaseSha, expectedHeadSha\)/);
   assert.match(workerSource, /await codeMergeTempBranch\(env, pend\.repo, pend\.branch/);
   assert.match(workerSource, /await codeDeleteBranch\(env, pend\.repo, pend\.branch\)/);
   assert.match(workerSource, /branch_deleted: true/);
   assert.match(workerSource, /baseBranch: temp\.base/);
   assert.doesNotMatch(workerSource, /codeUpdateFile\(env, pend\.repo, path, applied\.out\[path\], [\s\S]{0,160}branch = String\(env\.CODE_PUSH_BRANCH/);
+});
+
+test('rollback creates a new commit and never force-moves the base branch', () => {
+  const start = workerSource.indexOf('async function codeRollback(');
+  const end = workerSource.indexOf('const CODE_DEPLOY_WORKFLOW', start);
+  assert.ok(start >= 0 && end > start);
+  const rollback = workerSource.slice(start, end);
+  assert.match(rollback, /\/git\/commits\//);
+  assert.match(rollback, /method: "POST"/);
+  assert.match(rollback, /parents: \[currentSha\]/);
+  assert.match(rollback, /base_tree: currentTree/);
+  assert.match(rollback, /changedPaths = Array\.isArray\(item\.files\)/);
+  assert.match(rollback, /treeChanges\.push\(entry \?/);
+  assert.match(rollback, /拒绝执行整仓库回滚/);
+  assert.match(rollback, /force: false/);
+  assert.match(rollback, /codePushGuard\(env, user, repo, "frontend\/index\.html"\)/);
+  assert.doesNotMatch(rollback, /force: true/);
+  assert.doesNotMatch(rollback, /sha: item\.previous_sha, force/);
+});
+
+test('workbench review UI: history, branch tree and per-file decisions are wired to backend actions', () => {
+  assert.match(frontendStudioSource, /function showHistory\(/);
+  assert.match(frontendStudioSource, /api\("\/api\/code\/history"/);
+  assert.match(frontendStudioSource, /\/api\/code\/tree\?repo=/);
+  assert.match(frontendStudioSource, /p\.branch \|\| p\.baseBranch/);
+  assert.match(frontendStudioSource, /accepted_paths: yes \? selectedPaths\(\) : null/);
+  assert.match(frontendStudioSource, /conflict_resolutions: conflictChoices/);
+  assert.match(frontendStudioSource, /function renderConflicts\(/);
+  assert.match(frontendStudioSource, /p\.preview_url/);
+  assert.match(frontendStudioSource, /function selectedPaths\(/);
+});
+
+test('failed Actions retry re-runs failed jobs on the same run instead of dispatching a new workflow', () => {
+  const start = workerSource.indexOf('async function codeRetryRun(');
+  const end = workerSource.indexOf('async function codeGetFile(', start);
+  assert.ok(start >= 0 && end > start);
+  const retry = workerSource.slice(start, end);
+  assert.match(retry, /rerun-failed-jobs/);
+  assert.match(retry, /String\(old\.run_id \|\| ""\) !== runId/);
+  assert.match(retry, /old\.retry_count/);
+  assert.match(workerSource, /path === "\/api\/code\/retry"/);
+  assert.match(frontendSource, /async function runRemoteVerify\(retryRecord\)/);
+  assert.match(frontendSource, /GATEWAY \+ "\/api\/code\/retry"/);
+  assert.match(frontendSource, /retry\.onclick = \(\) => runRemoteVerify\(d\)/);
+});
+
+test('temporary branch preview is built from the staged branch and uses the Pages branch alias', () => {
+  assert.match(workerSource, /staged_on_branch: true/);
+  assert.match(workerSource, /codeUpdateFile\(env, proj\.repo, path, final\.out\[path\]/);
+  assert.match(workerSource, /previewDispatch/);
+  assert.match(workerSource, /claim\.pending\.staged_on_branch/);
+  assert.match(workerSource, /OpenManus: reject/);
+  assert.match(workerSource, /codeTempPreview\(branch, repo\)/);
+  assert.match(workerSource, /zhineng-et5\.pages\.dev\/branch-/);
+  const previewMiddleware = fs.readFileSync(path.join(root, "frontend/functions/_middleware.js"), "utf8");
+  assert.ok(previewMiddleware.includes("branch-(code-[a-z0-9-]+)"));
+  assert.match(previewMiddleware, /branchAlias \+ "\.zhineng\.pages\.dev"/);
+  assert.match(previewMiddleware, /context\.next\(\)/);
+  const deployWorkflow = fs.readFileSync(path.join(root, '.github/workflows/deploy-branch-preview.yml'), 'utf8');
+  assert.match(deployWorkflow, /--branch "\$DEPLOY_REF"/);
+  const frozenDeployWorkflow = fs.readFileSync(path.join(root, '.github/workflows/deploy-project.yml'), 'utf8');
+  assert.match(frozenDeployWorkflow, /--branch main/);
+  assert.doesNotMatch(deployWorkflow, /--branch main/);
+});
+
+test('developer workbench edits only isolated project branches and cannot save directly to main', () => {
+  const script = /<script\b(?=[^>]*\bid=["']wb-devbench["'])[^>]*>([\s\S]*?)<\/script\s*>/i.exec(frontendSource);
+  assert.ok(script);
+  assert.doesNotThrow(() => new vm.Script(script[1]));
+  assert.match(frontendSource, /id="wb-project"/);
+  assert.match(frontendSource, /id="wb-push"/);
+  assert.match(frontendSource, /id="wb-discard"/);
+  assert.match(frontendSource, /id="wb-new-branch"/);
+  assert.match(frontendSource, /id="wb-branch-preview"/);
+  assert.match(frontendSource, /id="wb-file-search"/);
+  assert.match(frontendSource, /id="wb-change-list"/);
+  assert.match(frontendSource, /id="wb-version-list"/);
+  assert.match(frontendSource, /async function ensureWorkbenchBranch\(/);
+  assert.match(frontendSource, /activeBranchRecord\.branch/);
+  assert.match(frontendSource, /只保存到当前项目临时分支/);
+  assert.match(frontendSource, /没有活动临时分支，已阻止写入 main/);
+  assert.match(frontendSource, /已阻止直接写入 main/);
+  assert.match(frontendSource, /accepted_paths: accepted/);
+  assert.match(frontendSource, /\/api\/code\/branch\/discard/);
+  assert.match(frontendSource, /\/api\/code\/branch\/merge/);
+});
+
+test('workbench branch APIs persist project isolation, reject files on branch, and record merge history', () => {
+  assert.match(workerSource, /codeWorkbenchBranchKey/);
+  assert.match(workerSource, /codeWorkbenchBranchCreate/);
+  assert.match(workerSource, /codeWorkbenchBranchCurrent/);
+  assert.match(workerSource, /codeWorkbenchBranchDiscard/);
+  assert.match(workerSource, /codeWorkbenchBranchMerge/);
+  assert.match(workerSource, /codeWorkbenchBranchRejectFile/);
+  assert.match(workerSource, /accepted_paths/);
+  assert.match(workerSource, /for \(const path of files\) \{[\s\S]{0,180}codePushGuard\(env, user, repo, path\)/);
+  assert.match(workerSource, /previousSha !== record\.baseCommit/);
+  assert.match(workerSource, /base_advanced: true/);
+  assert.match(workerSource, /为防止旧基线覆盖新修改，已阻止合并/);
+  assert.match(workerSource, /codeHistorySave\(env, user, \[row, \.\.\.history\]\)/);
+  assert.match(workerSource, /main_untouched: true/);
+  assert.match(workerSource, /path === "\/api\/code\/branch\/create"/);
+  assert.match(workerSource, /path === "\/api\/code\/branch\/merge"/);
+  assert.match(workerSource, /path === "\/api\/code\/branch\/discard"/);
+});
+
+test('workbench branch lookup preserves KV records on transient GitHub errors', () => {
+  const current = extract(workerSource, 'async function codeWorkbenchBranchCurrent(', 'async function codeWorkbenchBranchCreate(');
+  assert.match(current, /if \(ref\.status === 404\)\s*\{[\s\S]*?env\.KV\.delete\(key\)/);
+  assert.match(current, /GitHub 临时分支状态检查失败，已保留本地分支记录/);
+  assert.doesNotMatch(current, /if \(!ref\.ok\)\s*\{\s*await env\.KV\.delete\(key\)/);
+  const create = extract(workerSource, 'async function codeWorkbenchBranchCreateUnlocked(', 'async function codeWorkbenchBranchDiff(');
+  assert.match(create, /if \(ref\.status !== 404\) return \{ ok: false, msg:/);
+  assert.match(create, /检查已有临时分支失败，原记录已保留/);
+});
+
+test('project temp branches use readable repo names and decimal timestamps', () => {
+  assert.match(workerSource, /return "code\/" \+ tag \+ "-" \+ Date\.now\(\) \+ "-" \+ rand\(8\)/);
+  assert.match(workerSource, /codeCreateTempBranch\(env, proj\.repo, proj\.repo\.split\("\/"\)\.pop\(\), branch\)/);
+});
+
+test('workbench change review exposes per-file patches and guards branch mutations', () => {
+  assert.match(frontendSource, /function renderWorkbenchChanges\(/);
+  assert.match(frontendSource, /file\.patch/);
+  assert.match(frontendSource, /\/api\/code\/branch\/reject-file/);
+  assert.match(frontendSource, /accepted_paths: accepted/);
+  assert.match(workerSource, /codePushGuard\(env, user, repo, path\)/);
+  assert.match(workerSource, /codePushGuard\(env, user, repo, "frontend\/index\.html"\)/);
 });
 
 test('web workbench: exposes the local preview control', () => {
@@ -290,7 +418,7 @@ test('BUG-03/04/06: push confirmation uses Durable Object atomic claim and idemp
 test('Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions', () => {
   // Worker: temp branch naming, preview, history, rollback, tree APIs
   assert.match(workerSource, /return "code\/" \+ tag \+ "-"/);
-  assert.match(workerSource, /function codeTempPreview\(branch\)/);
+  assert.match(workerSource, /function codeTempPreview\(branch, repo\)/);
   assert.match(workerSource, /codeHistoryKey/);
   assert.match(workerSource, /async function codeRollback/);
   assert.match(workerSource, /path === "\/api\/code\/history"/);

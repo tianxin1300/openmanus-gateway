@@ -1,0 +1,170 @@
+name: workbench-cloudflare-e2e
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: workbench-cloudflare-e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  cloudflare-runtime:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate runtime E2E scripts
+        run: |
+          node --check tests/workbench-cloudflare-e2e-worker.mjs
+          node --check tests/workbench-cloudflare-e2e-cleanup-worker.mjs
+          node --check tests/workbench-cloudflare-e2e.mjs
+
+      - name: Provision isolated Cloudflare Worker and KV
+        id: provision
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GITHUB_TOKEN: ${{ github.token }}
+          KV_TITLE: ${{ format('openmanus-wb-e2e-{0}-{1}', github.run_id, github.run_attempt) }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN repository secret"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID repository secret"; exit 1; }
+
+          WORKER_NAME="openmanus-wb-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          KV_TITLE="$WORKER_NAME"
+          KV_RESPONSE="$(curl -fsS -X POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "$(python3 -c 'import json,os; print(json.dumps({"title":os.environ["KV_TITLE"]}))')")"
+          KV_NAMESPACE_ID="$(printf '%s' "$KV_RESPONSE" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("success"), d.get("errors"); print(d["result"]["id"])')"
+          WORKER_TEST_TOKEN="$(openssl rand -hex 32)"
+          WORKBENCH_E2E_SECRET="$(openssl rand -hex 32)"
+          export WORKER_TEST_TOKEN
+          echo "::add-mask::$WORKBENCH_E2E_SECRET"
+          echo "WORKER_NAME=$WORKER_NAME" >> "$GITHUB_ENV"
+          echo "KV_NAMESPACE_ID=$KV_NAMESPACE_ID" >> "$GITHUB_ENV"
+          echo "WORKER_TEST_TOKEN=$WORKER_TEST_TOKEN" >> "$GITHUB_ENV"
+          echo "WORKBENCH_E2E_SECRET=$WORKBENCH_E2E_SECRET" >> "$GITHUB_ENV"
+          echo "DO_PROVISIONED=false" >> "$GITHUB_ENV"
+
+          cat > wrangler.e2e.toml <<EOF
+          name = "$WORKER_NAME"
+          main = "tests/workbench-cloudflare-e2e-worker.mjs"
+          compatibility_date = "2025-01-01"
+          workers_dev = true
+
+          [vars]
+          CODE_OWNER = "workbench-e2e"
+          CODE_REPOS = "$GITHUB_REPOSITORY"
+          WORKBENCH_E2E_SECRET = "$WORKBENCH_E2E_SECRET"
+
+          [[kv_namespaces]]
+          binding = "KV"
+          id = "$KV_NAMESPACE_ID"
+
+          [[durable_objects.bindings]]
+          name = "CODE_CLAIMS"
+          class_name = "CodeClaimDO"
+
+          [[migrations]]
+          tag = "workbench-e2e-v1"
+          new_sqlite_classes = ["CodeClaimDO"]
+          EOF
+
+          curl -fsS -X PUT "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$KV_NAMESPACE_ID/values/$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote("token:"+os.environ["WORKER_TEST_TOKEN"], safe=""))')" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: text/plain" \
+            --data-binary "workbench-e2e" > /dev/null
+
+          npx --yes wrangler@4 deploy --config wrangler.e2e.toml 2>&1 | tee /tmp/wrangler-e2e-deploy.log
+          echo "DO_PROVISIONED=true" >> "$GITHUB_ENV"
+          printf '%s' "$GITHUB_TOKEN" | npx --yes wrangler@4 secret put GH_PAT --config wrangler.e2e.toml
+          # Publish once more so the active Worker version includes the newly uploaded GH_PAT secret.
+          npx --yes wrangler@4 deploy --config wrangler.e2e.toml
+          sleep 2
+          WORKER_URL="$(grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' /tmp/wrangler-e2e-deploy.log | tail -n 1)"
+          test -n "$WORKER_URL" || { echo "::error::Could not determine isolated workers.dev URL"; exit 1; }
+          echo "WORKER_URL=$WORKER_URL" >> "$GITHUB_ENV"
+          echo "Isolated Worker deployed: $WORKER_URL"
+
+      - name: Run real Cloudflare Worker route, KV, and Durable Object E2E
+        env:
+          WORKER_URL: ${{ env.WORKER_URL }}
+          WORKER_TEST_TOKEN: ${{ env.WORKER_TEST_TOKEN }}
+          WORKBENCH_E2E_SECRET: ${{ env.WORKBENCH_E2E_SECRET }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: node tests/workbench-cloudflare-e2e.mjs
+
+      - name: Clean isolated Worker, Durable Objects, and KV
+        if: always()
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WORKER_NAME:-}" ]; then
+            echo "No temporary Cloudflare resources were created."
+            exit 0
+          fi
+
+          CLEANUP_FAILED=0
+          if [ "${DO_PROVISIONED:-false}" = "true" ]; then
+            cat > wrangler.e2e-cleanup.toml <<EOF
+          name = "$WORKER_NAME"
+          main = "tests/workbench-cloudflare-e2e-cleanup-worker.mjs"
+          compatibility_date = "2025-01-01"
+          workers_dev = true
+
+          [[migrations]]
+          tag = "workbench-e2e-v1"
+          new_sqlite_classes = ["CodeClaimDO"]
+
+          [[migrations]]
+          tag = "workbench-e2e-cleanup-v2"
+          deleted_classes = ["CodeClaimDO"]
+          EOF
+            if ! npx --yes wrangler@4 deploy --config wrangler.e2e-cleanup.toml; then
+              echo "::error::Durable Object namespace cleanup migration failed; preserving the Worker for safe manual cleanup."
+              CLEANUP_FAILED=1
+            fi
+          fi
+
+          if [ "$CLEANUP_FAILED" = "0" ]; then
+            SCRIPT_STATUS="$(curl -sS -o /tmp/e2e-worker-check.json -w '%{http_code}' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+            if [ "$SCRIPT_STATUS" = "200" ]; then
+              curl -fsS -X DELETE "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME" \
+                -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" |
+                python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("success"), d.get("errors")'
+            elif [ "$SCRIPT_STATUS" != "404" ]; then
+              echo "::error::Could not verify temporary Worker before deletion (HTTP $SCRIPT_STATUS)"
+              CLEANUP_FAILED=1
+            fi
+          fi
+
+          if [ -n "${KV_NAMESPACE_ID:-}" ]; then
+            curl -fsS -X DELETE "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$KV_NAMESPACE_ID" \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" |
+              python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("success"), d.get("errors")'
+          fi
+          rm -f wrangler.e2e.toml wrangler.e2e-cleanup.toml
+          if [ "$CLEANUP_FAILED" != "0" ]; then exit 1; fi
+          echo "PASS: isolated Worker, Durable Object classes, and KV namespace cleanup completed."

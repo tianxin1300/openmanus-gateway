@@ -7,7 +7,9 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  actions: write
+  contents: write
+  pull-requests: write
 
 concurrency:
   group: test-project-${{ github.ref }}
@@ -15,8 +17,8 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,3 +38,372 @@ jobs:
 
       - name: Build checks
         run: npm run build
+
+      - name: Dispatch branch preview workflow via GitHub API
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_REF: ${{ github.head_ref }}
+          REQUEST_ID: test-project-${{ github.run_id }}-${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Dispatching deploy-branch-preview.yml for ref: $TARGET_REF"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-branch-preview.yml/dispatches" \
+            -f "ref=${TARGET_REF}" \
+            -f "inputs[ref]=${TARGET_REF}" \
+            -f "inputs[request_id]=${REQUEST_ID}"
+          echo "Workflow dispatch accepted by GitHub."
+
+      - name: Install Playwright and Wrangler
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
+        run: npm install --no-save --no-package-lock --no-audit --no-fund @playwright/test@1.56.1 wrangler@4 && npx playwright --version
+
+      - name: Install Chromium and WebKit for iPhone emulation
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Deploy isolated Cloudflare Pages PR preview
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          PREVIEW_BRANCH="pr32-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          test "$PREVIEW_BRANCH" != "main"
+          echo "PREVIEW_BRANCH=$PREVIEW_BRANCH" >> "$GITHUB_ENV"
+          npx wrangler pages deploy . --project-name zhineng --branch "$PREVIEW_BRANCH" --commit-dirty=true 2>&1 | tee /tmp/pages-preview-deploy.log
+          PREVIEW_URL="$(grep -Eo 'https://[^[:space:]]+\.pages\.dev' /tmp/pages-preview-deploy.log | grep -F "$PREVIEW_BRANCH" | tail -n 1 || true)"
+          if [ -z "$PREVIEW_URL" ]; then PREVIEW_URL="https://${PREVIEW_BRANCH}.zhineng.pages.dev"; fi
+          echo "PLAYWRIGHT_BASE_URL=$PREVIEW_URL" >> "$GITHUB_ENV"
+          echo "Preview branch: $PREVIEW_BRANCH"
+          echo "Preview URL: $PREVIEW_URL"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error "$PREVIEW_URL" -o /dev/null; then
+              echo "Preview returned HTTP 200."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Preview did not become available: $PREVIEW_URL" >&2
+          exit 1
+
+      - name: Playwright UI E2E · Chromium · iPhone 14
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
+        run: npx playwright test --project=chromium-iphone
+
+      - name: Playwright UI E2E · WebKit · iPhone 14
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
+        run: npx playwright test --project=webkit-iphone
+
+      - name: Upload Playwright reports and screenshots
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-')
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-playwright-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            test-results/
+            playwright-report/
+            /tmp/pages-preview-deploy.log
+          if-no-files-found: warn
+          retention-days: 7
+
+
+      # A disposable GitHub API integration test. It is intentionally limited
+      # to same-repository PRs and never targets main. The generated PR's own
+      # workflow run skips this step to prevent recursive test-PR creation.
+      - name: GitHub branch and pull-request lifecycle E2E
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const runKey = `${context.runId}-${process.env.GITHUB_RUN_ATTEMPT || '1'}`;
+            const baseBranch = `e2e/workbench-${runKey}-base`;
+            const headBranch = `e2e/workbench-${runKey}-head`;
+            const filePath = `e2e-workbench-${runKey}.txt`;
+            const baseSha = context.payload.pull_request.head.sha;
+            let baseCreated = false;
+            let headCreated = false;
+            let pullNumber = null;
+            let prPolicyBlocked = false;
+            let failure = null;
+            const mainBefore = (await github.rest.git.getRef({ owner, repo, ref: 'heads/main' })).data.object.sha;
+
+            // Recover disposable refs left by the immediately preceding harness-cleanup bug.
+            for (const branch of [
+              'e2e/workbench-45987441179-1-head',
+              'e2e/workbench-45987441179-1-base'
+            ]) {
+              try { await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` }); }
+              catch (error) { if (!(error.status === 404 || (error.status === 422 && /Reference does not exist/i.test(error.message)))) throw error; }
+            }
+
+            try {
+              await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${baseBranch}`, sha: baseSha });
+              baseCreated = true;
+              await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${headBranch}`, sha: baseSha });
+              headCreated = true;
+
+              const sourceCommit = await github.rest.git.getCommit({ owner, repo, commit_sha: baseSha });
+              const blob = await github.rest.git.createBlob({
+                owner, repo,
+                content: `GitHub API lifecycle probe for Actions run ${runKey}\n`,
+                encoding: 'utf-8'
+              });
+              const tree = await github.rest.git.createTree({
+                owner, repo,
+                base_tree: sourceCommit.data.tree.sha,
+                tree: [{ path: filePath, mode: '100644', type: 'blob', sha: blob.data.sha }]
+              });
+              const commit = await github.rest.git.createCommit({
+                owner, repo,
+                message: `test: disposable workbench E2E ${runKey}`,
+                tree: tree.data.sha,
+                parents: [baseSha]
+              });
+              await github.rest.git.updateRef({
+                owner, repo, ref: `heads/${headBranch}`,
+                sha: commit.data.sha, force: false
+              });
+
+              try {
+                const pull = await github.rest.pulls.create({
+                  owner, repo,
+                  title: `[E2E cleanup] workbench GitHub API ${runKey}`,
+                  head: headBranch,
+                  base: baseBranch,
+                  body: 'Disposable integration-test PR. This PR is created and closed by the workflow; it must never be merged.'
+                });
+                pullNumber = pull.data.number;
+                core.info(`Created disposable PR #${pullNumber} between ${headBranch} and ${baseBranch}`);
+                const check = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+                if (check.data.state !== 'open' || check.data.merged) {
+                  throw new Error('Disposable PR did not enter the expected open, unmerged state');
+                }
+              } catch (error) {
+                if (error.status === 403 && /not permitted to create or approve pull requests/i.test(error.message)) {
+                  prPolicyBlocked = true;
+                  core.warning('Branch/write E2E succeeded, but PR creation is blocked by the repository Actions setting "Allow GitHub Actions to create and approve pull requests".');
+                } else {
+                  throw error;
+                }
+              }
+            } catch (error) {
+              failure = error;
+            } finally {
+              if (pullNumber !== null) {
+                try {
+                  await github.rest.pulls.update({ owner, repo, pull_number: pullNumber, state: 'closed' });
+                  const closed = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+                  if (closed.data.state !== 'closed' || closed.data.merged) {
+                    throw new Error(`PR #${pullNumber} was not closed without merging`);
+                  }
+                } catch (error) {
+                  failure = failure || error;
+                  core.error(`Failed to close disposable PR #${pullNumber}: ${error.message}`);
+                }
+              }
+              for (const [branch, created] of [[headBranch, headCreated], [baseBranch, baseCreated]]) {
+                if (!created) continue;
+                try {
+                  await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` });
+                } catch (error) {
+                  failure = failure || error;
+                  core.error(`Failed to delete disposable branch ${branch}: ${error.message}`);
+                }
+              }
+              try {
+                const mainAfter = (await github.rest.git.getRef({ owner, repo, ref: 'heads/main' })).data.object.sha;
+                if (mainAfter !== mainBefore) {
+                  throw new Error(`main moved during E2E: before=${mainBefore}, after=${mainAfter}`);
+                }
+              } catch (error) {
+                failure = failure || error;
+              }
+            }
+
+            if (failure) throw failure;
+            core.info('PASS: disposable branches and test commit were created and deleted; main SHA remained unchanged.');
+            if (prPolicyBlocked) core.warning('PR create/close E2E remains unverified until the repository Actions setting is enabled.');
+            else core.info('PASS: disposable PR was created, verified open/unmerged, and closed.');
+
+# Re-trigger GitHub API lifecycle verification after repository Actions PR policy was enabled.
+
+      # Execute the exact Worker merge helper against disposable GitHub refs.
+      # This exercises the real GitHub Git Data + merge endpoints without touching main.
+      - name: Workbench merge transaction GitHub API E2E
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const vm = require('node:vm');
+            const runKey = `${context.runId}-${process.env.GITHUB_RUN_ATTEMPT || '1'}`;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const baseBranch = `e2e-workbench-merge-${runKey}-base`;
+            const headBranch = `code/e2e-workbench-merge-${runKey}-head`;
+            const casBaseBranch = `e2e-workbench-cas-${runKey}-base`;
+            const casHeadBranch = `code/e2e-workbench-cas-${runKey}-head`;
+            const filePath = `e2e-workbench-merge-${runKey}.txt`;
+            const casFilePath = `e2e-workbench-cas-${runKey}.txt`;
+            const raceFilePath = `e2e-workbench-race-${runKey}.txt`;
+            const baseSha = context.payload.pull_request.head.sha;
+            const mainBefore = (await github.rest.git.getRef({ owner, repo, ref: 'heads/main' })).data.object.sha;
+            let baseCreated = false;
+            let headCreated = false;
+            let casBaseCreated = false;
+            let casHeadCreated = false;
+            let injectRace = false;
+            let raceCommitSha = "";
+            let failure = null;
+            let result = null;
+            const worker = fs.readFileSync('worker.js', 'utf8');
+            const start = worker.indexOf('function codeGitRefUrl(');
+            const end = worker.indexOf('const codeHistoryKey =', start);
+            const mergeStart = worker.indexOf('async function codeWorkbenchBranchMergeUnlocked(');
+            const mergeEnd = worker.indexOf('async function codeMemoryAppend(', mergeStart);
+            if (start < 0 || end <= start || mergeStart < 0 || mergeEnd <= mergeStart) throw new Error('Could not isolate Worker merge source');
+            const ghApi = async (_env, url, options = {}) => {
+              try {
+                if (injectRace && options.method === 'PATCH' && url.endsWith(`/git/refs/heads/${casBaseBranch}`)) {
+                  injectRace = false;
+                  const source = await github.rest.git.getCommit({ owner, repo, commit_sha: baseSha });
+                  const blob = await github.rest.git.createBlob({ owner, repo, content: `concurrent base advance ${runKey}\\n`, encoding: 'utf-8' });
+                  const tree = await github.rest.git.createTree({
+                    owner, repo, base_tree: source.data.tree.sha,
+                    tree: [{ path: raceFilePath, mode: '100644', type: 'blob', sha: blob.data.sha }]
+                  });
+                  const raceCommit = await github.rest.git.createCommit({
+                    owner, repo, message: `test: simulate concurrent base advance ${runKey}`,
+                    tree: tree.data.sha, parents: [baseSha]
+                  });
+                  raceCommitSha = raceCommit.data.sha;
+                  await github.rest.git.updateRef({ owner, repo, ref: `heads/${casBaseBranch}`, sha: raceCommitSha, force: false });
+                  core.info(`Injected competing base commit ${raceCommitSha} before the Worker CAS update.`);
+                }
+                const response = await github.request({
+                  method: options.method || 'GET',
+                  url,
+                  headers: options.headers || {},
+                  ...(options.body ? { data: JSON.parse(options.body) } : {})
+                });
+                return { ok: true, status: response.status, data: response.data };
+              } catch (error) {
+                return { ok: false, status: error.status || 0, msg: error.message, data: error.response && error.response.data };
+              }
+            };
+            let history = [];
+            const sandbox = {
+              URL, Date, Math, JSON, crypto: require('node:crypto').webcrypto,
+              rand: () => runKey.slice(-8),
+              codeVerifyRef: value => /^[A-Za-z0-9._/-]{1,120}$/.test(String(value)) ? String(value) : null,
+              codeRepoOk: () => true,
+              codePushGuard: () => '',
+              codeWorkbenchBranchKey: () => 'e2e-workbench-record',
+              codeHistoryLoad: async () => history,
+              codeHistorySave: async (_env, _user, rows) => { history = rows; },
+              codePathOk: path => typeof path === 'string' && !!path && !path.startsWith('/') && !path.split('/').some(part => !part || part === '.' || part === '..'),
+              codeGhApi: ghApi,
+              codeGitRefUrl: (r, ref) => `https://api.github.com/repos/${r}/git/ref/${String(ref).split('/').map(encodeURIComponent).join('/')}`,
+              codeGitRefWriteUrl: (r, ref) => `https://api.github.com/repos/${r}/git/refs/${String(ref).split('/').map(encodeURIComponent).join('/')}`
+            };
+            vm.runInNewContext(
+              worker.slice(start, end) + '\n' + worker.slice(mergeStart, mergeEnd) +
+              '\nglobalThis.__merge = codeMergeTempBranch; globalThis.__workbenchMerge = codeWorkbenchBranchMergeUnlocked;',
+              sandbox
+            );
+            try {
+              await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${baseBranch}`, sha: baseSha });
+              baseCreated = true;
+              await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${headBranch}`, sha: baseSha });
+              headCreated = true;
+              const source = await github.rest.git.getCommit({ owner, repo, commit_sha: baseSha });
+              const blob = await github.rest.git.createBlob({ owner, repo, content: `real merge E2E ${runKey}\n`, encoding: 'utf-8' });
+              const tree = await github.rest.git.createTree({
+                owner, repo, base_tree: source.data.tree.sha,
+                tree: [{ path: filePath, mode: '100644', type: 'blob', sha: blob.data.sha }]
+              });
+              const headCommit = await github.rest.git.createCommit({
+                owner, repo, message: `test: real Worker merge E2E ${runKey}`,
+                tree: tree.data.sha, parents: [baseSha]
+              });
+              await github.rest.git.updateRef({ owner, repo, ref: `heads/${headBranch}`, sha: headCommit.data.sha, force: false });
+              let workbenchRecord = { project: 'e2e', repo: `${owner}/${repo}`, branch: headBranch, baseBranch, baseCommit: baseSha, status: 'active' };
+              const workbenchEnv = { KV: {
+                get: async () => workbenchRecord,
+                delete: async () => { workbenchRecord = null; },
+                put: async (_key, value) => { workbenchRecord = JSON.parse(value); }
+              } };
+              result = await sandbox.__workbenchMerge(
+                workbenchEnv, 'github-actions-e2e',
+                { repo: `${owner}/${repo}`, branch: headBranch, summary: `real Worker workbench merge E2E ${runKey}` }
+              );
+              if (!result.ok || !result.branch_deleted) throw new Error(`Full Worker workbench merge failed against real GitHub API: ${result.msg}`);
+              if (workbenchRecord !== null) throw new Error('Successful workbench merge did not clear its branch record');
+              if (!history.length || history[0].actor !== 'github-actions-e2e' || history[0].commit_sha !== result.commit_sha) {
+                throw new Error('Workbench merge history did not record the authenticated actor and resulting commit');
+              }
+              const target = await github.rest.git.getRef({ owner, repo, ref: `heads/${baseBranch}` });
+              if (target.data.object.sha !== result.commit_sha) throw new Error('Target ref does not point to the Worker workbench merge commit');
+              const mergedCommit = await github.rest.git.getCommit({ owner, repo, commit_sha: result.commit_sha });
+              const parents = mergedCommit.data.parents.map(parent => parent.sha);
+              if (parents.length !== 2 || parents[0] !== baseSha || parents[1] !== headCommit.data.sha) {
+                throw new Error(`Unexpected merge commit parents: ${parents.join(',')}`);
+              }
+              const mergedTree = await github.rest.git.getTree({ owner, repo, tree_sha: mergedCommit.data.tree.sha, recursive: '1' });
+              if (!(mergedTree.data.tree || []).some(entry => entry.path === filePath)) throw new Error('Merged tree is missing the staged test file');
+              core.info(`PASS: full Worker workbench merge created ${result.commit_sha} on disposable target ${baseBranch}; history, two parents, merged file, and cleanup verified.`);
+
+              await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${casBaseBranch}`, sha: baseSha });
+              casBaseCreated = true;
+              await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${casHeadBranch}`, sha: baseSha });
+              casHeadCreated = true;
+              const casBlob = await github.rest.git.createBlob({ owner, repo, content: `CAS head change ${runKey}\\n`, encoding: 'utf-8' });
+              const casTree = await github.rest.git.createTree({
+                owner, repo, base_tree: source.data.tree.sha,
+                tree: [{ path: casFilePath, mode: '100644', type: 'blob', sha: casBlob.data.sha }]
+              });
+              const casHeadCommit = await github.rest.git.createCommit({
+                owner, repo, message: `test: Worker CAS head ${runKey}`,
+                tree: casTree.data.sha, parents: [baseSha]
+              });
+              await github.rest.git.updateRef({ owner, repo, ref: `heads/${casHeadBranch}`, sha: casHeadCommit.data.sha, force: false });
+              let casRecord = { project: 'e2e-cas', repo: `${owner}/${repo}`, branch: casHeadBranch, baseBranch: casBaseBranch, baseCommit: baseSha, status: 'active' };
+              const casEnv = { KV: {
+                get: async () => casRecord,
+                delete: async () => { casRecord = null; },
+                put: async (_key, value) => { casRecord = JSON.parse(value); }
+              } };
+              injectRace = true;
+              const casResult = await sandbox.__workbenchMerge(
+                casEnv, 'github-actions-e2e',
+                { repo: `${owner}/${repo}`, branch: casHeadBranch, summary: `real Worker workbench CAS E2E ${runKey}` }
+              );
+              if (casResult.ok || !casResult.conflict) {
+                throw new Error(`Full Worker workbench merge failed to surface concurrent base conflict: ${JSON.stringify(casResult)}`);
+              }
+              if (casRecord === null || history.length !== 1) throw new Error('CAS conflict must preserve the temp record and avoid adding merge history');
+              const casTarget = await github.rest.git.getRef({ owner, repo, ref: `heads/${casBaseBranch}` });
+              if (casTarget.data.object.sha !== raceCommitSha) throw new Error('CAS failure overwrote the competing base commit');
+              core.info(`PASS: exact Worker merge helper rejected non-fast-forward CAS and preserved competing commit ${raceCommitSha}.`);
+            } catch (error) {
+              failure = error;
+            } finally {
+              for (const [branch, created] of [[headBranch, headCreated], [baseBranch, baseCreated], [casHeadBranch, casHeadCreated], [casBaseBranch, casBaseCreated]]) {
+                if (!created) continue;
+                try { await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` }); }
+                catch (error) { if (!(error.status === 404 || (error.status === 422 && /Reference does not exist/i.test(error.message)))) { failure = failure || error; core.error(`Failed to clean ${branch}: ${error.message}`); } }
+              }
+              try {
+                const mainAfter = (await github.rest.git.getRef({ owner, repo, ref: 'heads/main' })).data.object.sha;
+                if (mainAfter !== mainBefore) failure = failure || new Error(`main changed during merge E2E: ${mainBefore} -> ${mainAfter}`);
+              } catch (error) { failure = failure || error; }
+            }
+            if (failure) throw failure;
+            core.info('PASS: main SHA unchanged; disposable Worker merge refs cleaned.');

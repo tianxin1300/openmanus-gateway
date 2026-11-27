@@ -5905,14 +5905,47 @@ const bestPlace = (list, q) => {
 #wb-terminal-shortcuts button:hover,#wb-terminal-shortcuts button[aria-pressed="true"]{background:#35445a;border-color:#58749e;color:#fff}
 #wb-terminal-shortcuts button:focus-visible{outline:2px solid #8db6f4;outline-offset:2px}
 @media(max-width:520px){#wb-terminal-shortcuts{flex-basis:38px;gap:4px;padding:3px 6px}#wb-terminal-shortcuts button{flex-basis:48px;width:48px;min-width:48px;height:30px;min-height:30px;padding:0 4px;font-size:11px}}
+
+#wb-left{display:flex!important;min-width:0}
+#wb-files{flex:0 0 218px;width:218px;min-width:0;display:flex;flex-direction:column;gap:6px;padding:8px;background:#1b2230;border-right:1px solid #354052;overflow:hidden;color:#dce4ef}
+.wb-files-head{font-size:12px;font-weight:750;color:#c9d7ea;padding:2px 3px}
+#wb-file-search{flex:none;width:100%;height:32px;border:1px solid #3b4659;border-radius:7px;background:#252e3d;color:#eef3fb;padding:0 8px;font-size:12px;outline:none}
+#wb-file-list{flex:1 1 0;min-height:80px;overflow:auto;overscroll-behavior:contain}
+#wb-file-list button{display:block;width:100%;padding:6px 7px;margin:1px 0;border:0;border-radius:5px;background:transparent;color:#c3cede;text-align:left;font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#wb-file-list button:hover,#wb-file-list button.on{background:#2c3b52;color:#fff}
+#wb-change-details,#wb-version-details{flex:none;max-height:190px;overflow:auto;border-top:1px solid #354052;padding-top:5px}
+#wb-change-details summary,#wb-version-details summary{cursor:pointer;font-size:11px;font-weight:700;color:#cbd7e8;padding:4px}
+#wb-change-list,#wb-version-list{font-size:10px;color:#c1ccdc;overflow-wrap:anywhere}
+.wb-change-row,.wb-version-row{padding:6px 4px;border-top:1px solid #30394a}
+.wb-change-path{font:10px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere;color:#e0e8f4}
+.wb-change-meta{font-size:10px;color:#9eabc0;margin:3px 0}
+.wb-change-actions{display:flex;gap:4px}
+.wb-file-diff{margin:4px 0;color:#9eabc0}.wb-file-diff summary{font-size:10px;cursor:pointer}.wb-file-diff pre{max-height:160px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;background:#151b25;padding:6px;border-radius:5px;font:10px/1.45 ui-monospace,monospace;color:#d4deeb}
+.wb-change-actions button,.wb-version-row button{min-height:25px;padding:3px 7px!important;font-size:10px!important;border-radius:5px!important}
+.wb-change-actions .on{background:#285b42!important;border-color:#4b9b70!important;color:#e8fff0!important}
+.wb-change-actions .reject{background:#57333b!important;border-color:#87515c!important;color:#ffe8eb!important}
+#wb-editor{flex:1 1 0;min-width:0;width:auto!important}
+#wb-project{height:30px;max-width:112px;padding:0 6px;border:1px solid #3b4659;border-radius:7px;background:#252e3d;color:#e7edf7;font-size:11px}
+#wb-branch{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9fc3f4;font:10px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#wb-bar #wb-push{background:#426fbd!important;color:#fff!important}
+#wb-bar #wb-discard{background:#57333b!important;color:#ffe8eb!important}
+#wb-bar button:disabled{opacity:.35!important}
+@media(max-width:1100px){#wb-files{flex:0 0 150px;width:150px;padding:6px}#wb-change-details,#wb-version-details{max-height:145px}#wb-branch{max-width:95px}}
+@media(max-width:520px){#wb-files{flex-basis:128px;width:128px}#wb-project{max-width:78px;font-size:10px}#wb-branch{max-width:72px}#wb-bar{overflow-x:auto!important;overflow-y:hidden!important}#wb-bar button{flex:none!important}}
 </style>
 <!-- 开发台：全宽编辑器与统一运行日志；本地预览在独立全屏工作区显示 -->
 <div id="wb" role="dialog" aria-hidden="true" aria-label="开发台">
   <div id="wb-bar">
-    <strong>开发台</strong><span id="wb-file">frontend/index.html</span><span id="wb-state"></span>
+    <strong>开发台</strong>
+    <select id="wb-project" aria-label="选择项目"><option value="openmanus-gateway">聚合体</option><option value="jiuyibanlv">就医伴侣</option></select>
+    <span id="wb-file">frontend/index.html</span><span id="wb-branch">尚未创建临时分支</span><span id="wb-state"></span>
     <span class="sp"></span>
     <button id="wb-reload" class="sec" type="button" title="重新从 GitHub 读取 index.html（会丢掉未保存的修改）">重新读取</button>
-    <button id="wb-save" type="button" title="把编辑器里的内容通过 MCP update_file 推到 GitHub main（Ctrl/Cmd+S）">保存到 GitHub</button>
+    <button id="wb-save" type="button" title="只保存到当前项目临时分支（Ctrl/Cmd+S）">保存到临时分支</button>
+    <button id="wb-push" class="sec" type="button" title="把已接受文件合并到 main">推</button>
+    <button id="wb-discard" class="sec" type="button" title="删除当前项目临时分支，不改 main">丢弃</button>
+    <button id="wb-new-branch" class="sec" type="button" title="为当前项目创建新的临时分支" hidden>新建分支</button>
+    <button id="wb-branch-preview" class="sec" type="button" title="构建当前临时分支的独立 Pages 预览">临时预览</button>
     <button id="wb-both" class="sec" type="button" title="触发 GitHub Actions：前端 build 与 Worker deploy 并行执行，日志收纳在统一运行日志">同时启动</button>
     <button id="wb-local-preview" class="sec" type="button" title="在独立页面打开当前编辑器内容">独立预览</button>
     <button id="wb-ci" class="sec" type="button" title="触发 GitHub Actions：checkout → npm install → npm test → npm run build，并把结果回传到开发台">运行 / 验证</button>
@@ -5922,7 +5955,16 @@ const bestPlace = (list, q) => {
   </div>
   <div id="wb-chain" aria-label="状态链"></div>
   <div id="wb-main">
-    <div id="wb-left"><div id="wb-editor"></div></div>
+    <div id="wb-left">
+      <aside id="wb-files" aria-label="项目文件与改动">
+        <div class="wb-files-head">文件树</div>
+        <input id="wb-file-search" type="search" placeholder="搜索文件…" aria-label="搜索项目文件">
+        <div id="wb-file-list"></div>
+        <details id="wb-change-details" open><summary>改动预览</summary><div id="wb-change-list">尚无文件改动</div></details>
+        <details id="wb-version-details"><summary>历史版本</summary><div id="wb-version-list">正在读取历史版本…</div></details>
+      </aside>
+      <div id="wb-editor"></div>
+    </div>
     <div id="wb-right">
     <div class="wb-rhead">
         <button class="wb-tab on" type="button" data-wbtab="prev">实时预览</button>
@@ -5970,7 +6012,7 @@ const bestPlace = (list, q) => {
 "use strict";
 const MCP_URL = "https://my-github-mcp.tianxinyuan881.workers.dev/mcp";
 const REPO = {owner: "tianxin1300", repo: "openmanus-gateway", branch: "main"};
-const FILE = "frontend/index.html", DIR = "frontend";
+let FILE = "frontend/index.html"; const DIR = "frontend";
 const MONACO_BASES = [
   "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min",
   "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min",
@@ -6119,10 +6161,237 @@ async function mcpGet(path) {
   return parseFile(await callTool(t, mkArgs(t, {owner: REPO.owner, repo: REPO.repo, path, branch: REPO.branch})));
 }
 async function mcpPut(path, content, message, sha) {
+  if (!activeBranchRecord || REPO.branch !== activeBranchRecord.branch || !/^code\//.test(REPO.branch)) throw new Error("已阻止直接写入 main：请先创建并使用当前项目的临时分支。");
   const tools = await mcpTools(), t = pickTool(tools, "update_file", /(update|write|put)_?file|create_or_update/i);
   if (!t) throw new Error("MCP 里没有 update_file（现有工具：" + tools.map(x => x.name).join("、") + "）");
   return callTool(t, mkArgs(t, {owner: REPO.owner, repo: REPO.repo, path, branch: REPO.branch, content, message, sha}));
 }
+
+const WORKBENCH_PROJECTS = {
+  "openmanus-gateway": { label: "聚合体", owner: "tianxin1300", repo: "openmanus-gateway" },
+  "jiuyibanlv": { label: "就医伴侣", owner: "tianxin1300", repo: "jiuyibanlv" }
+};
+let activeBranchRecord = null, workbenchFiles = [], workbenchChanges = [];
+const workbenchDecisions = Object.create(null);
+function workbenchRepoFull() { return REPO.owner + "/" + REPO.repo; }
+async function wbApi(path, options = {}) {
+  const headers = Object.assign({ "Accept": "application/json" }, options.headers || {});
+  if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const response = await authFetch(GATEWAY + path, Object.assign({}, options, { headers }));
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false) {
+    const error = new Error(data.msg || ("请求失败（HTTP " + response.status + "）"));
+    error.data = data; error.status = response.status; throw error;
+  }
+  return data;
+}
+function updateWorkbenchBranchUI() {
+  const active = !!(activeBranchRecord && activeBranchRecord.branch);
+  const label = g("wb-branch");
+  if (label) { label.textContent = active ? activeBranchRecord.branch : "无活动临时分支"; label.title = active ? activeBranchRecord.branch : ""; }
+  if (g("wb-save")) g("wb-save").disabled = !active;
+  if (g("wb-push")) g("wb-push").disabled = !active;
+  if (g("wb-discard")) g("wb-discard").disabled = !active;
+  if (g("wb-branch-preview")) { g("wb-branch-preview").disabled = !active || REPO.repo !== "openmanus-gateway"; g("wb-branch-preview").title = REPO.repo === "openmanus-gateway" ? "构建当前临时分支的独立 Pages 预览" : "该项目仓库尚未配置 Cloudflare Pages 预览工作流"; }
+  if (g("wb-new-branch")) g("wb-new-branch").hidden = active;
+}
+async function ensureWorkbenchBranch() {
+  const repo = workbenchRepoFull();
+  const current = await wbApi("/api/code/branch/current?repo=" + encodeURIComponent(repo), { cache: "no-store" });
+  let record = current.active ? current : null;
+  if (!record) {
+    record = await wbApi("/api/code/branch/create", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repo, project: REPO.repo, base: "main" })
+    });
+  }
+  activeBranchRecord = record;
+  REPO.branch = record.branch;
+  updateWorkbenchBranchUI();
+  return record;
+}
+function workbenchLanguage(path) {
+  const ext = String(path || "").split(".").pop().toLowerCase();
+  return ({html:"html",htm:"html",js:"javascript",mjs:"javascript",cjs:"javascript",ts:"typescript",tsx:"typescript",jsx:"javascript",css:"css",json:"json",md:"markdown",yml:"yaml",yaml:"yaml",xml:"xml",py:"python",sh:"shell",sql:"sql",toml:"ini"})[ext] || "plaintext";
+}
+async function loadWorkbenchTree() {
+  const list = g("wb-file-list"); if (!list) return;
+  list.textContent = "正在读取文件树…";
+  try {
+    const data = await wbApi("/api/code/tree?repo=" + encodeURIComponent(workbenchRepoFull()) + "&ref=" + encodeURIComponent(REPO.branch || "main"), { cache: "no-store" });
+    workbenchFiles = Array.isArray(data.files) ? data.files : [];
+    renderWorkbenchTree();
+  } catch (error) { list.textContent = "文件树读取失败：" + (error.message || String(error)); }
+}
+function renderWorkbenchTree() {
+  const list = g("wb-file-list"); if (!list) return;
+  const query = String(g("wb-file-search")?.value || "").trim().toLowerCase();
+  list.innerHTML = "";
+  const visible = workbenchFiles.filter(path => !query || path.toLowerCase().includes(query)).slice(0, 1500);
+  visible.forEach(path => {
+    const button = document.createElement("button"); button.type = "button";
+    const depth = Math.max(0, path.split("/").length - 1);
+    button.style.paddingLeft = (7 + depth * 8) + "px";
+    button.textContent = path; button.title = path;
+    if (path === FILE) button.classList.add("on");
+    button.addEventListener("click", () => openWorkbenchFile(path));
+    list.appendChild(button);
+  });
+  if (!visible.length) list.textContent = "没有匹配文件";
+}
+async function openWorkbenchFile(path) {
+  if (dirty && !confirm("当前文件有未保存修改，切换文件会丢弃这些修改，继续？")) return;
+  FILE = path; curSha = null;
+  if (g("wb-file")) g("wb-file").textContent = FILE;
+  renderWorkbenchTree();
+  await loadFile();
+}
+async function loadWorkbenchChanges() {
+  const host = g("wb-change-list"); if (!host) return;
+  if (!activeBranchRecord) { host.textContent = "创建临时分支后，这里会逐文件显示改动。"; workbenchChanges = []; return; }
+  host.textContent = "正在读取改动…";
+  try {
+    const data = await wbApi("/api/code/branch/diff?repo=" + encodeURIComponent(workbenchRepoFull()), { cache: "no-store" });
+    workbenchChanges = Array.isArray(data.files) ? data.files : [];
+    renderWorkbenchChanges();
+  } catch (error) { host.textContent = "改动读取失败：" + (error.message || String(error)); }
+}
+function renderWorkbenchChanges() {
+  const host = g("wb-change-list"); if (!host) return;
+  host.innerHTML = "";
+  if (!workbenchChanges.length) { host.textContent = "当前分支没有文件改动"; return; }
+  workbenchChanges.forEach(file => {
+    const path = file.path;
+    if (!(path in workbenchDecisions)) workbenchDecisions[path] = false;
+    const row = document.createElement("div"); row.className = "wb-change-row";
+    const name = document.createElement("div"); name.className = "wb-change-path"; name.textContent = path; row.appendChild(name);
+    const meta = document.createElement("div"); meta.className = "wb-change-meta";
+    meta.textContent = (file.status || "modified") + " · +" + Number(file.additions || 0) + " / -" + Number(file.deletions || 0); row.appendChild(meta);
+    const diff = document.createElement("details"); diff.className = "wb-file-diff";
+    const diffTitle = document.createElement("summary"); diffTitle.textContent = "查看文件差异"; diff.appendChild(diffTitle);
+    const patch = document.createElement("pre"); patch.textContent = file.patch ? String(file.patch).slice(0, 12000) : "GitHub 未提供该文件的文本差异；可从文件树打开文件查看当前内容。";
+    diff.appendChild(patch); row.appendChild(diff);
+    const actions = document.createElement("div"); actions.className = "wb-change-actions";
+    const accept = document.createElement("button"); accept.type = "button"; accept.textContent = workbenchDecisions[path] ? "已接受" : "接受"; if (workbenchDecisions[path]) accept.classList.add("on");
+    accept.addEventListener("click", () => { workbenchDecisions[path] = true; renderWorkbenchChanges(); });
+    const reject = document.createElement("button"); reject.type = "button"; reject.textContent = "拒绝"; reject.className = "reject";
+    reject.addEventListener("click", async () => {
+      reject.disabled = true;
+      try {
+        await wbApi("/api/code/branch/reject-file", { method: "POST", body: JSON.stringify({ repo: workbenchRepoFull(), branch: activeBranchRecord.branch, path }) });
+        delete workbenchDecisions[path];
+        if (FILE === path) await loadFile();
+        await Promise.all([loadWorkbenchChanges(), loadWorkbenchTree()]);
+        say("已拒绝文件改动并恢复临时分支中的基线版本：" + path);
+      } catch (error) { reject.disabled = false; say("拒绝文件失败：" + (error.message || String(error)), true); }
+    });
+    actions.append(accept, reject); row.appendChild(actions); host.appendChild(row);
+  });
+}
+async function loadWorkbenchVersions() {
+  const host = g("wb-version-list"); if (!host) return;
+  host.textContent = "正在读取历史版本…";
+  try {
+    const data = await wbApi("/api/code/history", { cache: "no-store" });
+    const rows = (data.history || []).filter(row => row && row.commit_sha && row.repo === workbenchRepoFull()).slice(0, 20);
+    host.innerHTML = "";
+    if (!rows.length) { host.textContent = "暂无已合并版本"; return; }
+    rows.forEach(row => {
+      const item = document.createElement("div"); item.className = "wb-version-row";
+      const title = document.createElement("div"); title.className = "wb-change-path"; title.textContent = String(row.commit_sha); item.appendChild(title);
+      const meta = document.createElement("div"); meta.className = "wb-change-meta"; meta.textContent = (row.at || "时间未知") + " · " + (row.summary || "代码提交"); item.appendChild(meta);
+      const files = document.createElement("div"); files.className = "wb-change-meta"; files.textContent = (row.files || []).join(", "); item.appendChild(files);
+      const rollback = document.createElement("button"); rollback.type = "button"; rollback.textContent = "回滚"; rollback.disabled = !!activeBranchRecord;
+      rollback.title = activeBranchRecord ? "请先推送或丢弃当前临时分支，再回滚历史版本" : "创建一个新回滚提交，不重写历史";
+      rollback.addEventListener("click", async () => {
+        if (activeBranchRecord) return say("请先推送或丢弃当前临时分支，再回滚历史版本。", true);
+        if (!confirm("确定创建新回滚提交，恢复到这个版本之前的文件内容？不会重写 main 历史。")) return;
+        rollback.disabled = true;
+        try {
+          const result = await wbApi("/api/code/rollback", { method: "POST", body: JSON.stringify({ id: row.id }) });
+          say(result.reply || "回滚提交已创建");
+          await ensureWorkbenchBranch(); await Promise.all([loadWorkbenchVersions(), loadWorkbenchTree(), loadWorkbenchChanges(), loadFile()]);
+        } catch (error) { rollback.disabled = false; say("回滚失败：" + (error.message || String(error)), true); }
+      });
+      item.appendChild(rollback); host.appendChild(item);
+    });
+  } catch (error) { host.textContent = "历史版本读取失败：" + (error.message || String(error)); }
+}
+async function mergeWorkbenchBranch() {
+  if (!activeBranchRecord) return say("当前没有活动临时分支。", true);
+  if (dirty) { await save(); if (dirty) return; }
+  const accepted = workbenchChanges.filter(file => workbenchDecisions[file.path] === true).map(file => file.path);
+  if (!accepted.length && activeBranchRecord.status !== "merged_cleanup_failed") return say("还没有接受任何文件。请在改动预览里逐个接受文件，或直接丢弃分支。", true);
+  const button = g("wb-push"); if (button) button.disabled = true;
+  try {
+    const result = await wbApi("/api/code/branch/merge", { method: "POST", body: JSON.stringify({ repo: workbenchRepoFull(), branch: activeBranchRecord.branch, accepted_paths: accepted, summary: "Workbench: " + accepted.length + " files" }) });
+    say(result.reply || result.msg || (result.merged ? "已合并到 main" : "没有待合并改动"));
+    if (result.branch_deleted === false) {
+      const current = await wbApi("/api/code/branch/current?repo=" + encodeURIComponent(workbenchRepoFull()), { cache: "no-store" });
+      activeBranchRecord = current.active ? current : null;
+      REPO.branch = activeBranchRecord ? activeBranchRecord.branch : "main";
+    } else { activeBranchRecord = null; REPO.branch = "main"; }
+    updateWorkbenchBranchUI();
+    workbenchChanges = []; Object.keys(workbenchDecisions).forEach(key => delete workbenchDecisions[key]);
+    await Promise.all([loadWorkbenchTree(), loadWorkbenchChanges(), loadWorkbenchVersions(), loadFile()]);
+  } catch (error) {
+    const details = error.data && Array.isArray(error.data.files) ? error.data.files.join("\n") : "";
+    if (error.status === 409 || (error.data && error.data.conflict)) {
+      card("合并冲突：临时分支已保留", (error.message || "main 与临时分支存在冲突") + "\n\n冲突/改动文件：\n" + details + "\n\n请从左侧文件树打开文件，在临时分支里手动合并并保存，再点「推」。", true);
+      await loadWorkbenchChanges();
+    } else say("推送失败，临时分支保留：" + (error.message || String(error)), true);
+  } finally { if (button) button.disabled = !activeBranchRecord; }
+}
+async function discardWorkbenchBranch() {
+  if (!activeBranchRecord) return;
+  if (dirty && !confirm("丢弃临时分支会删除当前分支，未保存的编辑也会丢失。继续？")) return;
+  if (!dirty && !confirm("确定删除 " + activeBranchRecord.branch + "？main 不会改变。")) return;
+  const button = g("wb-discard"); if (button) button.disabled = true;
+  try {
+    const result = await wbApi("/api/code/branch/discard", { method: "POST", body: JSON.stringify({ repo: workbenchRepoFull(), branch: activeBranchRecord.branch }) });
+    activeBranchRecord = null; REPO.branch = "main"; dirty = false; curSha = null;
+    updateWorkbenchBranchUI(); say(result.main_untouched ? "临时分支已删除，main 未改变。" : "临时分支已清理。");
+    workbenchChanges = []; Object.keys(workbenchDecisions).forEach(key => delete workbenchDecisions[key]);
+    await Promise.all([loadWorkbenchTree(), loadWorkbenchChanges(), loadWorkbenchVersions(), loadFile()]);
+  } catch (error) { say("删除临时分支失败，记录保留：" + (error.message || String(error)), true); }
+  finally { if (button) button.disabled = !activeBranchRecord; }
+}
+async function createWorkbenchBranch() {
+  try {
+    await ensureWorkbenchBranch();
+    await Promise.all([loadWorkbenchTree(), loadWorkbenchChanges(), loadFile()]);
+    say("已为项目创建独立临时分支：" + REPO.branch);
+  } catch (error) { say("创建临时分支失败：" + (error.message || String(error)), true); }
+}
+async function previewWorkbenchBranch() {
+  if (!activeBranchRecord) return say("当前没有活动临时分支。", true);
+  if (dirty) { await save(); if (dirty) return; }
+  try {
+    const result = await wbApi("/api/code/branch/preview", { method: "POST", body: JSON.stringify({ repo: workbenchRepoFull() }) });
+    say("临时预览构建已触发，部署完成后可打开：" + result.preview_url);
+    if (result.preview_url) window.open(result.preview_url, "_blank", "noopener");
+  } catch (error) { say("临时预览启动失败：" + (error.message || String(error)), true); }
+}
+async function switchWorkbenchProject(repoName) {
+  if (!WORKBENCH_PROJECTS[repoName]) return;
+  if (dirty && !confirm("切换项目会丢弃当前文件未保存的修改，继续？")) { g("wb-project").value = REPO.repo; return; }
+  const project = WORKBENCH_PROJECTS[repoName];
+  REPO.owner = project.owner; REPO.repo = project.repo; REPO.branch = "main";
+  activeBranchRecord = null; Object.keys(workbenchDecisions).forEach(key => delete workbenchDecisions[key]); FILE = "frontend/index.html"; curSha = null; dirty = false;
+  if (g("wb-file")) g("wb-file").textContent = FILE;
+  updateWorkbenchBranchUI();
+  try {
+    await ensureWorkbenchBranch();
+    await Promise.all([loadFile(), loadWorkbenchTree(), loadWorkbenchChanges(), loadWorkbenchVersions()]);
+  } catch (error) { say("切换项目失败：" + (error.message || String(error)), true); }
+}
+g("wb-file-search")?.addEventListener("input", renderWorkbenchTree);
+g("wb-project")?.addEventListener("change", event => switchWorkbenchProject(event.target.value));
+g("wb-push")?.addEventListener("click", mergeWorkbenchBranch);
+g("wb-discard")?.addEventListener("click", discardWorkbenchBranch);
+g("wb-new-branch")?.addEventListener("click", createWorkbenchBranch);
+g("wb-branch-preview")?.addEventListener("click", previewWorkbenchBranch);
+updateWorkbenchBranchUI();
 
 /* ---------------- 任务拆解（Goblin Tools Magic ToDo 风格）：拆 10 个小任务 → 追加写进仓库根目录 TODO.md ---------------- */
 const TODO_FILE = "TODO.md", TODO_STEPS = 10;
@@ -6223,12 +6492,12 @@ async function initEditor() {
     const m = monaco.editor.create(box, {value: "", language: "html", theme: "vs-dark", automaticLayout: true, minimap: {enabled: false}, fontSize: 12, tabSize: 2, scrollBeyondLastLine: false, wordWrap: "on", wrappingStrategy: "advanced", scrollbar: {horizontal: "hidden"}});
     m.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save());
     m.onDidChangeModelContent(() => cbs.forEach(f => f()));
-    ed = {get: () => m.getValue(), set: v => m.setValue(v), revealLine: line => { m.revealLineInCenter(line); m.setPosition({lineNumber: line, column: 1}); m.focus(); }, on: f => cbs.push(f), kind: "monaco"};
+    ed = {get: () => m.getValue(), set: v => m.setValue(v), setLanguage: language => monaco.editor.setModelLanguage(m.getModel(), language), revealLine: line => { m.revealLineInCenter(line); m.setPosition({lineNumber: line, column: 1}); m.focus(); }, on: f => cbs.push(f), kind: "monaco"};
   } catch (e) {
     const ta = document.createElement("textarea"); ta.spellcheck = false; ta.wrap = "soft"; ta.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;"; box.innerHTML = ""; box.appendChild(ta);
     ta.addEventListener("input", () => cbs.forEach(f => f()));
     ta.addEventListener("keydown", ev => { if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); save(); } });
-    ed = {get: () => ta.value, set: v => { ta.value = v; }, revealLine: line => { const rows = ta.value.split("\n"); const start = rows.slice(0, Math.max(0, line - 1)).reduce((n, row) => n + row.length + 1, 0); ta.focus(); ta.setSelectionRange(start, start + (rows[line - 1] || "").length); ta.scrollTop = Math.max(0, (line - 1) * 18); }, on: f => cbs.push(f), kind: "textarea"};
+    ed = {get: () => ta.value, set: v => { ta.value = v; }, setLanguage: () => {}, revealLine: line => { const rows = ta.value.split("\n"); const start = rows.slice(0, Math.max(0, line - 1)).reduce((n, row) => n + row.length + 1, 0); ta.focus(); ta.setSelectionRange(start, start + (rows[line - 1] || "").length); ta.scrollTop = Math.max(0, (line - 1) * 18); }, on: f => cbs.push(f), kind: "textarea"};
     say("Monaco 没加载出来（" + e.message + "），先用普通文本框编辑", true);
   }
   ed.on(() => { dirty = true; if (!/^Monaco|文本框/.test(g("wb-state").textContent)) say("有未保存的修改"); clearTimeout(prevTimer); prevTimer = setTimeout(renderPreview, 900); });
@@ -6242,7 +6511,16 @@ function srcdocOf(code) {   // 复用主页面预览用的 ART_PROBE（报错回
   const m = /<head[^>]*>/i.exec(code); if (!m) return probe + code;
   const at = m.index + m[0].length; return code.slice(0, at) + probe + code.slice(at);
 }
-function renderPreview() { if (!ed) return; g("wb-preview").srcdoc = srcdocOf(ed.get()); syncLocalTaskPreview(); }
+function renderPreview() {
+  if (!ed) return;
+  const code = ed.get();
+  if (/\.html?$/i.test(FILE)) g("wb-preview").srcdoc = srcdocOf(code);
+  else {
+    const escaped = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    g("wb-preview").srcdoc = "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><style>body{margin:0;padding:14px;background:#171c25;color:#e5eaf2}pre{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font:12px/1.6 ui-monospace,monospace}</style><pre>" + escaped + "</pre>";
+  }
+  syncLocalTaskPreview();
+}
 function showTab(which) {
   document.querySelectorAll("#wb .wb-tab").forEach(b => b.classList.toggle("on", b.dataset.wbtab === which));
   const res = g("wb-res");
@@ -6261,38 +6539,41 @@ window.addEventListener("message", e => {
 
 /* ---------------- 读 / 写 index.html ---------------- */
 async function loadFile() {
-  say("正在通过 MCP 读取 " + FILE + " …");
-  let text = "", how = "";
+  say("正在从 " + REPO.repo + "@" + REPO.branch + " 读取 " + FILE + " …");
   try {
-    const r = await mcpGet(FILE); if (r.list) throw new Error("get_file 返回的是目录");
-    const c = cleanHtml(r.text, r.sha); text = c.text; curSha = c.sha;
-    if (text.length < 1000 || !/<html/i.test(text)) throw new Error("get_file 返回内容不像 index.html（" + text.length + " 字符）");
-    how = "已从 GitHub " + REPO.branch + " 读取";
-  } catch (e) {
-    try {
-      const rr = await fetch(location.href.split("#")[0], {cache: "no-store"}); if (!rr.ok) throw new Error(rr.status);
-      text = await rr.text(); curSha = null;
-      say("MCP 读取失败（" + e.message + "），已改用当前页面源码；保存时拿不到 sha，可能被拒绝", true);
-      how = "";
-    } catch (_) { say("读取失败：" + e.message, true); return false; }
+    const r = await mcpGet(FILE);
+    if (r.list || !r.sha) throw new Error("读取结果不是单文件，或没有文件 SHA");
+    const htmlFile = /\.html?$/i.test(FILE);
+    const c = htmlFile ? cleanHtml(r.text, r.sha) : { text: r.text, sha: r.sha };
+    const text = String(c.text == null ? "" : c.text);
+    if (!text.length || (htmlFile && !/<html|<!doctype/i.test(text))) throw new Error("文件内容为空或 HTML 结构不完整（" + text.length + " 字符）");
+    curSha = c.sha;
+    if (ed.setLanguage) ed.setLanguage(workbenchLanguage(FILE));
+    ed.set(text); clearTimeout(prevTimer); dirty = false;
+    say("已从 GitHub 分支 " + REPO.branch + " 读取 " + FILE + "（" + Math.round(text.length / 1024) + " KB）");
+    renderWorkbenchTree(); renderPreview(); return true;
+  } catch (error) {
+    curSha = null; say("读取失败：" + (error.message || String(error)) + "。没有回退读取 main 或线上页面。", true); return false;
   }
-  ed.set(text); clearTimeout(prevTimer); dirty = false; if (how) say(how + "（" + Math.round(text.length / 1024) + " KB）"); renderPreview(); return true;
 }
 let saving = false;
 async function save() {
   if (!ed || saving) return;
-  const val = ed.get();
-  if (val.length < 2000 || !/<html/i.test(val)) { say("内容看起来不完整（太短或没有 <html>），已拒绝保存", true); return; }
-  if (!curSha) { say("没有拿到文件基线 SHA，为避免覆盖线上改动，请先重新读取后再保存", true); return; }
-  if (!confirm("把编辑器里的内容推送到 " + REPO.owner + "/" + REPO.repo + " 的 " + REPO.branch + "：" + FILE + "？\n大小约 " + Math.round(val.length / 1024) + " KB")) return;
-  saving = true; g("wb-save").disabled = true; say("正在推送到 GitHub …");
+  if (!activeBranchRecord || REPO.branch !== activeBranchRecord.branch || !/^code\//.test(REPO.branch)) { say("没有活动临时分支，已阻止写入 main。请先创建临时分支。", true); return; }
+  const val = ed.get(), htmlFile = /\.html?$/i.test(FILE);
+  if (!val.length || (htmlFile && !/<html|<!doctype/i.test(val))) { say("文件内容为空或 HTML 结构不完整，已拒绝保存", true); return; }
+  if (!curSha) { say("没有拿到当前临时分支的文件 SHA，为避免覆盖，请先重新读取文件。", true); return; }
+  if (!confirm("保存到临时分支 " + REPO.branch + "：" + FILE + "？\n这一步不会修改 main。大小约 " + Math.round(val.length / 1024) + " KB")) return;
+  saving = true; g("wb-save").disabled = true; say("正在保存到临时分支 …");
   try {
     const out = await mcpPut(FILE, val, "workbench: update " + FILE + " (" + new Date().toISOString().slice(0, 16).replace("T", " ") + ")", curSha);
     let ns = null; try { const j = JSON.parse(out); ns = (j.content && j.content.sha) || j.sha || null; } catch (_) {}
-    if (!ns) { try { const r = await mcpGet(FILE); ns = cleanHtml(r.text || "", r.sha).sha; } catch (_) {} }
-    curSha = ns || curSha; dirty = false; say("已保存到 GitHub " + REPO.branch + "（" + new Date().toLocaleTimeString() + "）"); note("已保存到 GitHub");
+    if (!ns) { try { const r = await mcpGet(FILE); ns = r.sha || null; } catch (_) {} }
+    curSha = ns || curSha; dirty = false;
+    say("已保存到临时分支 " + REPO.branch + "（" + new Date().toLocaleTimeString() + "），main 未改变"); note("已保存到临时分支");
+    await Promise.all([loadWorkbenchChanges(), loadWorkbenchTree()]);
   } catch (e) { say("保存失败：" + e.message, true); }
-  finally { saving = false; g("wb-save").disabled = false; }
+  finally { saving = false; g("wb-save").disabled = !activeBranchRecord; }
 }
 let verifyTimer = null;
 let verifyAbort = null;
@@ -6503,18 +6784,22 @@ function renderVerifyResult(d) {
   const links = document.createElement("div");
   const actions = verifyLink("打开 Actions 运行记录", d.actions_url || d.run_url); if (actions) links.appendChild(actions);
   const preview = verifyLink("打开项目预览", d.preview_url); if (preview) links.appendChild(preview);
-  if (state === "failure") { const retry = document.createElement("button"); retry.type = "button"; retry.textContent = "失败重试"; retry.className = "sec"; retry.style.cssText = "margin-top:8px"; retry.onclick = runRemoteVerify; links.appendChild(retry); }
+  if (state === "failure" && d.conclusion && d.conclusion !== "success" && /^\d+$/.test(String(d.run_id || ""))) { const retry = document.createElement("button"); retry.type = "button"; retry.textContent = "失败重试（重跑本次失败任务）"; retry.className = "sec"; retry.style.cssText = "margin-top:8px"; retry.onclick = () => runRemoteVerify(d); links.appendChild(retry); }
   if (state === "success" && !d.preview_url) { const tip = document.createElement("div"); tip.textContent = "验证已通过，但当前没有配置预览地址；可在下方运行日志中打开 Pages / Worker Actions Run。"; tip.style.cssText = "margin-top:10px;color:#7a887d;font-size:12px"; links.appendChild(tip); }
   res.appendChild(links); showTab("run"); syncLocalTaskPreview(); if (!d.fromHistory) loadRunHistory();
 }
-async function runRemoteVerify() {
-  const ciBtn = g("wb-ci");
+async function runRemoteVerify(retryRecord) {
+  const retryKind = retryRecord && retryRecord.deploy ? "deploy" : "verify";
+  const retryingDeploy = retryKind === "deploy" && !!(retryRecord && retryRecord.run_id);
+  const ciBtn = retryingDeploy ? g("wb-deploy") : g("wb-ci");
   if (!authToken) { toast("请先登录"); return; }
   if (verifyTimer) { clearTimeout(verifyTimer); verifyTimer = null; }
   if (verifyAbort) { verifyAbort.abort(); verifyAbort = null; }
-  if (ciBtn) { ciBtn.disabled = true; ciBtn.textContent = "验证中…"; }
+  if (ciBtn) { ciBtn.disabled = true; ciBtn.textContent = retryingDeploy ? "部署重试中…" : "验证中…"; }
+  const statusPath = retryRecord && retryRecord.run_id ? (retryKind === "deploy" ? "/api/code/deploy" : "/api/code/verify") : "/api/code/verify";
+  const timeoutLine = retryingDeploy ? "部署超时：10 分钟内未完成，请打开 Actions 查看运行记录。" : "验证超时：10 分钟内未完成，请打开 Actions 查看运行记录。";
   const started = Date.now(); let polls = 0; let stopped = false;
-  const finish = (text, bad = false, label = "运行 / 验证") => {
+  const finish = (text, bad = false, label = retryingDeploy ? "部署" : "运行 / 验证") => {
     stopped = true; if (verifyTimer) { clearTimeout(verifyTimer); verifyTimer = null; }
     if (verifyAbort) { verifyAbort.abort(); verifyAbort = null; }
     say(text, bad); if (ciBtn) { ciBtn.disabled = false; ciBtn.textContent = label; }
@@ -6522,40 +6807,42 @@ async function runRemoteVerify() {
   const poll = async () => {
     if (stopped) return;
     if (Date.now() - started >= VERIFY_MAX_MS || polls >= VERIFY_MAX_POLLS) {
-      renderVerifyResult({state: "failure", error_lines: ["验证超时：10 分钟内未完成，请打开 Actions 查看运行记录。"]});
-      finish("验证超时，已恢复按钮", true, "重新验证"); return;
+      renderVerifyResult({state: "failure", deploy: retryingDeploy, error_lines: [timeoutLine]});
+      finish("任务超时，已恢复按钮", true, retryingDeploy ? "部署" : "重新验证"); return;
     }
     polls++;
     const ctl = new AbortController(); verifyAbort = ctl;
     const timeout = setTimeout(() => ctl.abort(), VERIFY_REQUEST_MS);
     try {
-      const r = await authFetch(GATEWAY + "/api/code/verify", {cache: "no-store", signal: ctl.signal}), d = await r.json().catch(() => ({}));
+      const r = await authFetch(GATEWAY + statusPath, {cache: "no-store", signal: ctl.signal}), d = await r.json().catch(() => ({}));
       if (!r.ok || d.ok === false) throw new Error(d.msg || "读取验证状态失败");
-      renderVerifyResult(d);
-      if (d.state === "success") { finish("验证通过", false, "运行 / 验证"); return; }
-      if (d.state === "failure") { finish("验证失败，已显示报错行", true, "重新验证"); return; }
+      renderVerifyResult({...d, deploy: retryingDeploy || d.deploy});
+      if (d.state === "success") { finish(retryingDeploy ? "部署任务通过" : "验证通过", false, retryingDeploy ? "部署" : "运行 / 验证"); return; }
+      if (d.state === "failure") { finish("任务失败，已显示报错行", true, retryingDeploy ? "部署" : "重新验证"); return; }
       if (Date.now() - started >= VERIFY_MAX_MS || polls >= VERIFY_MAX_POLLS) {
-        renderVerifyResult({...d, state: "failure", error_lines: ["验证超时：10 分钟内未完成，请打开 Actions 查看运行记录。"]});
+        renderVerifyResult({...d, state: "failure", deploy: retryingDeploy, error_lines: ["任务超时：10 分钟内未完成，请打开 Actions 查看运行记录。"]});
         finish("验证超时，已恢复按钮", true, "重新验证"); return;
       }
       verifyTimer = setTimeout(poll, 3500);
     } catch (e) {
       if (e.name === "AbortError" && Date.now() - started < VERIFY_MAX_MS && !stopped) {
-        renderVerifyResult({state: "failure", error_lines: ["读取验证状态超时，请稍后重试。"]});
+        renderVerifyResult({state: "failure", deploy: retryingDeploy, error_lines: ["读取任务状态超时，请稍后重试。"]});
       } else if (!stopped) {
-        renderVerifyResult({state: "failure", error_lines: [e.message || String(e)]});
+        renderVerifyResult({state: "failure", deploy: retryingDeploy, error_lines: [e.message || String(e)]});
       }
-      if (!stopped) finish(e.name === "AbortError" ? "读取验证状态超时，已恢复按钮" : "验证状态读取失败，已恢复按钮", true, "重新验证");
+      if (!stopped) finish(e.name === "AbortError" ? "读取任务状态超时，已恢复按钮" : "任务状态读取失败，已恢复按钮", true, retryingDeploy ? "部署" : "重新验证");
     } finally { clearTimeout(timeout); if (verifyAbort === ctl) verifyAbort = null; }
   };
   try {
     const ctl = new AbortController(); verifyAbort = ctl; const timeout = setTimeout(() => ctl.abort(), VERIFY_REQUEST_MS);
     try {
-      const start = await authFetch(GATEWAY + "/api/code/verify", {method: "POST", headers: {"Content-Type": "application/json", "Accept": "application/json"}, body: JSON.stringify({ref: REPO.branch}), signal: ctl.signal});
+      const start = retryRecord && retryRecord.run_id
+        ? await authFetch(GATEWAY + "/api/code/retry", {method: "POST", headers: {"Content-Type": "application/json", "Accept": "application/json"}, body: JSON.stringify({run_id: String(retryRecord.run_id), kind: retryKind}), signal: ctl.signal})
+        : await authFetch(GATEWAY + "/api/code/verify", {method: "POST", headers: {"Content-Type": "application/json", "Accept": "application/json"}, body: JSON.stringify({ref: REPO.branch}), signal: ctl.signal});
       const first = await start.json().catch(() => ({})); if (!start.ok || first.ok === false) throw new Error(first.msg || "无法启动验证");
-      renderVerifyResult(first); say("验证已排队，正在等待 GitHub Actions …"); verifyTimer = setTimeout(poll, 2500);
+      renderVerifyResult({...first, deploy: retryingDeploy}); say(retryingDeploy ? "已请求重跑原部署任务，正在等待 GitHub Actions …" : "验证已排队，正在等待 GitHub Actions …"); verifyTimer = setTimeout(poll, 2500);
     } finally { clearTimeout(timeout); if (verifyAbort === ctl) verifyAbort = null; }
-  } catch (e) { renderVerifyResult({state: "failure", error_lines: [e.message || String(e)]}); finish("验证启动失败，已恢复按钮", true); }
+  } catch (e) { renderVerifyResult({state: "failure", deploy: retryingDeploy, error_lines: [e.message || String(e)]}); finish("任务启动/重试失败，已恢复按钮", true); }
 }
 async function runRemoteDeploy() {
   const btn = g("wb-deploy"); if (!authToken) { toast("请先登录"); return; }
@@ -6675,10 +6962,11 @@ async function runBoth() {
 /* ---------------- 打开 / 关闭 ---------------- */
 async function openWb() {
   document.body.classList.add("wb-open"); g("wb").setAttribute("aria-hidden", "false"); amdOn();
-  if (inited) return;
-  inited = true; say("正在加载编辑器 …");
-  await initEditor();
-  await loadFile();
+  if (!inited) { inited = true; say("正在加载编辑器 …"); await initEditor(); }
+  try {
+    await ensureWorkbenchBranch();
+    await Promise.all([loadFile(), loadWorkbenchTree(), loadWorkbenchChanges(), loadWorkbenchVersions()]);
+  } catch (error) { say("开发台初始化失败：" + (error.message || String(error)), true); }
 }
 function closeWb() { document.body.classList.remove("wb-open"); g("wb").setAttribute("aria-hidden", "true"); amdOff(); }
 g("wb-open").addEventListener("click", openWb);

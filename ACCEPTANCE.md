@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件只定义可由仓库代码自动执行的 10 项验收。所有项目均由 `npm test` 执行；不包含人工设备操作或人工证据收集步骤。
+> 本文件定义原有 10 项交付状态/界面自动验收，以及新增 5 项开发工作台行为验收。所有项目均由 npm test 执行；不包含人工设备操作或人工证据收集步骤。
 
 ## 1. 唯一执行入口与判定规则
 
@@ -10,7 +10,7 @@
 npm test
 ```
 
-该命令运行 `node --test tests/code-mode-providers.test.cjs`。测试进程退出码为 0 且 10 项专属测试全部通过，10 项自动验收才全部通过；任一专属测试失败、跳过、未执行或测试进程异常退出，对应项即未通过。禁止使用“基本通过”等中间结论。
+该命令运行 node --test tests/*.test.cjs，包括原有 code-mode-providers.test.cjs 与新增 workbench-acceptance.test.cjs。原有 10 项和新增 5 项分别判定；任一专属测试失败、跳过、未执行或测试进程异常退出，对应项即未通过。禁止使用“基本通过”等中间结论。
 
 - **通过**：该项对应的专属 Node.js 自动化测试本次执行成功。
 - **未通过**：该项测试失败、被跳过、未执行，或测试无法完成。
@@ -169,3 +169,207 @@ npm test
 
 - **代码自动验收：** 10 项专属测试全部通过 = 通过；任一失败/跳过/未执行 = 未通过。
 - **最终交付：** 代码自动验收通过后，仍需按项目流程完成部署。
+
+## 6. 开发工作台行为验收（新增 5 项）
+
+新增测试文件：tests/workbench-acceptance.test.cjs。这 5 项调用实际 Worker 函数，并以隔离的 GitHub API/KV 模拟器检查分支指针、请求参数、提交树和最终文件差异；不会写入真实 GitHub 仓库或真实 main。它们是自动化行为测试，不等同于真实 GitHub 账号/权限/网络条件下的端到端验收。
+
+### WORKBENCH-01 — 临时分支隔离
+
+自动化测试：ACCEPTANCE BRANCH-01: temp branch creation and edit leave main unchanged
+
+测试覆盖：临时分支从 main 当前 SHA 创建；对临时分支提交变更后，main ref SHA 保持不变；临时分支 ref 指向新提交，main 仍指向原提交。
+
+通过条件：对应测试通过，且 main SHA 未变化。
+
+### WORKBENCH-02 — 主分支直接写入拦截
+
+自动化测试：ACCEPTANCE MAIN-01: direct main write is rejected by the workbench write guard
+
+测试覆盖：在没有活动临时分支、目标仍为 main 时调用开发台写入函数；写入必须在触发 GitHub 写工具前被拒绝。
+
+通过条件：对应测试通过，并确认抛出“已阻止直接写入 main”。
+
+### WORKBENCH-03 — 失败重试与局部回滚
+
+自动化测试：ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restores only listed paths
+
+测试覆盖：失败的 Actions run 重试必须调用同一个 run ID 的 rerun-failed-jobs，不能创建新的 run；重试计数增加，记录仍关联原 run ID；回滚创建以当前 SHA 为 parent 的新 commit，不 force 移动历史；回滚 tree 只包含历史记录列出的文件路径，其他当前文件继续由 current tree 保留。
+
+通过条件：对应测试通过，且同一 run ID 被重试、回滚只覆盖指定路径。
+
+### WORKBENCH-04 — 文件级审核
+
+自动化测试：ACCEPTANCE REVIEW-01: rejected file is absent from the final merge diff
+
+测试覆盖：模拟两个文件均有改动，只接受其中一个；合并前重新读取 compare 文件清单；被拒绝文件恢复为基线内容，不进入最终合并文件集合。
+
+通过条件：对应测试通过，最终合并差异不包含被拒绝文件，main 中该文件内容保持基线值。
+
+### WORKBENCH-05 — 并发修改冲突保护
+
+自动化测试：ACCEPTANCE CONFLICT-01: concurrent same-file edit blocks merge and preserves main
+
+测试覆盖：临时分支创建后，main 的基线 SHA 前进，代表另一方已提交变更；合并必须检测旧基线并返回 conflict；不得调用成功合并路径，不得静默覆盖 main 内容。
+
+通过条件：对应测试通过，冲突被拒绝且 main 文件内容保持并发提交版本。
+
+### 新增行为验收结果
+
+| 编号 | 自动化测试 | 通过条件 |
+|---|---|---|
+| WORKBENCH-01 | 临时分支隔离 | 临时分支变化，main SHA 不变 |
+| WORKBENCH-02 | 主分支直接写入拦截 | main 写入在调用 GitHub 前被拒绝 |
+| WORKBENCH-03 | 失败重试与局部回滚 | 重试复用原 run；回滚仅恢复清单内路径 |
+| WORKBENCH-04 | 文件级审核 | 拒绝文件不进入最终合并差异 |
+| WORKBENCH-05 | 并发修改冲突保护 | 旧基线触发冲突，main 不被覆盖 |
+
+
+## 7. 权限、幂等、多文件审核与失败清理（新增 4 项）
+
+新增测试位于 `tests/workbench-acceptance.test.cjs`。这些测试执行 Worker 中的实际工作台函数，GitHub/KV 操作使用隔离模拟，不修改真实仓库。
+
+### WORKBENCH-06 — 权限边界与操作者审计
+
+**自动化测试：** `ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, review, or merge; authorized actions are attributed`
+
+**测试覆盖：**
+- 非授权用户及自动化身份尝试创建临时分支、审核文件、合并推送。
+- 三类操作均必须在任何 GitHub 写请求前拒绝。
+- 授权创建记录 `created_by`。
+- 文件拒绝审核记录 `last_reviewed_by` 与 `review_events.actor`。
+- 合并历史记录 `actor`。
+
+**通过条件：** 未授权操作没有 GitHub 写调用；授权操作的创建、审核和合并历史均可追溯到认证用户。
+
+### WORKBENCH-07 — 重复执行与幂等性
+
+**自动化测试：** `ACCEPTANCE IDEMPOTENCY-01: repeated create reuses one branch and repeated merge cannot create a second commit`；`ACCEPTANCE IDEMPOTENCY-CONCURRENT-CREATE-01`
+
+**测试覆盖：**
+- 同一用户/项目连续创建两次，第二次复用已有活动分支，不再创建新分支。
+- 同一项目并发创建两次，第二个请求被锁拦截；首个创建完成后重试，复用同一分支。
+- 同一临时分支合并成功后再次提交相同合并请求，不能再次创建提交或重复写入历史。
+
+**通过条件：** 分支创建调用一次、合并调用一次、历史只增加一条。
+
+**边界：** 本项覆盖顺序重复请求；尚不代表并发请求在 KV 竞态下已具备原子去重保证。
+
+### WORKBENCH-08 — 多文件审核及重命名/删除边界
+
+**自动化测试：** `ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rejects rename/delete side effects`
+
+**测试覆盖：**
+- 一次包含修改、新增、删除、重命名的多文件变更。
+- 只接受指定文件，其余文件不得进入最终比较结果。
+- 拒绝重命名时同时恢复 `previous_filename` 源路径，并移除目标路径。
+- 拒绝删除时恢复基线文件；拒绝新增时删除新增文件。
+- 审核人写入审核事件。
+
+**通过条件：** 最终合并差异只包含接受的文件；被拒绝文件的旧路径、新路径及删除/新增副作用均不能漏进合并。
+
+### WORKBENCH-09 — 失败后的状态清理
+
+**自动化测试：** `ACCEPTANCE CLEANUP-01: failed deletion retains recoverable state; successful cancel clears branch and state for the next task`；`ACCEPTANCE LOCK-CLEANUP-01: failed or cancelled claim releases its operation lock and permits the next task`
+
+**测试覆盖：**
+- GitHub 删除临时分支失败时，不能假装取消成功或清除 KV 分支记录。
+- 重试删除成功后，临时分支记录与审核状态清除。
+- 清理完成后，同一项目可以创建新的任务分支。
+- Durable Object 审核 claim 在失败完成后释放操作锁；取消清空后旧 claim 不残留，下一任务可重新创建。
+
+**通过条件：** 删除失败保留可恢复状态；成功取消后旧状态清空，下一任务创建成功。
+
+**边界：** 当前自动测试覆盖分支记录与审核状态清理；真实 Durable Object 锁在断网、进程中断和过期告警下的恢复仍需单独端到端验收。
+
+
+## 8. 工作台写操作并发互斥（新增）
+ 
+### WORKBENCH-10 — 同一项目写操作互斥与无锁失败关闭
+
+**自动化测试：** `ACCEPTANCE WORKBENCH-CONCURRENCY-01`、`ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01`、`ACCEPTANCE WORKBENCH-LOCK-SCOPE-01`、`ACCEPTANCE WORKBENCH-LOCK-CASE-01`，并由 `ACCEPTANCE LOCK-CLEANUP-01` 检查 Durable Object 锁释放。
+
+**测试覆盖：**
+- 同一仓库跨授权用户的分支创建、文件审核、合并和丢弃共用同一把 Durable Object 锁；仓库名大小写变体映射到同一锁身份。
+- 创建期间发起合并，第二个操作必须返回 busy，不得进入 GitHub 写操作；文件审核和丢弃也必须经过同一把锁。
+- 锁只能由持有正确 token 的操作释放。
+- 操作结束释放锁，后续操作可重新获取。
+- 未绑定 `CODE_CLAIMS` 时，创建和合并均失败关闭，不得退回 KV 无锁执行。
+
+**通过条件：** 并发写操作最多一个进入临界区；错误 token 不能解锁；缺少 Durable Object 绑定时不执行 GitHub 写操作。
+
+**边界：** 当前自动测试模拟 Durable Object storage 与请求互斥；Cloudflare 生产 Durable Object 在部署配置、真实并发网络请求和进程中断场景仍需部署后 E2E 验收。
+
+
+## 9. 分支创建记录持久化失败清理（新增）
+
+### WORKBENCH-11 — 创建分支后记录保存失败的补偿清理
+
+**自动化测试：** `ACCEPTANCE CREATE-CLEANUP-01`
+
+**测试覆盖：**
+- GitHub 临时分支创建成功，但 KV 分支记录写入失败。
+- 补偿删除 GitHub 临时分支成功时，返回失败但明确报告已清理，不留下无主分支。
+- 补偿删除也失败时，返回失败并明确标记 `orphaned: true`，保留分支名供后续人工/自动重试清理。
+
+**通过条件：** 记录持久化失败不能返回创建成功；补偿清理结果必须如实返回，不得隐藏遗留分支。
+
+
+## 10. 文件审核拒绝路径与失败边界（新增）
+
+### WORKBENCH-12 — 文件审核的路径、权限、读取和写入失败保护
+
+**自动化测试：** `ACCEPTANCE REVIEW-GUARD-01`、`REVIEW-GUARD-02`、`REVIEW-READ-01`、`REVIEW-READ-02`、`REVIEW-WRITE-01`、`REVIEW-WRITE-02`。
+
+**测试覆盖：**
+- 路径非法或命中保护规则时，在任何 GitHub 文件读取/写入前拒绝。
+- 基线文件读取失败、临时分支文件读取失败时，不得修改分支。
+- 恢复基线文件失败、删除新增文件失败时，不得写入“审核成功”的审计记录。
+
+**通过条件：** 失败路径均返回失败；不得在信息不完整或写入失败时误报审核成功。
+
+
+## 11. 合并成功后的历史与清理恢复（新增）
+
+### WORKBENCH-13 — 合并后部分失败的可恢复状态
+
+**自动化测试：** `ACCEPTANCE MERGE-HISTORY-RECOVERY-01`、`MERGE-CLEANUP-01`、`MERGE-RECORD-CLEANUP-01`。
+
+**测试覆盖：**
+- GitHub 合并已成功但历史记录写入失败：保留临时分支和可恢复记录；重试先补写历史，不得再次调用合并。
+- 历史保存成功但临时分支删除失败：记录 `merged_cleanup_failed`；重试只清理分支，不重复合并。
+- 分支删除成功但 KV 记录删除失败：记录 `merged_record_cleanup_failed`；重试只完成状态清理，不重复合并。
+
+**通过条件：** 合并成功后的历史写入、分支删除和 KV 清理分别可恢复；重复请求不得生成第二次合并。
+
+
+## 12. 仓库锁原子性与租约续期（新增）
+
+### WORKBENCH-14 — Durable Object 仓库锁必须原子获取并支持续期
+
+**自动化测试：** `ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`WORKBENCH-LOCK-RENEW-01`、`WORKBENCH-LOCK-HEARTBEAT-01`、`WORKBENCH-LOCK-HEARTBEAT-FAIL-01`。
+
+**测试覆盖：**
+- 两个并发请求同时获取同一仓库锁，事务竞争后只能有一个成功。
+- 锁持有者可续期；错误 token 不得续期或延长其他操作的租约。
+- 工作台长操作每 60 秒续租，结束时清除心跳并释放锁。
+- 续租失败时不误报成功，而是返回不确定状态与 GitHub 核验提示。
+
+**通过条件：** 锁获取/续期/释放全部在 Durable Object storage transaction 中完成；不能再用分离的 get/put 作为互斥依据。
+
+## 13. main 合并基线的 compare-and-swap（新增）
+
+### WORKBENCH-15 — 合并必须绑定审核时的 base SHA 与 head SHA
+
+**自动化测试：** `ACCEPTANCE MERGE-CAS-01`、`MERGE-CAS-02`、`MERGE-CAS-03`、`MERGE-CAS-04`、`MERGE-CAS-05`、`MERGE-CAS-06`、`MERGE-CAS-07`。
+
+**实现约束：**
+- 合并前固定并核验 base SHA 与已审核 head SHA；任一发生变化，停止合并。
+- 在以固定 base SHA 创建的隔离临时分支上计算三方合并树。
+- 创建父提交固定为 `[expectedBaseSha, expectedHeadSha]` 的 merge commit。
+- 最终只用 GitHub ref `PATCH force:false` 更新目标分支；若 main 在计算期间前进，非 fast-forward 更新必须失败，不得覆盖新提交。
+- 隔离合并分支清理失败（包括请求抛异常）时，不得更新目标分支，并返回可追踪的遗留分支名。
+- base/head SHA 格式非法时，任何 GitHub 写操作前拒绝。
+- 隔离分支创建失败时，不执行后续 merge commit 创建或目标分支更新。
+
+**通过条件：** main 在合并计算期间推进时，最终 ref 更新失败；只有目标分支仍处于预期基线时才可提交合并。

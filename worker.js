@@ -498,13 +498,17 @@ async function codeGhApi(env, api, options = {}) {
 function codeGitRefUrl(repo, ref) {
   return "https://api.github.com/repos/" + repo + "/git/ref/" + String(ref).split("/").map(encodeURIComponent).join("/");
 }
+function codeGitRefWriteUrl(repo, ref) {
+  return "https://api.github.com/repos/" + repo + "/git/refs/" + String(ref).split("/").map(encodeURIComponent).join("/");
+}
 function codeTempBranch(project) {
   const tag = String(project || "project").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "project";
-  return "code/" + tag + "-" + Date.now().toString(36) + "-" + rand(8);
+  return "code/" + tag + "-" + Date.now() + "-" + rand(8);
 }
-function codeTempPreview(branch) {
-  const id = String(branch || "").replace(/^code\//, "").replace(/[^A-Za-z0-9._-]+/g, "-");
-  return id ? "https://zhineng-et5.pages.dev/branch-" + id : "";
+function codeTempPreview(branch, repo) {
+  if (String(repo || "") !== "tianxin1300/openmanus-gateway") return "";
+  const slug = String(branch || "").replace(/\//g, "-").replace(/[^A-Za-z0-9-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase();
+  return slug ? "https://zhineng-et5.pages.dev/branch-" + slug : "";
 }
 async function codeCreateTempBranch(env, repo, project, base = "main") {
   const safeBase = codeVerifyRef(base);
@@ -519,17 +523,353 @@ async function codeCreateTempBranch(env, repo, project, base = "main") {
 }
 async function codeDeleteBranch(env, repo, branch) {
   if (!/^code\/[A-Za-z0-9._\/-]+$/.test(String(branch || ""))) return { ok: false, msg: "只允许删除代码模式创建的临时分支" };
-  return await codeGhApi(env, codeGitRefUrl(repo, "heads/" + branch), { method: "DELETE" });
+  return await codeGhApi(env, codeGitRefWriteUrl(repo, "heads/" + branch), { method: "DELETE" });
 }
-async function codeMergeTempBranch(env, repo, branch, base, message) {
+async function codeMergeTempBranch(env, repo, branch, base, message, expectedBaseSha, expectedHeadSha) {
   if (!/^code\/[A-Za-z0-9._\/-]+$/.test(String(branch || ""))) return { ok: false, msg: "临时分支名不合法" };
   const safeBase = codeVerifyRef(base);
-  if (!safeBase) return { ok: false, msg: "目标分支名不合法" };
-  return await codeGhApi(env, "https://api.github.com/repos/" + repo + "/merges", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ base: safeBase, head: branch, commit_message: String(message || "OpenManus code change").slice(0, 200) }) });
+  if (!safeBase || !/^[0-9a-f]{40}$/i.test(String(expectedBaseSha || "")) || !/^[0-9a-f]{40}$/i.test(String(expectedHeadSha || ""))) {
+    return { ok: false, msg: "目标分支或预期 base/head SHA 不合法，拒绝无基线合并" };
+  }
+  const baseRef = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + safeBase));
+  const currentBaseSha = String(baseRef.data && baseRef.data.object && baseRef.data.object.sha || "");
+  if (!baseRef.ok || currentBaseSha !== expectedBaseSha) {
+    return { ok: false, status: 409, conflict: true, msg: "合并前 base 已变化，拒绝继续：" + (baseRef.msg || currentBaseSha || "无法读取 base SHA") };
+  }
+  const headRef = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + branch));
+  const currentHeadSha = String(headRef.data && headRef.data.object && headRef.data.object.sha || "");
+  if (!headRef.ok || currentHeadSha !== expectedHeadSha) {
+    return { ok: false, status: 409, conflict: true, msg: "待合并临时分支已变化，必须重新审核后再推送。" };
+  }
+
+  // 在固定 base SHA 上计算三方合并树；最终只用 force:false 更新 base ref。
+  // 若 main 在计算期间前进，最终 ref 更新会因非 fast-forward 被 GitHub 拒绝。
+  const scratch = codeTempBranch("merge-txn");
+  const scratchRef = "heads/" + scratch;
+  const made = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/refs", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ref: "refs/heads/" + scratch, sha: expectedBaseSha })
+  });
+  if (!made.ok) return { ok: false, msg: "创建隔离合并基线失败：" + made.msg };
+  let mergeTreeSha = "";
+  try {
+    const preview = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/merges", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base: scratch, head: expectedHeadSha, commit_message: String(message || "OpenManus code change").slice(0, 200) })
+    });
+    if (!preview.ok) return { ok: false, status: preview.status, conflict: preview.status === 409, msg: "在固定基线上计算合并失败：" + preview.msg };
+    const previewSha = String(preview.data && preview.data.sha || "");
+    mergeTreeSha = String(preview.data && preview.data.commit && preview.data.commit.tree && preview.data.commit.tree.sha || "");
+    if (!mergeTreeSha && previewSha) {
+      const commit = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/commits/" + encodeURIComponent(previewSha));
+      mergeTreeSha = String(commit.data && commit.data.tree && commit.data.tree.sha || "");
+      if (!commit.ok || !mergeTreeSha) return { ok: false, msg: "读取隔离合并文件树失败：" + (commit.msg || "缺少 tree SHA") };
+    }
+    if (!mergeTreeSha) return { ok: false, msg: "GitHub 未返回隔离合并文件树，拒绝更新目标分支。" };
+  } finally {
+    let cleanup;
+    try { cleanup = await codeDeleteBranch(env, repo, scratch); }
+    catch (cleanupError) { cleanup = { ok: false, msg: cleanupError && cleanupError.message || "GitHub 清理请求异常" }; }
+    if (!cleanup.ok && cleanup.status !== 404) {
+      return { ok: false, scratch_cleanup_failed: true, scratch_branch: scratch, msg: "隔离合并计算完成，但清理临时合并分支失败；目标分支尚未更新：" + cleanup.msg };
+    }
+  }
+
+  const created = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/commits", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: String(message || "OpenManus code change").slice(0, 200),
+      tree: mergeTreeSha,
+      parents: [expectedBaseSha, expectedHeadSha]
+    })
+  });
+  const commitSha = String(created.data && created.data.sha || "");
+  if (!created.ok || !commitSha) return { ok: false, msg: "创建固定基线合并提交失败：" + (created.msg || "缺少 commit SHA") };
+  const moved = await codeGhApi(env, codeGitRefWriteUrl(repo, "heads/" + safeBase), {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sha: commitSha, force: false })
+  });
+  if (!moved.ok) return { ok: false, status: moved.status, conflict: true, cas_rejected: true, msg: "目标分支在合并计算期间发生变化；GitHub 拒绝非 fast-forward 更新，未覆盖新提交：" + moved.msg };
+  return { ok: true, status: 200, data: { sha: commitSha, commit: { tree: { sha: mergeTreeSha }, parents: [{ sha: expectedBaseSha }, { sha: expectedHeadSha }] } }, cas: true };
 }
 const codeHistoryKey = (user) => "code:history:" + String(user || "").slice(0, 160);
 async function codeHistoryLoad(env, user) { return env.KV ? (await env.KV.get(codeHistoryKey(user), "json").catch(() => null) || []) : []; }
 async function codeHistorySave(env, user, rows) { if (env.KV) await env.KV.put(codeHistoryKey(user), JSON.stringify(rows.slice(0, 20)), { expirationTtl: 31536000 }); }
+const codeWorkbenchBranchKey = (user, repo) => "code:workbench-branch:" + String(user || "").slice(0, 120) + ":" + String(repo || "").slice(0, 120);
+async function codeWorkbenchLockCall(env, repo, action, body) {
+  if (!env.CODE_CLAIMS) return { ok: false, configured: false, msg: "CODE_CLAIMS Durable Object 未绑定" };
+  const stub = env.CODE_CLAIMS.get(env.CODE_CLAIMS.idFromName("workbench:" + String(repo).trim().toLowerCase()));
+  const response = await stub.fetch("https://workbench-lock/" + action, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {})
+  });
+  return response.json().catch(() => ({ ok: false, msg: "Durable Object 返回了无效锁响应" }));
+}
+async function codeWorkbenchWithLock(env, user, repo, operation, run) {
+  if (!env.CODE_CLAIMS) return { ok: false, msg: "CODE_CLAIMS Durable Object 未绑定，拒绝无锁执行工作台写操作" };
+  const lockId = "workbench:" + String(repo).trim().toLowerCase();
+  const token = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + "-" + String(Math.random()).slice(2);
+  const lockBody = { lock_id: lockId, token, operation: String(operation) };
+  const acquired = await codeWorkbenchLockCall(env, repo, "branch-lock", lockBody);
+  if (!acquired || !acquired.ok) return { ok: false, busy: !!(acquired && acquired.busy), msg: acquired && acquired.msg || "工作台操作锁获取失败" };
+  let renewalFailed = false;
+  const heartbeat = setInterval(() => {
+    codeWorkbenchLockCall(env, repo, "branch-renew", lockBody).then((result) => {
+      if (!result || !result.ok) renewalFailed = true;
+    }).catch(() => { renewalFailed = true; });
+  }, 60000);
+  try {
+    const result = await run();
+    if (renewalFailed) return { ok: false, lock_renewal_failed: true, operation_result: result, msg: "工作台操作期间锁续期失败；请核对 GitHub 实际结果后再重试，避免重复提交。" };
+    return result;
+  } finally {
+    clearInterval(heartbeat);
+    await codeWorkbenchLockCall(env, repo, "branch-unlock", { lock_id: lockId, token }).catch(() => null);
+  }
+}
+async function codeWorkbenchBranchCurrent(env, user, repo) {
+  if (!env.KV || !codeRepoOk(env, repo)) return { ok: false, msg: "项目仓库或 KV 配置不可用" };
+  const key = codeWorkbenchBranchKey(user, repo);
+  const record = await env.KV.get(key, "json").catch(() => null);
+  if (!record || !record.branch) return { ok: true, active: false, repo };
+  const ref = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + record.branch));
+  if (!ref.ok) {
+    if (ref.status === 404) {
+      await env.KV.delete(key);
+      return { ok: true, active: false, repo, stale_branch_record: true };
+    }
+    return { ok: false, active: false, repo, msg: "GitHub 临时分支状态检查失败，已保留本地分支记录：" + (ref.msg || ("HTTP " + ref.status)) };
+  }
+  return { ok: true, active: true, ...record };
+}
+async function codeWorkbenchBranchCreateUnlocked(env, user, body = {}) {
+  const repo = String(body.repo || ""), project = String(body.project || repo.split("/").pop() || "project").slice(0, 80);
+  const base = codeVerifyRef(body.base || "main");
+  if (!env.KV || !codeRepoOk(env, repo) || !base) return { ok: false, msg: "项目仓库、KV 或基线分支不合法" };
+  const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
+  const key = codeWorkbenchBranchKey(user, repo);
+  const old = await env.KV.get(key, "json").catch(() => null);
+  if (old && old.branch) {
+    const ref = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + old.branch));
+    if (ref.ok) return { ok: true, active: true, existing: true, ...old };
+    if (ref.status !== 404) return { ok: false, msg: "检查已有临时分支失败，原记录已保留：" + (ref.msg || ("HTTP " + ref.status)) };
+    await env.KV.delete(key);
+  }
+  const made = await codeCreateTempBranch(env, repo, project, base);
+  if (!made.ok) return made;
+  const record = { project, repo, branch: made.branch, baseBranch: made.base, baseCommit: made.sha, created_by: String(user), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), status: "active", preview_url: codeTempPreview(made.branch, repo) };
+  try {
+    await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 });
+  } catch (error) {
+    let cleanup;
+    try { cleanup = await codeDeleteBranch(env, repo, made.branch); }
+    catch (cleanupError) { cleanup = { ok: false, msg: cleanupError && cleanupError.message || "GitHub 清理请求异常" }; }
+    if (!cleanup.ok && cleanup.status !== 404) {
+      return { ok: false, orphaned: true, branch: made.branch, msg: "临时分支已创建，但本地记录保存失败且 GitHub 清理失败；分支名已保留，请重试清理：" + (cleanup.msg || "未知错误") };
+    }
+    return { ok: false, orphaned: false, branch: made.branch, msg: "临时分支记录保存失败，已清理刚创建的 GitHub 分支：" + (error && error.message || "KV 写入失败") };
+  }
+  return { ok: true, active: true, ...record };
+}
+async function codeWorkbenchBranchCreate(env, user, body = {}) {
+  const repo = String(body.repo || "");
+  return codeWorkbenchWithLock(env, user, repo, "create", () => codeWorkbenchBranchCreateUnlocked(env, user, body));
+}
+async function codeWorkbenchBranchDiff(env, user, repo) {
+  const current = await codeWorkbenchBranchCurrent(env, user, repo);
+  if (!current.ok || !current.active) return { ok: false, msg: "当前项目没有活动临时分支" };
+  const url = "https://api.github.com/repos/" + repo + "/compare/" + encodeURIComponent(current.baseBranch) + "..." + encodeURIComponent(current.branch);
+  const diff = await codeGhApi(env, url);
+  if (!diff.ok) return { ok: false, msg: "读取分支改动失败：" + diff.msg };
+  const files = Array.isArray(diff.data && diff.data.files) ? diff.data.files : [];
+  return { ok: true, branch: current.branch, baseBranch: current.baseBranch, files: files.map((f) => ({ path: f.filename, status: f.status, additions: f.additions, deletions: f.deletions, patch: f.patch || "" })) };
+}
+async function codeWorkbenchBranchRejectFileUnlocked(env, user, body = {}) {
+  const repo = String(body.repo || ""), path = String(body.path || "");
+  if (!codeRepoOk(env, repo) || !codePathOk(path)) return { ok: false, msg: "仓库或文件路径不合法" };
+  const current = await codeWorkbenchBranchCurrent(env, user, repo);
+  if (!current.ok || !current.active || (body.branch && body.branch !== current.branch)) return { ok: false, msg: "临时分支已变化，请刷新后重试" };
+  const guard = codePushGuard(env, user, repo, path);
+  if (guard) return { ok: false, msg: guard };
+  const paths = [...new Set([String(body.previous_path || ""), path].filter(Boolean))];
+  for (const target of paths) {
+    if (!codePathOk(target)) return { ok: false, msg: "文件路径不合法" };
+    const pathGuard = codePushGuard(env, user, repo, target);
+    if (pathGuard) return { ok: false, msg: pathGuard };
+    const base = await codeGetFile(env, repo, target, current.baseCommit);
+    const staged = await codeGetFile(env, repo, target, current.branch);
+    if (!base.ok || !staged.ok) return { ok: false, msg: "读取文件失败：" + (base.msg || staged.msg) };
+    if (!base.exists && !staged.exists) continue;
+    if (base.exists) {
+      const restored = await codeUpdateFile(env, repo, target, base.text, "Workbench: reject " + target, current.branch, staged.exists ? staged.sha : undefined);
+      if (!restored.ok) return { ok: false, msg: "恢复基线文件失败：" + restored.msg };
+    } else if (staged.exists) {
+      const deleted = await codeGhApi(env, codeGhUrl(repo, target), { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "Workbench: reject " + target, sha: staged.sha, branch: current.branch }) });
+      if (!deleted.ok) return { ok: false, msg: "删除新增文件失败：" + deleted.msg };
+    }
+  }
+  const audit = await env.KV.get(codeWorkbenchBranchKey(user, repo), "json").catch(() => null);
+  if (audit) {
+    audit.last_reviewed_by = String(user);
+    audit.review_events = [...(Array.isArray(audit.review_events) ? audit.review_events : []), { action: "reject_file", path, previous_path: String(body.previous_path || ""), actor: String(user), at: new Date().toISOString() }].slice(-100);
+    await env.KV.put(codeWorkbenchBranchKey(user, repo), JSON.stringify(audit), { expirationTtl: 2592000 });
+  }
+  return { ok: true, rejected: true, path, previous_path: String(body.previous_path || "") };
+}
+async function codeWorkbenchBranchRejectFile(env, user, body = {}) {
+  const repo = String(body.repo || "");
+  return codeWorkbenchWithLock(env, user, repo, "review", () => codeWorkbenchBranchRejectFileUnlocked(env, user, body));
+}
+async function codeWorkbenchBranchPreview(env, user, repo) {
+  const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
+  const current = await codeWorkbenchBranchCurrent(env, user, repo);
+  if (!current.ok || !current.active) return { ok: false, msg: "当前项目没有活动临时分支" };
+  if (repo !== "tianxin1300/openmanus-gateway") return { ok: false, msg: "该项目仓库尚未配置 Cloudflare Pages 预览工作流" };
+  const requestId = "workbench-preview-" + Date.now().toString(36);
+  const dispatched = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/actions/workflows/deploy-branch-preview.yml/dispatches", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ref: current.branch, inputs: { request_id: requestId, ref: current.branch } })
+  });
+  if (!dispatched.ok) return { ok: false, msg: "预览部署启动失败：" + dispatched.msg };
+  current.preview_url = codeTempPreview(current.branch, repo);
+  current.preview_request_id = requestId;
+  current.preview_started_at = new Date().toISOString();
+  await env.KV.put(codeWorkbenchBranchKey(user, repo), JSON.stringify(current), { expirationTtl: 2592000 });
+  return { ok: true, preview_url: current.preview_url, request_id: requestId, branch: current.branch, state: "dispatched" };
+}
+async function codeWorkbenchBranchDiscardUnlocked(env, user, body = {}) {
+  const repo = String(body.repo || "");
+  if (!codeRepoOk(env, repo) || !env.KV) return { ok: false, msg: "项目仓库或 KV 配置不可用" };
+  const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
+  const key = codeWorkbenchBranchKey(user, repo), record = await env.KV.get(key, "json").catch(() => null);
+  if (!record || !record.branch) return { ok: true, discarded: true, already_absent: true };
+  if (body.branch && body.branch !== record.branch) return { ok: false, msg: "临时分支已变化，拒绝删除其他分支" };
+  const deleted = await codeDeleteBranch(env, repo, record.branch);
+  if (!deleted.ok && deleted.status !== 404) return { ok: false, msg: "GitHub 删除临时分支失败，记录保留：" + deleted.msg };
+  await env.KV.delete(key);
+  return { ok: true, discarded: true, branch: record.branch, main_untouched: true };
+}
+async function codeWorkbenchBranchDiscard(env, user, body = {}) {
+  const repo = String(body.repo || "");
+  return codeWorkbenchWithLock(env, user, repo, "discard", () => codeWorkbenchBranchDiscardUnlocked(env, user, body));
+}
+async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
+  const repo = String(body.repo || "");
+  if (!codeRepoOk(env, repo) || !env.KV) return { ok: false, msg: "项目仓库或 KV 配置不可用" };
+  const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
+  const key = codeWorkbenchBranchKey(user, repo), record = await env.KV.get(key, "json").catch(() => null);
+  if (!record || !record.branch || (body.branch && body.branch !== record.branch)) return { ok: false, msg: "当前项目没有匹配的临时分支" };
+  if (["merged_cleanup_failed", "merged_history_failed", "merged_record_cleanup_failed"].includes(record.status)) {
+    if (record.status === "merged_history_failed" && record.history_row) {
+      try {
+        const savedHistory = await codeHistoryLoad(env, user);
+        if (!savedHistory.some((item) => item && item.commit_sha === record.commit_sha)) {
+          await codeHistorySave(env, user, [record.history_row, ...savedHistory]);
+        }
+      } catch (historyError) {
+        return { ok: false, merged: true, history_saved: false, branch_deleted: false, msg: "GitHub 已合并，但历史记录补写仍失败；临时分支保留：" + (historyError && historyError.message || "历史写入失败") };
+      }
+      record.status = "merged_cleanup_failed";
+      try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); }
+      catch (recordError) {
+        return { ok: false, merged: true, history_saved: true, branch_deleted: false, msg: "历史已补写，但清理状态保存失败；临时分支保留：" + (recordError && recordError.message || "KV 写入失败") };
+      }
+    }
+    let cleanup;
+    try { cleanup = await codeDeleteBranch(env, repo, record.branch); }
+    catch (cleanupError) { cleanup = { ok: false, msg: cleanupError && cleanupError.message || "GitHub 清理请求异常" }; }
+    if (!cleanup.ok && cleanup.status !== 404) {
+      record.status = "merged_cleanup_failed";
+      record.updated_at = new Date().toISOString();
+      await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }).catch(() => null);
+      return { ok: false, msg: "合并已完成，但临时分支清理仍失败：" + cleanup.msg, merged: true, branch_deleted: false };
+    }
+    try {
+      await env.KV.delete(key);
+    } catch (recordError) {
+      record.status = "merged_record_cleanup_failed";
+      record.updated_at = new Date().toISOString();
+      await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }).catch(() => null);
+      return { ok: false, merged: true, branch_deleted: true, record_cleanup_failed: true, msg: "临时分支已删除，但本地状态记录清理失败；可重试清理记录：" + (recordError && recordError.message || "KV 删除失败") };
+    }
+    return { ok: true, merged: true, branch_deleted: true, branch: record.branch, cleanup_retry: true };
+  }
+  const compareUrl = "https://api.github.com/repos/" + repo + "/compare/" + encodeURIComponent(record.baseBranch) + "..." + encodeURIComponent(record.branch);
+  let compared = await codeGhApi(env, compareUrl);
+  if (!compared.ok) return { ok: false, msg: "读取待合并改动失败：" + compared.msg };
+  let fileChanges = Array.isArray(compared.data && compared.data.files) ? compared.data.files : [];
+  let files = fileChanges.map((f) => f.filename);
+  for (const path of files) {
+    const fileGuard = codePushGuard(env, user, repo, path);
+    if (fileGuard) return { ok: false, msg: "文件 " + path + " 不允许合并：" + fileGuard };
+  }
+  if (Array.isArray(body.accepted_paths)) {
+    const accepted = new Set(body.accepted_paths.map((p) => String(p)));
+    for (const path of files.filter((p) => accepted.has(p))) { const guard = codePushGuard(env, user, repo, path); if (guard) return { ok: false, msg: "文件 " + path + " 不允许合并：" + guard }; }
+    for (const change of fileChanges.filter((f) => !accepted.has(f.filename))) {
+      const path = change.filename;
+      const rejected = await codeWorkbenchBranchRejectFileUnlocked(env, user, { repo, path, previous_path: change.previous_filename || "", branch: record.branch });
+      if (!rejected.ok) return { ok: false, msg: "拒绝文件 " + path + " 失败：" + rejected.msg };
+    }
+    compared = await codeGhApi(env, compareUrl);
+    if (!compared.ok) return { ok: false, msg: "重新读取待合并改动失败：" + compared.msg };
+    fileChanges = Array.isArray(compared.data && compared.data.files) ? compared.data.files : [];
+    files = fileChanges.map((f) => f.filename);
+  }
+  if (!files.length) {
+    const deleted = await codeDeleteBranch(env, repo, record.branch);
+    if (!deleted.ok && deleted.status !== 404) return { ok: false, msg: "没有文件改动，但临时分支删除失败：" + deleted.msg };
+    await env.KV.delete(key);
+    return { ok: true, merged: false, no_changes: true, branch_deleted: true, reply: "没有待合并文件，已删除空临时分支。" };
+  }
+  const head = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + record.baseBranch));
+  const previousSha = String(head.data && head.data.object && head.data.object.sha || "");
+  if (!head.ok || !previousSha) return { ok: false, msg: "读取 " + record.baseBranch + " 当前版本失败：" + (head.msg || "缺少 SHA") };
+  if (record.baseCommit && previousSha !== record.baseCommit) {
+    return { ok: false, conflict: true, base_advanced: true, base_commit: record.baseCommit, current_base_commit: previousSha, msg: record.baseBranch + " 已在创建临时分支后发生变化。为防止旧基线覆盖新修改，已阻止合并；请先同步基线并重新审核改动。" };
+  }
+  const branchHead = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + record.branch));
+  const expectedHeadSha = String(branchHead.data && branchHead.data.object && branchHead.data.object.sha || "");
+  if (!branchHead.ok || !/^[0-9a-f]{40}$/i.test(expectedHeadSha)) {
+    return { ok: false, msg: "读取临时分支当前版本失败：" + (branchHead.msg || "缺少有效 head SHA") };
+  }
+  const merged = await codeMergeTempBranch(env, repo, record.branch, record.baseBranch, String(body.summary || "Workbench: merge " + record.project), previousSha, expectedHeadSha);
+  if (!merged.ok) return { ok: false, conflict: !!merged.conflict || merged.status === 409, files, msg: "合并失败，临时分支保留：" + merged.msg };
+  let commitSha = String(merged.data && merged.data.sha || "");
+  if (!commitSha) {
+    const after = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + record.baseBranch));
+    commitSha = String(after.data && after.data.object && after.data.object.sha || "");
+  }
+  if (!commitSha) return { ok: false, merged: true, msg: "GitHub 已合并，但读取合并提交 SHA 失败；临时分支保留，需人工核对。" };
+  const history = await codeHistoryLoad(env, user);
+  const row = { id: "workbench-" + Date.now().toString(36), kind: "commit", actor: String(user), repo, project: record.project, baseBranch: record.baseBranch, commit_sha: commitSha, previous_sha: previousSha, at: new Date().toISOString(), summary: String(body.summary || "开发台推送"), files, preview_url: record.preview_url || "" };
+  try {
+    await codeHistorySave(env, user, [row, ...history]);
+  } catch (historyError) {
+    record.status = "merged_history_failed"; record.commit_sha = commitSha; record.history_row = row; record.updated_at = new Date().toISOString();
+    try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); } catch (_) {}
+    return { ok: false, merged: true, history_saved: false, branch_deleted: false, commit_sha: commitSha, files, msg: "GitHub 已合并，但历史记录保存失败；临时分支已保留，重试将先补写历史，不会再次合并：" + (historyError && historyError.message || "历史写入失败") };
+  }
+  let deleted;
+  try { deleted = await codeDeleteBranch(env, repo, record.branch); }
+  catch (cleanupError) { deleted = { ok: false, msg: cleanupError && cleanupError.message || "GitHub 清理请求异常" }; }
+  if (!deleted.ok && deleted.status !== 404) {
+    record.status = "merged_cleanup_failed"; record.commit_sha = commitSha; record.updated_at = new Date().toISOString();
+    try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); } catch (_) {}
+    return { ok: false, merged: true, branch_deleted: false, commit_sha: commitSha, files, msg: "已合并到 main，但删除临时分支失败：" + deleted.msg };
+  }
+  try {
+    await env.KV.delete(key);
+  } catch (recordError) {
+    record.status = "merged_record_cleanup_failed"; record.commit_sha = commitSha; record.updated_at = new Date().toISOString();
+    try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); } catch (_) {}
+    return { ok: false, merged: true, branch_deleted: true, record_cleanup_failed: true, commit_sha: commitSha, files, msg: "临时分支已删除，但本地状态记录清理失败；可重试清理记录：" + (recordError && recordError.message || "KV 删除失败") };
+  }
+  return { ok: true, merged: true, branch_deleted: true, commit_sha: commitSha, files, history_id: row.id, preview_url: row.preview_url, reply: "已合并到 " + record.baseBranch + "，临时分支已删除。" };
+}
+async function codeWorkbenchBranchMerge(env, user, body = {}) {
+  const repo = String(body.repo || "");
+  return codeWorkbenchWithLock(env, user, repo, "merge", () => codeWorkbenchBranchMergeUnlocked(env, user, body));
+}
 async function codeMemoryAppend(env, user, row) {   // 代码模式的上下文记忆：用户消息 / AI 回复 / 接受 / 拒绝，只留最近 20 条
   const rows = await codeHistoryLoad(env, user);
   const rec = Object.assign({ id: "chat-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6), kind: "chat", at: new Date().toISOString() }, row);
@@ -553,11 +893,56 @@ async function codeRollback(env, user, body) {
   if (!item || !item.previous_sha) return { ok: false, msg: "没有可回滚的上一版本" };
   const repo = item.repo, base = codeVerifyRef(item.baseBranch || "main");
   if (!codeRepoOk(env, repo) || !base) return { ok: false, msg: "回滚目标不合法" };
-  const changed = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + base), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sha: item.previous_sha, force: true }) });
-  if (!changed.ok) return { ok: false, msg: "回滚失败：" + changed.msg };
-  const rec = { id: "rollback-" + Date.now().toString(36), repo, baseBranch: base, commit_sha: item.previous_sha, previous_sha: item.commit_sha, summary: "回滚：" + item.summary, at: new Date().toISOString(), rollback: true };
+  const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
+
+  // 回滚不移动/重写历史指针：用目标旧版本的 tree 创建一个以当前 HEAD 为父提交的新 commit。
+  const head = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + base));
+  const currentSha = String(head.data && head.data.object && head.data.object.sha || "");
+  if (!head.ok || !currentSha) return { ok: false, msg: "读取当前分支失败：" + (head.msg || "没有 commit SHA") };
+  const currentCommit = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/commits/" + encodeURIComponent(currentSha));
+  const currentTree = String(currentCommit.data && currentCommit.data.tree && currentCommit.data.tree.sha || "");
+  if (!currentCommit.ok || !currentTree) return { ok: false, msg: "读取当前文件树失败：" + (currentCommit.msg || "没有 tree SHA") };
+  const target = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/commits/" + encodeURIComponent(item.previous_sha));
+  const targetTree = String(target.data && target.data.tree && target.data.tree.sha || "");
+  if (!target.ok || !targetTree) return { ok: false, msg: "读取回滚目标版本失败：" + (target.msg || "没有 tree SHA") };
+  const changedPaths = Array.isArray(item.files) ? [...new Set(item.files.map((p) => String(p || "")).filter(codePathOk))] : [];
+  if (!changedPaths.length) return { ok: false, msg: "该历史记录没有可核验的文件清单，拒绝执行整仓库回滚" };
+  const [currentTreeData, targetTreeData] = await Promise.all([
+    codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/trees/" + encodeURIComponent(currentTree) + "?recursive=1"),
+    codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/trees/" + encodeURIComponent(targetTree) + "?recursive=1")
+  ]);
+  if (!currentTreeData.ok || !targetTreeData.ok || currentTreeData.data.truncated || targetTreeData.data.truncated) {
+    return { ok: false, msg: "读取完整文件树失败或结果被截断，未执行回滚" };
+  }
+  const currentEntries = new Map((currentTreeData.data.tree || []).filter((x) => x.type === "blob").map((x) => [x.path, x]));
+  const targetEntries = new Map((targetTreeData.data.tree || []).filter((x) => x.type === "blob").map((x) => [x.path, x]));
+  const treeChanges = [];
+  for (const path of changedPaths) {
+    const entry = targetEntries.get(path);
+    treeChanges.push(entry ? { path, mode: entry.mode, type: entry.type, sha: entry.sha } : { path, mode: (currentEntries.get(path) || {}).mode || "100644", type: "blob", sha: null });
+  }
+  const restoredTree = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/trees", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ base_tree: currentTree, tree: treeChanges })
+  });
+  const restoredTreeSha = String(restoredTree.data && restoredTree.data.sha || "");
+  if (!restoredTree.ok || !restoredTreeSha) return { ok: false, msg: "创建局部回滚文件树失败：" + (restoredTree.msg || "没有 tree SHA") };
+  const created = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/commits", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "Rollback: " + String(item.summary || item.id || "previous version").slice(0, 140), tree: restoredTreeSha, parents: [currentSha] })
+  });
+  const newSha = String(created.data && created.data.sha || "");
+  if (!created.ok || !newSha) return { ok: false, msg: "创建回滚提交失败：" + (created.msg || "GitHub 没有返回 commit SHA") };
+  const moved = await codeGhApi(env, codeGitRefWriteUrl(repo, "heads/" + base), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sha: newSha, force: false })
+  });
+  if (!moved.ok) return { ok: false, msg: "回滚提交已创建，但分支未更新（可能有并发提交）：" + moved.msg };
+  const rec = { id: "rollback-" + Date.now().toString(36), repo, project: item.project, baseBranch: base, commit_sha: newSha, previous_sha: currentSha, target_sha: item.previous_sha, summary: "回滚：" + item.summary, files: item.files || [], at: new Date().toISOString(), rollback: true };
   await codeHistorySave(env, user, [rec, ...rows]);
-  return { ok: true, ...rec, reply: "已回滚到 " + item.previous_sha.slice(0, 12) };
+  return { ok: true, ...rec, reply: "已创建回滚提交并恢复到目标版本内容：" + newSha.slice(0, 12) };
 }
 const CODE_DEPLOY_WORKFLOW = "deploy-project.yml";
 const CODE_WORKER_DEPLOY_WORKFLOW = "deploy-worker.yml";
@@ -813,6 +1198,27 @@ async function codeVerifyStatus(env, user) {
   if (env.KV) await env.KV.put(codeVerifyKey(user), JSON.stringify(old), { expirationTtl: 86400 });
   await codePersistRun(env, user, old);
   return { ok: true, ...old, log_key: codeRunLogKey(old.run_id || old.request_id), actions_url: old.run_url || ("https://github.com/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW) };
+}
+async function codeRetryRun(env, user, body = {}) {
+  const kind = body.kind === "deploy" ? "deploy" : "verify";
+  const key = codeVerifyKey(user) + (kind === "deploy" ? ":deploy" : "");
+  const old = env.KV ? await env.KV.get(key, "json").catch(() => null) : null;
+  const runId = String(body.run_id || "");
+  if (!old || !/^\d+$/.test(runId) || String(old.run_id || "") !== runId) return { ok: false, msg: "运行记录不匹配或没有真实 Actions run_id，未触发重试" };
+  if (old.status !== "completed" || !["failure", "cancelled", "timed_out", "action_required"].includes(String(old.conclusion || ""))) {
+    return { ok: false, msg: "只有已结束且失败/取消/超时的运行可以重试" };
+  }
+  const repo = old.repo || codeVerifyRepo(env);
+  if (!codeRepoOk(env, repo)) return { ok: false, msg: "运行仓库不在允许名单里" };
+  const rerun = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/actions/runs/" + encodeURIComponent(runId) + "/rerun-failed-jobs", { method: "POST" });
+  if (!rerun.ok) return { ok: false, status: rerun.status, msg: "请求 GitHub 重跑失败任务失败：" + rerun.msg };
+  old.status = "queued"; old.conclusion = null; old.state = "queued";
+  old.error_lines = []; old.logs = []; old.failed_step = "";
+  old.retry_count = Number(old.retry_count || 0) + 1;
+  old.retry_at = new Date().toISOString(); old.updated_at = old.retry_at;
+  if (env.KV) await env.KV.put(key, JSON.stringify(old), { expirationTtl: 86400 });
+  await codePersistRun(env, user, old);
+  return { ok: true, ...old, message: "已请求 GitHub 重跑这次运行中失败的任务，没有创建新的验证任务" };
 }
 async function codeGetFile(env, repo, path, ref) {   // = MCP get_file
   if (!env.GH_PAT) return { ok: false, msg: "GH_PAT 没有配置" };
@@ -1146,10 +1552,25 @@ async function codeProject(env, user, proj, req, history, ui) {
   if (!good.length) return { ok: false, reply: "❌ 这次没能生成可用的修改：" + (res.errs.map((e) => e.msg).join("；") || "模型没有给出修改块") + "。换个说法再试一次。" };
   const final = codeApply(files, good), summary = req.replace(/\s+/g, " ").slice(0, 60);
   const warn = [...new Set(final.done.map((d) => d.path))].flatMap((p) => codeBalanceWarn(files[p], final.out[p]).map((w) => p + " 的 " + w + " 数量和原来不一致"));
-  const temp = await codeCreateTempBranch(env, proj.repo, tag, branch);
+  const temp = await codeCreateTempBranch(env, proj.repo, proj.repo.split("/").pop(), branch);
   if (!temp.ok) return { ok: false, reply: "❌ 不能为「" + tag + "」创建独立临时分支：" + temp.msg };
   const pendingId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(36).slice(2));
-  const pending = { id: pendingId, project: tag, repo: proj.repo, branch: temp.branch, baseBranch: temp.base, baseCommit: temp.sha, preview_url: codeTempPreview(temp.branch), status: "awaiting_approval", edits: good.map((g, i) => ({ path: final.done[i] ? final.done[i].path : g.path, line: final.done[i] ? final.done[i].line : 0, old: g.old, new: g.new })), baseSha, summary, warn, at: Date.now(), updatedAt: Date.now(), created_at: Date.now() };
+  const stagedPaths = [...new Set(final.done.map((d) => d.path))];
+  for (const path of stagedPaths) {
+    const current = await codeGetFile(env, proj.repo, path, temp.branch);
+    if (!current.ok || !current.exists) { await codeDeleteBranch(env, proj.repo, temp.branch); return { ok: false, reply: "❌ 临时分支暂存失败，无法读取 " + path + "；临时分支已清理。" }; }
+    const staged = await codeUpdateFile(env, proj.repo, path, final.out[path], "OpenManus preview: " + summary, temp.branch, current.sha);
+    if (!staged.ok) { await codeDeleteBranch(env, proj.repo, temp.branch); return { ok: false, reply: "❌ 临时分支暂存失败：" + path + "：" + staged.msg + "；临时分支已清理。" }; }
+  }
+  const previewRequestId = "preview-" + pendingId.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 100);
+  const previewDispatch = proj.repo === "tianxin1300/openmanus-gateway"
+    ? await codeGhApi(env, "https://api.github.com/repos/" + proj.repo + "/actions/workflows/deploy-branch-preview.yml/dispatches", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ref: temp.branch, inputs: { request_id: previewRequestId, ref: temp.branch } })
+      })
+    : { ok: false, msg: "该项目仓库尚未配置独立 Pages 预览工作流" };
+  const previewUrl = previewDispatch.ok ? codeTempPreview(temp.branch, proj.repo) : "";
+  const pending = { id: pendingId, project: tag, repo: proj.repo, branch: temp.branch, baseBranch: temp.base, baseCommit: temp.sha, staged_on_branch: true, preview_url: previewUrl, preview_error: previewDispatch.ok ? "" : previewDispatch.msg, preview_request_id: previewRequestId, status: "awaiting_approval", edits: good.map((g, i) => ({ path: final.done[i] ? final.done[i].path : g.path, line: final.done[i] ? final.done[i].line : 0, old: g.old, new: g.new })), baseSha, summary, warn: previewDispatch.ok ? warn : [...warn, "临时预览构建未能启动：" + previewDispatch.msg], at: Date.now(), updatedAt: Date.now(), created_at: Date.now() };
   const created = await codePendingCreate(env, user, pending);
   if (!created.ok) { await codeDeleteBranch(env, proj.repo, temp.branch); return { ok: false, pending: !!created.pending, reply: created.msg || "已有待推送修改，请先处理完成" }; }
   const explain = String(last).replace(new RegExp(CODE_BLOCK_RE.source, "g"), "").replace(/```[^\n]*\n?/g, "").trim();
@@ -1199,6 +1620,41 @@ async function codeConfirm(env, user, yes, input = {}) {
     let editsForApply = pend.edits;
     const resolutions = input.conflict_resolutions && typeof input.conflict_resolutions === "object" ? input.conflict_resolutions : {};
     const resolved = new Set();
+    if (claim.pending.staged_on_branch) {
+      const allPaths = [...new Set(claim.pending.edits.map((e) => e.path))];
+      const accepted = new Set(pend.edits.map((e) => e.path));
+      for (const path of allPaths.filter((p) => !accepted.has(p))) {
+        const base = await codeGetFile(env, pend.repo, path, pend.baseCommit || pend.baseBranch);
+        const current = await codeGetFile(env, pend.repo, path, pend.branch);
+        if (!base.ok || !base.exists || !current.ok || !current.exists) return await finish("failed", { ok: false, pending: true, reply: "拒绝文件 " + path + " 时无法安全恢复基线内容，临时分支仍保留。" }, claim.pending.edits);
+        const restored = await codeUpdateFile(env, pend.repo, path, base.text, "OpenManus: reject " + path, pend.branch, current.sha);
+        if (!restored.ok) return await finish("failed", { ok: false, pending: true, reply: "恢复被拒绝文件失败：" + path + "：" + restored.msg }, claim.pending.edits);
+      }
+      const conflicts = [];
+      for (const path of paths) {
+        const base = await codeGetFile(env, pend.repo, path, pend.baseCommit || pend.baseBranch);
+        const current = await codeGetFile(env, pend.repo, path, pend.branch);
+        const mine = base.ok && base.exists ? codeApply({ [path]: base.text }, claim.pending.edits.filter((e) => e.path === path)) : { errs: [{ msg: "无法读取基线" }] };
+        if (!current.ok || !current.exists || mine.errs.length || current.text !== mine.out[path]) {
+          conflicts.push({ path, mine: mine.errs.length ? "" : codeCut(mine.out[path], 12000), theirs: current.ok ? codeCut(current.text || "", 12000) : "", merge: "" });
+        }
+      }
+      const unresolved = conflicts.filter((c) => !resolutions[c.path]);
+      if (unresolved.length) return await finish("conflict", { ok: false, pending: true, conflict: true, conflicts, reply: "临时分支内容与生成预览不一致，请逐文件选择我的版本、对方版本或手动合并。" }, claim.pending.edits);
+      for (const c of conflicts) {
+        const choice = resolutions[c.path];
+        if (choice.choice === "theirs") continue;
+        const current = await codeGetFile(env, pend.repo, c.path, pend.branch);
+        let content = "";
+        if (choice.choice === "merge") content = String(choice.content || "");
+        else if (choice.choice === "mine") content = c.mine;
+        if (!content) return await finish("conflict", { ok: false, pending: true, conflict: true, reply: "文件 " + c.path + " 的合并内容为空，请重新选择。" }, claim.pending.edits);
+        const up = await codeUpdateFile(env, pend.repo, c.path, content, "OpenManus: resolve " + c.path, pend.branch, current.sha);
+        if (!up.ok) return await finish("conflict", { ok: false, pending: true, conflict: true, reply: "文件 " + c.path + " 写入临时分支失败：" + up.msg }, claim.pending.edits);
+      }
+      editsForApply = [];
+      paths = [];
+    }
     for (const path of paths) {
       const choice = resolutions[path];
       if (!choice || typeof choice !== "object") continue;
@@ -1221,7 +1677,7 @@ async function codeConfirm(env, user, yes, input = {}) {
     if (!paths.length) {
       const merged = await codeMergeTempBranch(env, pend.repo, pend.branch, pend.baseBranch || String(env.CODE_PUSH_BRANCH || "main"), "AI: " + pend.summary);
       if (!merged.ok) return await finish("conflict", { ok: false, pending: true, conflict: true, reply: "冲突解决后仍无法合并：" + merged.msg }, pend.edits);
-      const rows = await codeHistoryLoad(env, user), record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: pend.baseBranch || "main", commit_sha: String((merged.data && merged.data.sha) || ""), previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: Object.keys(files), preview_url: pend.preview_url || codeTempPreview(pend.branch) };
+      const rows = await codeHistoryLoad(env, user), record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: pend.baseBranch || "main", commit_sha: String((merged.data && merged.data.sha) || ""), previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: Object.keys(files), preview_url: pend.preview_url || codeTempPreview(pend.branch, pend.repo) };
       await codeHistorySave(env, user, [record, ...rows]);
       const removed = await codeDeleteBranch(env, pend.repo, pend.branch);
       return await finish("applied", { ok: true, pushed: true, consumed: true, status: "applied", merged: true, commit_sha: record.commit_sha, branch_deleted: !!removed.ok, history_id: record.id, reply: "✅ 冲突已解决并合并到 " + (pend.baseBranch || "main") }, []);
@@ -1244,7 +1700,7 @@ async function codeConfirm(env, user, yes, input = {}) {
     if (!merged.ok) return await finish("conflict", { ok: false, pending: true, conflict: true, status: "conflict", reply: lines.join("\n") + "\n❌ 临时分支未能合并到 " + (pend.baseBranch || "main") + "：" + merged.msg + "。临时分支仍保留，可重试或删除。" }, pend.edits);
     const commitSha = String((merged.data && merged.data.sha) || "");
     const rows = await codeHistoryLoad(env, user);
-    const record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: pend.baseBranch || "main", commit_sha: commitSha, previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: paths, preview_url: pend.preview_url || codeTempPreview(pend.branch) };
+    const record = { id: "push-" + Date.now().toString(36), actor: String(user), repo: pend.repo, project: pend.project, baseBranch: pend.baseBranch || "main", commit_sha: commitSha, previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: paths, preview_url: pend.preview_url || codeTempPreview(pend.branch, pend.repo) };
     await codeHistorySave(env, user, [record, ...rows]);
     const removed = await codeDeleteBranch(env, pend.repo, pend.branch);
     return await finish("applied", { ok: true, pushed: true, consumed: true, status: "applied", merged: true, commit_sha: commitSha, branch_deleted: !!removed.ok, history_id: record.id, reply: lines.join("\n") + "\n✅ 已合并到 " + (pend.baseBranch || "main") + (removed.ok ? "，临时分支已删除。" : "；临时分支删除失败，请稍后清理：" + removed.msg) }, []);
@@ -8918,6 +9374,49 @@ async function handle(request, env, ctx) {
       const g = await codeGetFile(env, String(url.searchParams.get("repo") || ""), String(url.searchParams.get("path") || ""), String(url.searchParams.get("ref") || ""));
       return json(g.ok ? { ok: true, exists: !!g.exists, size: g.size || 0, content: g.text || "" } : g, g.ok ? 200 : 400);
     }
+    if (path === "/api/code/branch/current" && request.method === "GET") {
+      const user = await userFromReq(request, env, url, "");
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const repo = String(url.searchParams.get("repo") || "");
+      const r = await codeWorkbenchBranchCurrent(env, user, repo);
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (path === "/api/code/branch/create" && request.method === "POST") {
+      const b = await request.json().catch(() => ({})), user = await userFromReq(request, env, url, String(b.token || ""));
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeWorkbenchBranchCreate(env, user, b);
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (path === "/api/code/branch/diff" && request.method === "GET") {
+      const user = await userFromReq(request, env, url, "");
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeWorkbenchBranchDiff(env, user, String(url.searchParams.get("repo") || ""));
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (path === "/api/code/branch/reject-file" && request.method === "POST") {
+      const b = await request.json().catch(() => ({})), user = await userFromReq(request, env, url, String(b.token || ""));
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeWorkbenchBranchRejectFile(env, user, b);
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (path === "/api/code/branch/preview" && request.method === "POST") {
+      const b = await request.json().catch(() => ({})), user = await userFromReq(request, env, url, String(b.token || ""));
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeWorkbenchBranchPreview(env, user, String(b.repo || ""));
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (path === "/api/code/branch/merge" && request.method === "POST") {
+      const b = await request.json().catch(() => ({})), user = await userFromReq(request, env, url, String(b.token || ""));
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeWorkbenchBranchMerge(env, user, b);
+      return json(r, r.ok ? 200 : (r.conflict ? 409 : 400));
+    }
+    if (path === "/api/code/branch/discard" && request.method === "POST") {
+      const b = await request.json().catch(() => ({})), user = await userFromReq(request, env, url, String(b.token || ""));
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeWorkbenchBranchDiscard(env, user, b);
+      return json(r, r.ok ? 200 : 400);
+    }
     if (path === "/api/code/tree" && request.method === "GET") {
       const user = await userFromReq(request, env, url, "");
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
@@ -8926,6 +9425,13 @@ async function handle(request, env, ctx) {
     }
 
     // ---- v108：复用现有 GitHub 仓库，触发独立 verify-project workflow 并把结果回传开发台 ----
+    if (path === "/api/code/retry" && request.method === "POST") {
+      const b = await request.json().catch(() => ({}));
+      const user = await userFromReq(request, env, url, String(b.token || ""));
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const r = await codeRetryRun(env, user, b);
+      return json(r, r.ok ? 200 : (r.status || 400));
+    }
     if (path === "/api/code/verify" && request.method === "POST") {
       const b = await request.json().catch(() => ({}));
       const user = await userFromReq(request, env, url, String(b.token || ""));
@@ -9346,6 +9852,31 @@ export class CodeClaimDO {
       return this.response({ ok: true, pending: current && current.pending || null, version: current && current.version || 0, result: current && current.result || null });
     }
     const body = await request.json().catch(() => ({})), now = Date.now();
+    if (["branch-lock", "branch-renew", "branch-unlock"].includes(action)) {
+      const lockId = String(body.lock_id || ""), token = String(body.token || "");
+      if (!lockId || !token || lockId.length > 240 || token.length > 240) return this.response({ ok: false, msg: "无效的工作台锁参数" }, 400);
+      const result = await this.storage.transaction(async (txn) => {
+        const locks = (await txn.get("workbench_locks")) || {};
+        const currentLock = locks[lockId];
+        if (action === "branch-lock") {
+          if (currentLock && Number(currentLock.expires_at) > now) return { ok: false, busy: true, msg: "同一项目操作正在执行，请稍后重试" };
+          locks[lockId] = { token, operation: String(body.operation || ""), expires_at: now + 600000 };
+          await txn.put("workbench_locks", locks);
+          return { ok: true, acquired: true, expires_at: locks[lockId].expires_at };
+        }
+        if (!currentLock || currentLock.token !== token || Number(currentLock.expires_at) <= now) return { ok: false, stale: true, msg: "锁已过期或不属于当前操作" };
+        if (action === "branch-renew") {
+          currentLock.expires_at = now + 600000;
+          locks[lockId] = currentLock;
+          await txn.put("workbench_locks", locks);
+          return { ok: true, renewed: true, expires_at: currentLock.expires_at };
+        }
+        delete locks[lockId];
+        await txn.put("workbench_locks", locks);
+        return { ok: true, released: true };
+      });
+      return this.response(result, result.ok ? 200 : result.busy ? 409 : 409);
+    }
     if (action === "create") {
       const current = await this.load(), incoming = body.pending;
       if (!incoming || !incoming.id || !incoming.project || !Array.isArray(incoming.edits) || !incoming.edits.length) return this.response({ ok: false, msg: "缺少有效 pending" }, 400);
