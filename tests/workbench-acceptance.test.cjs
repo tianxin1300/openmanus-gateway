@@ -104,7 +104,7 @@ test('ACCEPTANCE MAIN-01: direct main write is rejected by the workbench write g
     activeBranchRecord: null,
     REPO: { owner: 'tianxin1300', repo: 'openmanus-gateway', branch: 'main' }
   });
-  await assert.rejects(() => put('frontend/index.html', 'bad', 'direct-main-write', 'blob'), /已阻止直接写入 main/);
+  await assert.rejects(() => put('frontend/index.html', 'bad', 'direct-main-write', 'blob'), /当前分支不可保存/);
 });
 
 test('ACCEPTANCE REVIEW-01: rejected file is absent from the final merge diff', async () => {
@@ -225,7 +225,7 @@ test('ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restore
 });
   
 test('ACCEPTANCE WORKBENCH-PREVIEW-AUDIT-01: preview dispatch records the authenticated actor', async () => {
-  const record = { repo: 'owner/repo', branch: 'code/preview', baseBranch: 'main', active: true };
+  const record = { ok: true, repo: 'owner/repo', branch: 'code/preview', baseBranch: 'main', active: true };
   const preview = runFunction(sourceOf('async function codeWorkbenchBranchPreviewUnlocked(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchPreviewUnlocked', {
     codePushGuard: () => '',
     codeWorkbenchBranchCurrent: async () => record,
@@ -244,7 +244,7 @@ test('ACCEPTANCE WORKBENCH-PREVIEW-AUDIT-01: preview dispatch records the authen
 test('ACCEPTANCE WORKBENCH-SAVE-CAS-01: editor saves share the repository lock and reject stale file SHA', async () => {
   let currentSha = 'a'.repeat(40), writes = 0;
   const lockOperations = [];
-  const save = runFunction(sourceOf('async function codeWorkbenchBranchSaveFileUnlocked(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchSaveFile', {
+  const save = runFunction(sourceOf('async function codeWorkbenchBranchSaveFile(', 'async function codeWorkbenchBranchPreviewUnlocked('), 'codeWorkbenchBranchSaveFile', {
     codeWorkbenchWithLock: async (_env, _user, _repo, operation, run) => {
       lockOperations.push(operation);
       return run();
@@ -354,7 +354,7 @@ test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, save, rev
     codeRepoOk: () => true, codePushGuard: guard,
     codeWorkbenchBranchKey: () => 'key', codeDeleteBranch: async () => { writes++; return { ok: true }; }
   });
-  const preview = runFunction(sourceOf('async function codeWorkbenchBranchPreviewUnlocked(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchPreview', {
+  const preview = runFunction(sourceOf('async function codeWorkbenchBranchPreviewUnlocked(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchPreviewUnlocked', {
     codePushGuard: guard,
     codeWorkbenchBranchCurrent: async () => ({ ok: true, active: true, branch: 'code/owned' }),
     codeGhApi: async () => { writes++; return { ok: true }; }
@@ -743,7 +743,7 @@ test('ACCEPTANCE WORKBENCH-LOCK-SCOPE-01: save, review, discard and preview also
     calls.push({ repo, operation });
     return run();
   };
-  const reject = runFunction(sourceOf('async function codeWorkbenchBranchRejectFile(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchRejectFile', {
+  const reject = runFunction(sourceOf('async function codeWorkbenchBranchRejectFile(', 'async function codeWorkbenchBranchSaveFileUnlocked('), 'codeWorkbenchBranchRejectFile', {
     codeWorkbenchWithLock: lock,
     codeWorkbenchBranchRejectFileUnlocked: async () => ({ ok: true, reviewed: true })
   });
@@ -755,7 +755,7 @@ test('ACCEPTANCE WORKBENCH-LOCK-SCOPE-01: save, review, discard and preview also
     codeWorkbenchWithLock: lock,
     codeWorkbenchBranchSaveFileUnlocked: async () => ({ ok: true, saved: true })
   });
-  const preview = runFunction(sourceOf('async function codeWorkbenchBranchPreviewUnlocked(', 'async function codeWorkbenchBranchDiscardUnlocked('), 'codeWorkbenchBranchPreview', {
+  const preview = runFunction(sourceOf('async function codeWorkbenchBranchPreview(', 'async function codeWorkbenchBranchDiscardUnlocked('), 'codeWorkbenchBranchPreview', {
     codeWorkbenchWithLock: lock,
     codeWorkbenchBranchPreviewUnlocked: async () => ({ ok: true, preview: true })
   });
