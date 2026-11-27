@@ -38,6 +38,9 @@ jobs:
           test -n "$OPENMANUS_API_URL" || { echo "::error::Missing OPENMANUS_API_URL secret"; exit 1; }
           test -n "$OPENMANUS_USER_TOKEN" || { echo "::error::Missing OPENMANUS_USER_TOKEN secret"; exit 1; }
 
+      - name: Check worker syntax
+        run: node --check .github/scripts/issue-agent.mjs
+
       - name: Poll one issue and call code-mode backend
         id: agent
         env:
