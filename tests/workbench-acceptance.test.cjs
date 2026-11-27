@@ -1613,8 +1613,8 @@ function makeProjectSwitchHarness({ dirty: initialDirty, confirmResult }) {
     loadWorkbenchVersions: async () => calls.push(['load-versions', sandbox.workbenchRepoFull()]),
     say: message => calls.push(['say', message])
   };
-  const source = sourceOfFrontend(frontend, 'async function switchWorkbenchProject(', '\\ng("wb-file-search")');
-  vm.runInNewContext(source + '\\nglobalThis.__switchProject = switchWorkbenchProject;', sandbox);
+  const source = sourceOfFrontend(frontend, 'async function switchWorkbenchProject(', '\ng("wb-file-search")');
+  vm.runInNewContext(source + '\nglobalThis.__switchProject = switchWorkbenchProject;', sandbox);
   return { sandbox, calls, projectSelect, fileLabel, decisions, oldRecord };
 }
 
