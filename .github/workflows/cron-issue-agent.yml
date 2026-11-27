@@ -1,0 +1,59 @@
+name: cron-issue-agent
+run-name: cron-issue-agent · ${{ github.event_name }} · ${{ github.run_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Optional issue number; empty means claim the oldest bot:ready issue"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: cron-issue-agent-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  poll-and-process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate configuration
+        env:
+          OPENMANUS_API_URL: ${{ secrets.OPENMANUS_API_URL }}
+          OPENMANUS_USER_TOKEN: ${{ secrets.OPENMANUS_USER_TOKEN }}
+        run: |
+          test -n "$OPENMANUS_API_URL" || { echo "::error::Missing OPENMANUS_API_URL secret"; exit 1; }
+          test -n "$OPENMANUS_USER_TOKEN" || { echo "::error::Missing OPENMANUS_USER_TOKEN secret"; exit 1; }
+
+      - name: Poll one issue and call code-mode backend
+        id: agent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          OPENMANUS_API_URL: ${{ secrets.OPENMANUS_API_URL }}
+          OPENMANUS_USER_TOKEN: ${{ secrets.OPENMANUS_USER_TOKEN }}
+          RUN_ID: ${{ github.run_id }}
+        run: node .github/scripts/issue-agent.mjs
+
+      - name: Upload execution log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cron-issue-agent-log-${{ github.run_id }}
+          path: agent-logs/
+          if-no-files-found: warn
+          retention-days: 30
