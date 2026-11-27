@@ -57,6 +57,9 @@ jobs:
             jq -r '.error // .choices[0].message.content // "No error details returned"' /tmp/cron-agent-preview.json | head -c 1000
             exit 1
           fi
+          echo "Preview response bytes: $(wc -c < /tmp/cron-agent-preview.json)"
+          head -c 1000 /tmp/cron-agent-preview.json
+          echo
           ANSWER="$(jq -r '.choices[0].message.content // .reply // empty' /tmp/cron-agent-preview.json)"
           test -n "$ANSWER" || { echo "::error::Preview Worker returned an empty completion"; exit 1; }
           if [[ "$ANSWER" != *"CRON_AGENT_PREVIEW_OK"* ]]; then
