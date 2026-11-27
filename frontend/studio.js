@@ -380,10 +380,10 @@
         return api("/api/code/pending", { cache: "no-store" }).then(function (r) { return r.json(); }).catch(function () { return null; }).then(function (pj) {
           var still = !!(pj && pj.ok && pj.pending && pj.pending.edits && pj.pending.edits.length);
           if (!still && j.ok) { currentPending = null; showResult(message, !!j.ok, false, !yes); return; }
-          if (still && ["verification_pending", "verification_passed", "verification_failed"].indexOf(pj.pending.status) >= 0) {
-            currentPending = pj.pending; render(pj.pending); say(message, pj.pending.status === "verification_failed" ? "om-errc" : ""); scheduleVerificationPoll(); return;
+          if (still) {
+            currentPending = pj.pending; render(pj.pending); say(message, j.ok ? "" : "om-errc"); scheduleVerificationPoll(); return;
           }
-          showResult(message, !!j.ok, still, !yes);
+          showResult(message, !!j.ok, false, !yes);
         });
       })
       .catch(function (e) { showResult("请求失败：" + (e && e.message || e), false, true, !yes); });
