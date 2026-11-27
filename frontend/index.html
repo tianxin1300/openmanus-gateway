@@ -5920,6 +5920,7 @@ const bestPlace = (list, q) => {
 .wb-change-path{font:10px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere;color:#e0e8f4}
 .wb-change-meta{font-size:10px;color:#9eabc0;margin:3px 0}
 .wb-change-actions{display:flex;gap:4px}
+.wb-file-diff{margin:4px 0;color:#9eabc0}.wb-file-diff summary{font-size:10px;cursor:pointer}.wb-file-diff pre{max-height:160px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;background:#151b25;padding:6px;border-radius:5px;font:10px/1.45 ui-monospace,monospace;color:#d4deeb}
 .wb-change-actions button,.wb-version-row button{min-height:25px;padding:3px 7px!important;font-size:10px!important;border-radius:5px!important}
 .wb-change-actions .on{background:#285b42!important;border-color:#4b9b70!important;color:#e8fff0!important}
 .wb-change-actions .reject{background:#57333b!important;border-color:#87515c!important;color:#ffe8eb!important}
@@ -6266,6 +6267,10 @@ function renderWorkbenchChanges() {
     const name = document.createElement("div"); name.className = "wb-change-path"; name.textContent = path; row.appendChild(name);
     const meta = document.createElement("div"); meta.className = "wb-change-meta";
     meta.textContent = (file.status || "modified") + " · +" + Number(file.additions || 0) + " / -" + Number(file.deletions || 0); row.appendChild(meta);
+    const diff = document.createElement("details"); diff.className = "wb-file-diff";
+    const diffTitle = document.createElement("summary"); diffTitle.textContent = "查看文件差异"; diff.appendChild(diffTitle);
+    const patch = document.createElement("pre"); patch.textContent = file.patch ? String(file.patch).slice(0, 12000) : "GitHub 未提供该文件的文本差异；可从文件树打开文件查看当前内容。";
+    diff.appendChild(patch); row.appendChild(diff);
     const actions = document.createElement("div"); actions.className = "wb-change-actions";
     const accept = document.createElement("button"); accept.type = "button"; accept.textContent = workbenchDecisions[path] ? "已接受" : "接受"; if (workbenchDecisions[path]) accept.classList.add("on");
     accept.addEventListener("click", () => { workbenchDecisions[path] = true; renderWorkbenchChanges(); });
