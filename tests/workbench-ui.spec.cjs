@@ -122,7 +122,10 @@ async function installApiFixtures(page, state) {
 }
 
 async function openWorkbench(page) {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.evaluate(() => localStorage.setItem("openmanus_token", "playwright-ui-token"));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.locator("#auth-mask")).toHaveClass(/hidden/);
   await page.locator("#wb-open").click();
   await expect(page.locator("#wb")).toBeVisible();
   await expect(page.locator("#wb-branch")).toContainText("code/");
