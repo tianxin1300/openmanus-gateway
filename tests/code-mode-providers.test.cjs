@@ -1731,3 +1731,32 @@ test('workbench history loads on tab open and exposes full both Runner state', (
   assert.ok(!script.includes('else renderVerifyResult({...j,state:j.state||x.state,fromHistory:true})'));
   assert.ok(script.includes('历史记录加载失败'));
 });
+
+
+test('CodeClaimDO: verification state can only pass for the exact pending run and commit', async () => {
+  const value = {
+    pending: { id: 'verify-1', project: 'demo', status: 'verification_pending', verify_run_id: 'run-42', verify_expected_sha: 'abc1234', edits: [{ path: 'a.js' }] },
+    created_at: 1700000000000, expires_at: 1700000600000, version: 3, claims: {}, results: {}
+  };
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async put(key, next) { this.value = next; },
+    async setAlarm() {}
+  };
+  const DO = loadCodeClaimDO(async () => ({ ok: true, status: 204 }));
+  const instance = new DO({ storage }, {});
+  const request = body => instance.fetch(new Request('https://code-claims/verification', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  }));
+  const wrongRun = await request({ pending_id: 'verify-1', run_id: 'run-other', expected_sha: 'abc1234', actual_sha: 'abc1234' });
+  assert.equal(wrongRun.status, 409);
+  const wrongSha = await request({ pending_id: 'verify-1', run_id: 'run-42', expected_sha: 'abc1234', actual_sha: 'def5678' });
+  assert.equal(wrongSha.status, 409);
+  assert.equal(storage.value.pending.status, 'verification_pending');
+  const passed = await request({ pending_id: 'verify-1', run_id: 'run-42', expected_sha: 'abc1234', actual_sha: 'abc1234' });
+  assert.equal(passed.status, 200);
+  assert.equal(storage.value.pending.status, 'verification_passed');
+  assert.equal(storage.value.pending.verify_head_sha, 'abc1234');
+  assert.equal(storage.value.version, 4);
+});
