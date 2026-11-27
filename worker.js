@@ -684,10 +684,36 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
   const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
   const key = codeWorkbenchBranchKey(user, repo), record = await env.KV.get(key, "json").catch(() => null);
   if (!record || !record.branch || (body.branch && body.branch !== record.branch)) return { ok: false, msg: "当前项目没有匹配的临时分支" };
-  if (record.status === "merged_cleanup_failed") {
-    const cleanup = await codeDeleteBranch(env, repo, record.branch);
-    if (!cleanup.ok && cleanup.status !== 404) return { ok: false, msg: "合并已完成，但临时分支清理仍失败：" + cleanup.msg, merged: true };
-    await env.KV.delete(key);
+  if (["merged_cleanup_failed", "merged_history_failed", "merged_record_cleanup_failed"].includes(record.status)) {
+    if (record.status === "merged_history_failed" && record.history_row) {
+      try {
+        const savedHistory = await codeHistoryLoad(env, user);
+        if (!savedHistory.some((item) => item && item.commit_sha === record.commit_sha)) {
+          await codeHistorySave(env, user, [record.history_row, ...savedHistory]);
+        }
+      } catch (historyError) {
+        return { ok: false, merged: true, history_saved: false, branch_deleted: false, msg: "GitHub 已合并，但历史记录补写仍失败；临时分支保留：" + (historyError && historyError.message || "历史写入失败") };
+      }
+      record.status = "merged_cleanup_failed";
+      await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 });
+    }
+    let cleanup;
+    try { cleanup = await codeDeleteBranch(env, repo, record.branch); }
+    catch (cleanupError) { cleanup = { ok: false, msg: cleanupError && cleanupError.message || "GitHub 清理请求异常" }; }
+    if (!cleanup.ok && cleanup.status !== 404) {
+      record.status = "merged_cleanup_failed";
+      record.updated_at = new Date().toISOString();
+      await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }).catch(() => null);
+      return { ok: false, msg: "合并已完成，但临时分支清理仍失败：" + cleanup.msg, merged: true, branch_deleted: false };
+    }
+    try {
+      await env.KV.delete(key);
+    } catch (recordError) {
+      record.status = "merged_record_cleanup_failed";
+      record.updated_at = new Date().toISOString();
+      await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }).catch(() => null);
+      return { ok: false, merged: true, branch_deleted: true, record_cleanup_failed: true, msg: "临时分支已删除，但本地状态记录清理失败；可重试清理记录：" + (recordError && recordError.message || "KV 删除失败") };
+    }
     return { ok: true, merged: true, branch_deleted: true, branch: record.branch, cleanup_retry: true };
   }
   const compareUrl = "https://api.github.com/repos/" + repo + "/compare/" + encodeURIComponent(record.baseBranch) + "..." + encodeURIComponent(record.branch);
@@ -734,14 +760,28 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
   if (!commitSha) return { ok: false, merged: true, msg: "GitHub 已合并，但读取合并提交 SHA 失败；临时分支保留，需人工核对。" };
   const history = await codeHistoryLoad(env, user);
   const row = { id: "workbench-" + Date.now().toString(36), kind: "commit", actor: String(user), repo, project: record.project, baseBranch: record.baseBranch, commit_sha: commitSha, previous_sha: previousSha, at: new Date().toISOString(), summary: String(body.summary || "开发台推送"), files, preview_url: record.preview_url || "" };
-  await codeHistorySave(env, user, [row, ...history]);
-  const deleted = await codeDeleteBranch(env, repo, record.branch);
+  try {
+    await codeHistorySave(env, user, [row, ...history]);
+  } catch (historyError) {
+    record.status = "merged_history_failed"; record.commit_sha = commitSha; record.history_row = row; record.updated_at = new Date().toISOString();
+    try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); } catch (_) {}
+    return { ok: false, merged: true, history_saved: false, branch_deleted: false, commit_sha: commitSha, files, msg: "GitHub 已合并，但历史记录保存失败；临时分支已保留，重试将先补写历史，不会再次合并：" + (historyError && historyError.message || "历史写入失败") };
+  }
+  let deleted;
+  try { deleted = await codeDeleteBranch(env, repo, record.branch); }
+  catch (cleanupError) { deleted = { ok: false, msg: cleanupError && cleanupError.message || "GitHub 清理请求异常" }; }
   if (!deleted.ok && deleted.status !== 404) {
     record.status = "merged_cleanup_failed"; record.commit_sha = commitSha; record.updated_at = new Date().toISOString();
-    await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 });
-    return { ok: true, merged: true, branch_deleted: false, commit_sha: commitSha, files, msg: "已合并到 main，但删除临时分支失败：" + deleted.msg };
+    try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); } catch (_) {}
+    return { ok: false, merged: true, branch_deleted: false, commit_sha: commitSha, files, msg: "已合并到 main，但删除临时分支失败：" + deleted.msg };
   }
-  await env.KV.delete(key);
+  try {
+    await env.KV.delete(key);
+  } catch (recordError) {
+    record.status = "merged_record_cleanup_failed"; record.commit_sha = commitSha; record.updated_at = new Date().toISOString();
+    try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); } catch (_) {}
+    return { ok: false, merged: true, branch_deleted: true, record_cleanup_failed: true, commit_sha: commitSha, files, msg: "临时分支已删除，但本地状态记录清理失败；可重试清理记录：" + (recordError && recordError.message || "KV 删除失败") };
+  }
   return { ok: true, merged: true, branch_deleted: true, commit_sha: commitSha, files, history_id: row.id, preview_url: row.preview_url, reply: "已合并到 " + record.baseBranch + "，临时分支已删除。" };
 }
 async function codeWorkbenchBranchMerge(env, user, body = {}) {
