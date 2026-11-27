@@ -1641,3 +1641,66 @@ test('Cron Issue Agent: codeLLM rotates existing providers with 60-second per-mo
   assert.ok(docs.includes('per_page=1'));
   assert.doesNotMatch(agent, /CODE_OR_MODELS|CODE_GROQ_MODELS|CODE_NVIDIA_MODELS/);
 });
+
+test('codeLLM: a model timeout is cut at 60 seconds and advances to the next existing provider', async () => {
+  const start = workerSource.indexOf('async function codeLLM(');
+  const end = workerSource.indexOf('// GitHub 读写：', start);
+  assert.ok(start >= 0 && end > start, 'codeLLM source must exist');
+  const source = workerSource.slice(start, end);
+  const calls = [], timeouts = [];
+  const sandbox = {
+    CODE_OR_MODELS: ['or-model-a', 'or-model-b'],
+    CODE_GROQ_MODELS: ['groq-model-a'],
+    CODE_NVIDIA_MODELS: ['nvidia-model-a'],
+    getKeys: value => String(value || '').split(',').map(x => x.trim()).filter(Boolean),
+    T: ms => { timeouts.push(ms); return { timeoutMs: ms }; },
+    Date: class FixedDate extends Date { static now() { return 1700000000000; } },
+    fetch: async (url, options) => {
+      const model = JSON.parse(options.body).model;
+      calls.push({url, model, timeoutMs: options.signal.timeoutMs});
+      if (calls.length === 1) throw Object.assign(new Error('request timed out'), {name: 'TimeoutError'});
+      if (calls.length === 2) return {ok: false, status: 429};
+      return {ok: true, json: async () => ({choices: [{message: {content: 'fallback provider worked'}, finish_reason: 'stop'}]})};
+    }
+  };
+  vm.runInNewContext(source + '\nglobalThis.testCodeLLM = codeLLM;', sandbox);
+  const result = await sandbox.testCodeLLM({
+    OPENROUTER_KEYS: 'or-key',
+    GROQ_KEYS: 'groq-key',
+    NVIDIA_KEYS: 'nvidia-key'
+  }, messages, 180000);
+  assert.equal(result.text, 'fallback provider worked');
+  assert.equal(result.from, 'Groq · groq-model-a');
+  assert.deepEqual(calls.map(x => x.model), ['or-model-a', 'or-model-b', 'groq-model-a']);
+  assert.deepEqual(timeouts, [60000, 60000, 60000]);
+  assert.ok(calls.every(x => x.timeoutMs === 60000));
+});
+
+test('codeLLM: exhausted model pool ends after one pass without retrying candidates', async () => {
+  const start = workerSource.indexOf('async function codeLLM(');
+  const end = workerSource.indexOf('// GitHub 读写：', start);
+  const source = workerSource.slice(start, end);
+  const calls = [];
+  const sandbox = {
+    CODE_OR_MODELS: ['or-model-a', 'or-model-b'],
+    CODE_GROQ_MODELS: ['groq-model-a'],
+    CODE_NVIDIA_MODELS: ['nvidia-model-a'],
+    getKeys: value => String(value || '').split(',').map(x => x.trim()).filter(Boolean),
+    T: ms => ({timeoutMs: ms}),
+    Date: class FixedDate extends Date { static now() { return 1700000000000; } },
+    fetch: async (url, options) => {
+      calls.push(JSON.parse(options.body).model);
+      return {ok: false, status: 429};
+    }
+  };
+  vm.runInNewContext(source + '\nglobalThis.testCodeLLM = codeLLM;', sandbox);
+  const result = await sandbox.testCodeLLM({
+    OPENROUTER_KEYS: 'or-key',
+    GROQ_KEYS: 'groq-key',
+    NVIDIA_KEYS: 'nvidia-key'
+  }, messages, 180000);
+  assert.equal(result.text, '');
+  assert.equal(calls.length, 4);
+  assert.deepEqual(calls, ['or-model-a', 'or-model-b', 'groq-model-a', 'nvidia-model-a']);
+  assert.equal(result.tried.length, 4);
+});
