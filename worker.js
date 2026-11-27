@@ -528,8 +528,14 @@ async function codeCreateTempBranch(env, repo, project, base = "main") {
   return { ok: true, branch, base: safeBase, sha };
 }
 async function codeDeleteBranch(env, repo, branch) {
-  if (!/^code\/[A-Za-z0-9._\/-]+$/.test(String(branch || ""))) return { ok: false, msg: "只允许删除代码模式创建的临时分支" };
-  return await codeGhApi(env, codeGitRefWriteUrl(repo, "heads/" + branch), { method: "DELETE" });
+  const name = String(branch || "");
+  const segments = name.split("/");
+  if (!/^code\/[A-Za-z0-9._\/-]+$/.test(name) ||
+      segments.length < 2 ||
+      segments.some(segment => !segment || segment === "." || segment === "..")) {
+    return { ok: false, msg: "只允许删除代码模式创建的合法临时分支" };
+  }
+  return await codeGhApi(env, codeGitRefWriteUrl(repo, "heads/" + name), { method: "DELETE" });
 }
 async function codeMergeTempBranch(env, repo, branch, base, message, expectedBaseSha, expectedHeadSha) {
   if (!/^code\/[A-Za-z0-9._\/-]+$/.test(String(branch || ""))) return { ok: false, msg: "临时分支名不合法" };
