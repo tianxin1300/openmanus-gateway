@@ -240,8 +240,8 @@ jobs:
               codeGitRefWriteUrl: (r, ref) => `https://api.github.com/repos/${r}/git/refs/${String(ref).split('/').map(encodeURIComponent).join('/')}`
             };
             vm.runInNewContext(
-              worker.slice(start, end) + '\\n' + worker.slice(mergeStart, mergeEnd) +
-              '\\nglobalThis.__merge = codeMergeTempBranch; globalThis.__workbenchMerge = codeWorkbenchBranchMergeUnlocked;',
+              worker.slice(start, end) + '\n' + worker.slice(mergeStart, mergeEnd) +
+              '\nglobalThis.__merge = codeMergeTempBranch; globalThis.__workbenchMerge = codeWorkbenchBranchMergeUnlocked;',
               sandbox
             );
             try {
