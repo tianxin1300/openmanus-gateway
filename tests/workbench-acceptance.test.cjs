@@ -697,9 +697,10 @@ test('ACCEPTANCE REVIEW-WRITE-02: failed deletion of a rejected added file is no
 
 test('ACCEPTANCE MERGE-HISTORY-RECOVERY-01: history failure is retried without merging twice', async () => {
   let saveCalls = 0, deleteCalls = 0;
+  const savedHistory = [];
   const h = makeMergeHarness({
     globals: {
-      codeHistorySave: async (_env, _user, rows) => { saveCalls++; if (saveCalls === 1) throw new Error('history KV unavailable'); },
+      codeHistorySave: async (_env, _user, rows) => { saveCalls++; if (saveCalls === 1) throw new Error('history KV unavailable'); savedHistory.splice(0, savedHistory.length, ...rows); },
       codeDeleteBranch: async () => { deleteCalls++; return { ok: true }; }
     }
   });
@@ -713,6 +714,7 @@ test('ACCEPTANCE MERGE-HISTORY-RECOVERY-01: history failure is retried without m
   assert.equal(second.ok, true);
   assert.equal(second.cleanup_retry, true);
   assert.equal(h.state.mergeCalls, 1, 'retry must not call GitHub merge again');
+  assert.equal(savedHistory.length, 1, 'retry writes the missing history row');
   assert.equal(deleteCalls, 1);
 });
 
