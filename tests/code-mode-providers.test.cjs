@@ -1562,6 +1562,11 @@ test('ACCEPTANCE AUTO-03: Monaco and textarea fallback both wrap long lines with
 
 test('ACCEPTANCE AUTO-04: terminal and run-log tabs switch exclusively and follow visual viewport changes', () => {
   const script = /<script\b(?=[^>]*\bid=["']wb-devbench["'])[^>]*>([\s\S]*?)<\/script\s*>/i.exec(frontendSource)[1];
+  assert.match(frontendSource, /<div id="wb-term-tabs" role="tablist" aria-label="终端与运行日志">/);
+  assert.match(frontendSource, /<button type="button" id="wb-terminal-tab" role="tab" aria-controls="wb-terminal" aria-selected="true">/);
+  assert.match(frontendSource, /<button type="button" id="wb-runlogs-tab" role="tab" aria-controls="wb-runlogs" aria-selected="false">/);
+  assert.match(frontendSource, /<section id="wb-terminal" aria-label="终端">/);
+  assert.match(frontendSource, /<div id="wb-runlogs" aria-label="Pages 与 Worker 运行日志" hidden>/);
   assert.match(frontendSource, /<div id="wb-runlogs" aria-label="Pages 与 Worker 运行日志" hidden>/);
   assert.doesNotMatch(frontendSource, /<details id="wb-runlogs"/);
   const tabs = script.slice(script.indexOf('function setTerminalPanel(panel)'), script.indexOf('function appendTerminalCommand(', script.indexOf('function setTerminalPanel(panel)')));
