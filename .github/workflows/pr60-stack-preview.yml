@@ -76,6 +76,18 @@ jobs:
           test -n "$WORKER_URL" || { echo "::error::Could not determine preview Worker URL"; exit 1; }
           echo "url=$WORKER_URL" >> "$GITHUB_OUTPUT"
 
+      - name: Configure OpenRouter key on isolated preview Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          OPENROUTER_KEYS: ${{ secrets.PR60_PREVIEW_OPENROUTER_KEYS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$OPENROUTER_KEYS" || { echo "::error::PR60_PREVIEW_OPENROUTER_KEYS is missing"; exit 1; }
+          printf '%s' "$OPENROUTER_KEYS" | npx --yes wrangler@4 secret put OPENROUTER_KEYS --config wrangler.pr60-preview.toml
+          echo "PASS: OpenRouter credential configured on the isolated PR #60 preview Worker; secret value was not printed."
+
       - name: Deploy Pages preview from the same PR SHA
         id: pages
         env:
