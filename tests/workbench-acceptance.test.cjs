@@ -1529,11 +1529,11 @@ test('ACCEPTANCE WORKBENCH-AUTH-ROUTE-01: workbench HTTP routes reject missing, 
   const userSource = sourceOf('async function userFromReq(', 'const getKeys =');
   const routeSource = sourceOf('    if (path === "/api/code/branch/current"', '    if (path === "/api/code/tree"');
   const route = runFunction(
-    authSource + '\\n' + userSource +
-    '\\nasync function testWorkbenchRoute(request, env, url, path) {\\n' + routeSource + '\\nreturn null;\\n}',
+    authSource + '\n' + userSource +
+    '\nasync function testWorkbenchRoute(request, env, url, path) {\n' + routeSource + '\nreturn null;\n}',
     'testWorkbenchRoute',
     {
-      AG_RE: /^\\/api\\/(agent\\/(tool|cron)\\/|translate$|places\\/(nearby|route|suggest|where)$)/,
+      AG_RE: /$^/,
       json: (value, status = 200) => new Response(JSON.stringify(value), { status }),
       codeWorkbenchBranchCurrent: async () => ({ ok: true }),
       codeWorkbenchBranchCreate: async () => ({ ok: true }),
