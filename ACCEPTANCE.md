@@ -269,12 +269,13 @@ npm test
 
 ### WORKBENCH-09 — 失败后的状态清理
 
-**自动化测试：** `ACCEPTANCE CLEANUP-01: failed deletion retains recoverable state; successful cancel clears branch and state for the next task`
+**自动化测试：** `ACCEPTANCE CLEANUP-01: failed deletion retains recoverable state; successful cancel clears branch and state for the next task`；`ACCEPTANCE LOCK-CLEANUP-01: failed or cancelled claim releases its operation lock and permits the next task`
 
 **测试覆盖：**
 - GitHub 删除临时分支失败时，不能假装取消成功或清除 KV 分支记录。
 - 重试删除成功后，临时分支记录与审核状态清除。
 - 清理完成后，同一项目可以创建新的任务分支。
+- Durable Object 审核 claim 在失败完成后释放操作锁；取消清空后旧 claim 不残留，下一任务可重新创建。
 
 **通过条件：** 删除失败保留可恢复状态；成功取消后旧状态清空，下一任务创建成功。
 
