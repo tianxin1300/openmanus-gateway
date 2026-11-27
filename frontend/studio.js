@@ -245,7 +245,7 @@
     return panel;
   }
   function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
-  function hide() { clearTimeout(closeTimer); clearTimeout(expTimer); if (panel) panel.hidden = true; if (reopenBtn) reopenBtn.classList.remove("on"); panelState = ""; panelCollapsed = false; currentPending = null; }
+  function hide() { clearTimeout(closeTimer); clearTimeout(expTimer); clearTimeout(verifyPollTimer); if (panel) panel.hidden = true; if (reopenBtn) reopenBtn.classList.remove("on"); panelState = ""; panelCollapsed = false; currentPending = null; }
   function collapse() { clearTimeout(closeTimer); if (panel) panel.hidden = true; if (reopenBtn) reopenBtn.classList.add("on"); panelCollapsed = true; }
   function refreshPending(quiet) {
     if (refreshBusy) return Promise.resolve(); refreshBusy = true;
@@ -318,7 +318,7 @@
     footer = el("div", "om-pf");
     var verifying = p.status === "verification_pending", passed = p.status === "verification_passed", failed = p.status === "verification_failed";
     stEl = el("div", "om-st", verifying ? "验证运行中，页面会自动刷新状态；验证未通过前不会合并。" : passed ? "测试与构建已通过。再次确认后才会合并到 " + (p.baseBranch || "目标分支") + "。" : failed ? "验证失败，修改仍保留在临时分支。" : "先推送到临时分支并运行测试，测试通过后再确认合并。");
-    noBtn = el("button", "om-btn om-no", "不推"); noBtn.type = "button"; noBtn.disabled = verifying;
+    noBtn = el("button", "om-btn om-no", "不推"); noBtn.type = "button"; noBtn.disabled = verifying; if (fcBtn) fcBtn.disabled = verifying;
     yesBtn = el("button", "om-btn om-yes", passed ? "确认合并" : failed ? "重新验证" : "推送并验证"); yesBtn.type = "button"; yesBtn.disabled = verifying;
     noBtn.addEventListener("click", function () { decide(false); });
     yesBtn.addEventListener("click", function () { decide(true); });
