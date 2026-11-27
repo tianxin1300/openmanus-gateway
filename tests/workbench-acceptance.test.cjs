@@ -469,7 +469,7 @@ test('ACCEPTANCE WORKBENCH-CONCURRENCY-01: simultaneous branch operations are se
   const env = { CODE_CLAIMS: {} };
   const first = create(env, 'owner', { repo: 'tianxin1300/openmanus-gateway' });
   await Promise.resolve();
-  const second = await merge(env, 'owner', { repo: 'tianxin1300/openmanus-gateway' });
+  const second = await merge(env, 'different-authorized-user', { repo: 'tianxin1300/openmanus-gateway' });
   assert.equal(second.ok, false);
   assert.equal(second.busy, true);
   assert.equal(entered, 1, 'a concurrent merge cannot enter while create owns the shared project lock');
