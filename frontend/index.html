@@ -6323,7 +6323,7 @@ async function mergeWorkbenchBranch() {
   if (!activeBranchRecord) return say("当前没有活动临时分支。", true);
   if (dirty) { await save(); if (dirty) return; }
   const accepted = workbenchChanges.filter(file => workbenchDecisions[file.path] === true).map(file => file.path);
-  if (!accepted.length && activeBranchRecord.status !== "merged_cleanup_failed") return say("还没有接受任何文件。请在改动预览里逐个接受文件，或直接丢弃分支。", true);
+  if (!accepted.length && !["merged_cleanup_failed", "merged_history_failed", "merged_record_cleanup_failed"].includes(activeBranchRecord.status)) return say("还没有接受任何文件。请在改动预览里逐个接受文件，或直接丢弃分支。", true);
   const button = g("wb-push"); if (button) button.disabled = true;
   try {
     const result = await wbApi("/api/code/branch/merge", { method: "POST", body: JSON.stringify({ repo: workbenchRepoFull(), branch: activeBranchRecord.branch, accepted_paths: accepted, summary: "Workbench: " + accepted.length + " files" }) });
@@ -6338,7 +6338,26 @@ async function mergeWorkbenchBranch() {
     await Promise.all([loadWorkbenchTree(), loadWorkbenchChanges(), loadWorkbenchVersions(), loadFile()]);
   } catch (error) {
     const details = error.data && Array.isArray(error.data.files) ? error.data.files.join("\n") : "";
-    if (error.status === 409 || (error.data && error.data.conflict)) {
+    if (error.data && error.data.merged === true) {
+      const branchDeleted = error.data.branch_deleted === true;
+      if (activeBranchRecord && !branchDeleted) activeBranchRecord.status = error.data.history_saved === false ? "merged_history_failed" : "merged_cleanup_failed";
+      card("已合并到 main，恢复处理待完成", (error.message || "GitHub 已完成合并，但后续历史/清理步骤尚未完成") + (branchDeleted
+        ? "\n\n临时分支已删除，正在核对并清理本地状态记录。"
+        : "\n\n临时分支与恢复记录已保留。可再次点击「推」完成恢复清理，不会重复创建合并提交。"), true);
+      if (branchDeleted) {
+        try {
+          const current = await wbApi("/api/code/branch/current?repo=" + encodeURIComponent(workbenchRepoFull()), { cache: "no-store" });
+          activeBranchRecord = current.active ? current : null;
+          REPO.branch = activeBranchRecord ? activeBranchRecord.branch : "main";
+          if (!activeBranchRecord) {
+            workbenchChanges = [];
+            Object.keys(workbenchDecisions).forEach(key => delete workbenchDecisions[key]);
+          }
+          updateWorkbenchBranchUI();
+        } catch (refreshError) { say("合并已完成，但状态核对失败：" + (refreshError.message || String(refreshError)), true); }
+      }
+      await Promise.all([loadWorkbenchChanges(), loadWorkbenchVersions(), loadWorkbenchTree()]);
+    } else if (error.status === 409 || (error.data && error.data.conflict)) {
       card("合并冲突：临时分支已保留", (error.message || "main 与临时分支存在冲突") + "\n\n冲突/改动文件：\n" + details + "\n\n请从左侧文件树打开文件，在临时分支里手动合并并保存，再点「推」。", true);
       await loadWorkbenchChanges();
     } else say("推送失败，临时分支保留：" + (error.message || String(error)), true);
