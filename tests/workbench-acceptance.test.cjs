@@ -523,3 +523,45 @@ test('ACCEPTANCE WORKBENCH-LOCK-SCOPE-01: review and discard also acquire the re
   ]);
   assert.match(worker, /codeWorkbenchBranchRejectFileUnlocked\(env, user, \{ repo, path, previous_path:/);
 });
+
+
+test('ACCEPTANCE MULTI-REVIEW-RECOVERY-01: failed rename rejection preserves a retryable destination', async () => {
+  const repo = 'tianxin1300/openmanus-gateway';
+  const files = {
+    'old.js': { base: 'original', branch: null },
+    'new.js': { base: null, branch: 'renamed' }
+  };
+  const record = { repo, branch: 'code/rename-recovery', baseBranch: 'main', baseCommit: 'base', project: 'p' };
+  let auditWrites = 0, deleteAttempts = 0;
+  const reject = runFunction(sourceOf('async function codeWorkbenchBranchRejectFileUnlocked(', 'async function codeWorkbenchBranchRejectFile('), 'codeWorkbenchBranchRejectFileUnlocked', {
+    codeRepoOk: () => true, codePathOk: p => !!p && !p.includes('..'), codePushGuard: () => '',
+    codeWorkbenchBranchCurrent: async () => ({ ok: true, active: true, ...record }),
+    codeWorkbenchBranchKey: () => 'key',
+    codeGetFile: async (_e, _r, p, ref) => {
+      const row = files[p]; const value = ref === 'base' ? row.base : row.branch;
+      return value == null ? { ok: true, exists: false } : { ok: true, exists: true, text: value, sha: p + '-sha' };
+    },
+    codeUpdateFile: async (_e, _r, p, value) => { files[p].branch = value; return { ok: true }; },
+    codeGhUrl: (_r, p) => 'https://api.github.com/contents/' + p,
+    codeGhApi: async (_e, url) => {
+      deleteAttempts++;
+      if (deleteAttempts === 1) return { ok: false, status: 500, msg: 'temporary delete failure' };
+      files['new.js'].branch = null; return { ok: true };
+    }
+  });
+  const kv = {
+    async get() { return { ...record }; },
+    async put() { auditWrites++; }
+  };
+  const env = { KV: kv };
+  const first = await reject(env, 'reviewer', { repo, path: 'new.js', previous_path: 'old.js', branch: record.branch });
+  assert.equal(first.ok, false);
+  assert.equal(files['old.js'].branch, 'original', 'rename source is restored before destination deletion');
+  assert.equal(files['new.js'].branch, 'renamed', 'failed deletion leaves destination intact for retry');
+  assert.equal(auditWrites, 0, 'failed partial rejection is not recorded as a completed review');
+  const second = await reject(env, 'reviewer', { repo, path: 'new.js', previous_path: 'old.js', branch: record.branch });
+  assert.equal(second.ok, true);
+  assert.equal(files['old.js'].branch, 'original');
+  assert.equal(files['new.js'].branch, null);
+  assert.equal(auditWrites, 1, 'successful retry records the review event');
+});
