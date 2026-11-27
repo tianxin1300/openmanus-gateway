@@ -1005,3 +1005,43 @@ test('ACCEPTANCE MERGE-CAS-04: failed scratch cleanup prevents target ref mutati
   assert.equal(result.scratch_branch, 'code/merge-txn-orphan');
   assert.equal(targetPatch, false);
 });
+
+
+test('ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-01: long-running workbench operation renews and then releases its lock', async () => {
+  const calls = [];
+  let tick = null, cleared = false;
+  const helper = sourceOf('async function codeWorkbenchWithLock(', 'async function codeWorkbenchBranchCurrent(');
+  const wrapped = runFunction(helper, 'codeWorkbenchWithLock', {
+    codeWorkbenchLockCall: async (_env, _repo, action) => { calls.push(action); return { ok: true }; },
+    setInterval: fn => { tick = fn; return 77; },
+    clearInterval: id => { assert.equal(id, 77); cleared = true; }
+  });
+  const result = await wrapped({ CODE_CLAIMS: {} }, 'owner', 'owner/repo', 'merge', async () => {
+    assert.equal(typeof tick, 'function');
+    tick();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    return { ok: true };
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, ['branch-lock', 'branch-renew', 'branch-unlock']);
+  assert.equal(cleared, true);
+});
+
+test('ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-FAIL-01: failed lease renewal is reported as uncertain instead of success', async () => {
+  const helper = sourceOf('async function codeWorkbenchWithLock(', 'async function codeWorkbenchBranchCurrent(');
+  const wrapped = runFunction(helper, 'codeWorkbenchWithLock', {
+    codeWorkbenchLockCall: async (_env, _repo, action) => action === 'branch-renew'
+      ? { ok: false, stale: true, msg: 'lease expired' } : { ok: true },
+    setInterval: fn => { globalThis.__renewTick = fn; return 88; },
+    clearInterval: () => { delete globalThis.__renewTick; }
+  });
+  const result = await wrapped({ CODE_CLAIMS: {} }, 'owner', 'owner/repo', 'merge', async () => {
+    globalThis.__renewTick();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    return { ok: true, merged: true };
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.lock_renewal_failed, true);
+  assert.equal(result.operation_result.merged, true);
+  assert.match(result.msg, /核对 GitHub 实际结果/);
+});
