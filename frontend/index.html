@@ -6166,7 +6166,7 @@ async function mcpPut(path, content, message, sha) {
     method: "POST",
     body: JSON.stringify({ repo: workbenchRepoFull(), branch: REPO.branch, path, content, message, sha })
   });
-  return JSON.stringify({ content: { sha: result.sha || "" } });
+  return JSON.stringify({ content: { sha: result.sha || "" }, audit_saved: result.audit_saved !== false, audit_warning: result.audit_warning || "" });
 }
 
 const WORKBENCH_PROJECTS = {
@@ -6301,7 +6301,7 @@ async function loadWorkbenchVersions() {
     rows.forEach(row => {
       const item = document.createElement("div"); item.className = "wb-version-row";
       const title = document.createElement("div"); title.className = "wb-change-path"; title.textContent = String(row.commit_sha); item.appendChild(title);
-      const meta = document.createElement("div"); meta.className = "wb-change-meta"; meta.textContent = (row.at || "时间未知") + " · " + (row.summary || "代码提交"); item.appendChild(meta);
+      const meta = document.createElement("div"); meta.className = "wb-change-meta"; meta.textContent = (row.at || "时间未知") + (row.actor ? " · 操作者 " + row.actor : "") + " · " + (row.summary || (row.kind === "workbench_discard" ? "丢弃临时分支" : "代码提交")); item.appendChild(meta);
       const files = document.createElement("div"); files.className = "wb-change-meta"; files.textContent = (row.files || []).join(", "); item.appendChild(files);
       const rollback = document.createElement("button"); rollback.type = "button"; rollback.textContent = "回滚"; rollback.disabled = !!activeBranchRecord;
       rollback.title = activeBranchRecord ? "请先推送或丢弃当前临时分支，再回滚历史版本" : "创建一个新回滚提交，不重写历史";
@@ -6374,7 +6374,10 @@ async function discardWorkbenchBranch() {
     updateWorkbenchBranchUI(); say(result.main_untouched ? "临时分支已删除，main 未改变。" : "临时分支已清理。");
     workbenchChanges = []; Object.keys(workbenchDecisions).forEach(key => delete workbenchDecisions[key]);
     await Promise.all([loadWorkbenchTree(), loadWorkbenchChanges(), loadWorkbenchVersions(), loadFile()]);
-  } catch (error) { say("删除临时分支失败，记录保留：" + (error.message || String(error)), true); }
+  } catch (error) {
+    if (error.data && error.data.discarded && error.data.branch_deleted) card("临时分支已删除，审计/状态清理待完成", error.message || "分支已删除，审计记录或本地状态仍待恢复；再次点击「丢弃」可重试清理。", true);
+    else say("删除临时分支失败，记录保留：" + (error.message || String(error)), true);
+  }
   finally { if (button) button.disabled = !activeBranchRecord; }
 }
 async function createWorkbenchBranch() {
@@ -6588,11 +6591,11 @@ async function save() {
   saving = true; g("wb-save").disabled = true; say("正在保存到临时分支 …");
   try {
     const out = await mcpPut(FILE, val, "workbench: update " + FILE + " (" + new Date().toISOString().slice(0, 16).replace("T", " ") + ")", curSha);
-    let ns = null; try { const j = JSON.parse(out); ns = (j.content && j.content.sha) || j.sha || null; } catch (_) {}
+    let ns = null, auditSaved = true, auditWarning = ""; try { const j = JSON.parse(out); ns = (j.content && j.content.sha) || j.sha || null; auditSaved = j.audit_saved !== false; auditWarning = j.audit_warning || ""; } catch (_) {}
     if (!ns) { try { const r = await mcpGet(FILE); ns = r.sha || null; } catch (_) {} }
     if (!ns) throw new Error("保存请求已完成，但无法确认新文件 SHA；请重新读取文件后再继续。");
     curSha = ns; dirty = false;
-    say("已保存到临时分支 " + REPO.branch + "（" + new Date().toLocaleTimeString() + "），main 未改变"); note("已保存到临时分支");
+    say(auditSaved ? ("已保存到临时分支 " + REPO.branch + "（" + new Date().toLocaleTimeString() + "），main 未改变") : ("文件已保存，但操作者审计记录未同步：" + (auditWarning || "请保留当前状态并重试刷新"))); note(auditSaved ? "已保存到临时分支" : "已保存，但审计记录待补写");
     await Promise.all([loadWorkbenchChanges(), loadWorkbenchTree()]);
   } catch (e) { say("保存失败：" + e.message, true); }
   finally { saving = false; g("wb-save").disabled = !activeBranchRecord; }
