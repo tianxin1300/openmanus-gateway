@@ -695,7 +695,10 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
         return { ok: false, merged: true, history_saved: false, branch_deleted: false, msg: "GitHub 已合并，但历史记录补写仍失败；临时分支保留：" + (historyError && historyError.message || "历史写入失败") };
       }
       record.status = "merged_cleanup_failed";
-      await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 });
+      try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); }
+      catch (recordError) {
+        return { ok: false, merged: true, history_saved: true, branch_deleted: false, msg: "历史已补写，但清理状态保存失败；临时分支保留：" + (recordError && recordError.message || "KV 写入失败") };
+      }
     }
     let cleanup;
     try { cleanup = await codeDeleteBranch(env, repo, record.branch); }
