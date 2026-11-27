@@ -742,7 +742,7 @@ async function codeWorkbenchBranchSaveFile(env, user, body = {}) {
   const repo = String(body.repo || "");
   return codeWorkbenchWithLock(env, user, repo, "save", () => codeWorkbenchBranchSaveFileUnlocked(env, user, body));
 }
-async function codeWorkbenchBranchPreview(env, user, repo) {
+async function codeWorkbenchBranchPreviewUnlocked(env, user, repo) {
   const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
   const current = await codeWorkbenchBranchCurrent(env, user, repo);
   if (!current.ok || !current.active) return { ok: false, msg: "当前项目没有活动临时分支" };
@@ -758,6 +758,9 @@ async function codeWorkbenchBranchPreview(env, user, repo) {
   current.preview_started_at = new Date().toISOString();
   await env.KV.put(codeWorkbenchBranchKey(user, repo), JSON.stringify(current), { expirationTtl: 2592000 });
   return { ok: true, preview_url: current.preview_url, request_id: requestId, branch: current.branch, state: "dispatched" };
+}
+async function codeWorkbenchBranchPreview(env, user, repo) {
+  return codeWorkbenchWithLock(env, user, repo, "preview", () => codeWorkbenchBranchPreviewUnlocked(env, user, repo));
 }
 async function codeWorkbenchBranchDiscardUnlocked(env, user, body = {}) {
   const repo = String(body.repo || "");
