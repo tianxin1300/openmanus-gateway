@@ -72,7 +72,7 @@ test('ACCEPTANCE REVIEW-01: rejected file is absent from the final merge diff', 
       if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: 'base-sha' } } };
       throw new Error('unexpected API ' + url);
     },
-    codeWorkbenchBranchRejectFile: async (_env, _user, body) => { branch[body.path] = main[body.path]; return { ok: true }; },
+    codeWorkbenchBranchRejectFileUnlocked: async (_env, _user, body) => { branch[body.path] = main[body.path]; return { ok: true }; },
     codeMergeTempBranch: async () => { mergedFiles = { ...branch }; Object.assign(main, branch); return { ok: true, data: { sha: 'merged-sha' } }; },
     codeDeleteBranch: async () => ({ ok: true }),
     codeHistoryLoad: async () => history,
