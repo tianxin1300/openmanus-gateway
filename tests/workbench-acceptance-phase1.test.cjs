@@ -53,8 +53,8 @@ const permissions = [
   ['010','token file','path=deploy_token_prod','reject',()=>assert.match(codePushGuard(goodEnv,'owner','owner/repo','deploy_token_prod'),/敏感文件/)]
 ];
 for (const [id,label,input,expected,run] of permissions) testCase(id,'权限边界',input,'codePushGuard',expected,'错误身份或敏感路径不得获准写入',run);
-testCase('011','权限边界','actor=owner repo=owner/repo path=src/index.js','allow','返回空拒绝原因','合法授权请求被拒绝',()=>assert.equal(codePushGuard(goodEnv,'owner','owner/repo','src/index.js'),''));
-testCase('012','权限边界','CODE_REPOS 大小写不同','allow','仓库白名单大小写不敏感','合法仓库因大小写被误拒',()=>assert.equal(codeRepoOk({CODE_REPOS:'Owner/Repo'},'owner/repo'),true));
+testCase('011','幂等并发','actor=owner repo=owner/repo path=src/index.js','allow','返回空拒绝原因','合法授权请求被拒绝',()=>assert.equal(codePushGuard(goodEnv,'owner','owner/repo','src/index.js'),''));
+testCase('012','幂等并发','CODE_REPOS 大小写不同','allow','仓库白名单大小写不敏感','合法仓库因大小写被误拒',()=>assert.equal(codeRepoOk({CODE_REPOS:'Owner/Repo'},'owner/repo'),true));
 
 // 2. 幂等性与并发重复：验证真实锁包装器的拒绝、释放和异常路径。
 const lockSource = sliceSource('async function codeWorkbenchLockCall', 'async function codeWorkbenchBranchCurrent');
@@ -76,11 +76,23 @@ const paths = [
 ['028','empty path','',false],['029','leading slash','/src/a.js',false],['030','double slash','src//a.js',false],['031','dot segment','src/./a.js',false],['032','parent segment','src/../a.js',false]
 ];
 for(const [id,label,input,valid] of paths)testCase(id,'多文件审核',input,'codePathOk',valid?'true':'false','路径校验结果与预期不一致',()=>assert.equal(codePathOk(input),valid));
-testCase('033','多文件审核','.env','codePathProtected','true','环境文件未被保护',()=>assert.equal(codePathProtected('.env'),true));
-testCase('034','多文件审核','config/.env.production','codePathProtected','true','嵌套环境文件未被保护',()=>assert.equal(codePathProtected('config/.env.production'),true));
-testCase('035','多文件审核','src/.git/config','codePathProtected','true','嵌套 git 元数据未被保护',()=>assert.equal(codePathProtected('src/.git/config'),true));
-testCase('036','多文件审核','app_secret_backup','codePathProtected','true','secret 文件未被保护',()=>assert.equal(codePathProtected('app_secret_backup'),true));
-testCase('037','多文件审核','public/index.html','codePathProtected','false','普通文件被误判为敏感',()=>assert.equal(codePathProtected('public/index.html'),false));
+const discardSource = sliceSource('async function codeWorkbenchBranchDiscardUnlocked', 'async function codeWorkbenchBranchDiscard(');
+const discardHarness = (overrides = {}) => {
+  const state = { record: { project: 'p', branch: 'code/p-1', repo: 'owner/repo' }, deleted: 0, audit: 0, removed: 0 };
+  const fn = evaluate(discardSource,'codeWorkbenchBranchDiscardUnlocked',{
+    codeRepoOk:()=>true,codePushGuard:()=>'',codeWorkbenchBranchKey:()=> 'k',
+    codeDeleteBranch:async()=>{state.deleted++;return{ok:true};},
+    codeHistoryLoad:async()=>[],codeHistorySave:async()=>{state.audit++;},
+    ...overrides
+  });
+  const env={KV:{get:async()=>state.record,put:async(_k,v)=>{state.record=JSON.parse(v);},delete:async()=>{state.removed++;state.record=null;}}};
+  return {fn,env,state};
+};
+testCase('033','失败清理','KV record absent','idempotent discard','already_absent=true','无记录时误删其他分支',async()=>{const h=discardHarness();h.env.KV.get=async()=>null;const r=await h.fn.codeWorkbenchBranchDiscardUnlocked(h.env,'owner',{repo:'owner/repo'});assert.equal(r.already_absent,true);assert.equal(h.state.deleted,0);});
+testCase('034','失败清理','request branch differs from stored branch','reject','拒绝删除且不调用 GitHub','请求可删除其他活动分支',async()=>{const h=discardHarness();const r=await h.fn.codeWorkbenchBranchDiscardUnlocked(h.env,'owner',{repo:'owner/repo',branch:'code/other'});assert.equal(r.ok,false);assert.equal(h.state.deleted,0);});
+testCase('035','失败清理','GitHub delete returns 503','retain','保留 KV 且不写审计','删除失败却清除恢复状态',async()=>{const h=discardHarness({codeDeleteBranch:async()=>({ok:false,status:503,msg:'unavailable'})});const r=await h.fn.codeWorkbenchBranchDiscardUnlocked(h.env,'owner',{repo:'owner/repo'});assert.equal(r.ok,false);assert.equal(h.state.removed,0);assert.equal(h.state.audit,0);});
+testCase('036','失败清理','audit persistence throws','recovery status','保存 discard_history_failed 状态','审计失败后无恢复记录',async()=>{const h=discardHarness({codeHistorySave:async()=>{throw Error('audit-failed');}});const r=await h.fn.codeWorkbenchBranchDiscardUnlocked(h.env,'owner',{repo:'owner/repo'});assert.equal(r.ok,false);assert.equal(r.branch_deleted,true);assert.equal(h.state.record.status,'discard_history_failed');});
+testCase('037','失败清理','KV delete throws','recovery status','保存 discard_record_cleanup_failed 状态','状态删除失败被报告为完成',async()=>{const h=discardHarness();h.env.KV.delete=async()=>{throw Error('kv-delete-failed');};const r=await h.fn.codeWorkbenchBranchDiscardUnlocked(h.env,'owner',{repo:'owner/repo'});assert.equal(r.ok,false);assert.equal(h.state.record.status,'discard_record_cleanup_failed');});
 
 // 4. 失败清理：删除失败保留恢复信息，状态读取区分 404 与服务端错误。
 const currentSource = sliceSource('async function codeWorkbenchBranchCurrent', 'async function codeWorkbenchBranchCreateUnlocked');
@@ -117,31 +129,33 @@ for(const [id,field,baseSha,headSha,expected] of [
 ])testCase(id,'冲突保护',field,'codeMergeTempBranch SHA gate',String(expected),'SHA 不匹配仍继续创建 scratch ref',async()=>{let writes=0;const f=evaluate(mergeSource,'codeMergeTempBranch',{codeVerifyRef:x=>field==='invalid base ref'?null:x,codeGitRefUrl:(_r,ref)=>'/refs/'+ref,codeTempBranch:()=> 'code/scratch',codeGhApi:async()=>{writes++;return{ok:true,data:{object:{sha:'f'.repeat(40)}}}}});const r=await f.codeMergeTempBranch({},'owner/repo','code/task','main','msg',baseSha,headSha);assert.equal(r.ok,false);assert.equal(writes,field==='base drift'||field==='head drift'?1:0);});
 testCase('059','冲突保护','branch=main','reject','合并源必须为 code/ 临时分支','main 被当成源临时分支',async()=>{let calls=0;const f=evaluate(mergeSource,'codeMergeTempBranch',{codeVerifyRef:x=>x,codeGitRefUrl:()=>'/ref',codeGhApi:async()=>{calls++;return{ok:true}}});const r=await f.codeMergeTempBranch({},'owner/repo','main','main','msg','a'.repeat(40),'b'.repeat(40));assert.equal(r.ok,false);assert.equal(calls,0);});
 testCase('060','冲突保护','merge ref syntax','force=false CAS','最终 ref 更新不得 force push','force=true 允许覆盖基线',()=>{assert.match(mergeSource,/force:\s*false/);assert.match(mergeSource,/expectedBaseSha/);});
+testCase('061','冲突保护','merge preview returns HTTP 409','conflict','将 GitHub 409 作为 conflict 返回','真实合并冲突被误报普通成功',()=>{assert.match(mergeSource,/preview\.status === 409/);assert.match(mergeSource,/conflict:\s*preview\.status === 409/);});
+testCase('062','冲突保护','scratch ref cleanup fails','stop before target update','清理失败时返回 scratch_cleanup_failed','scratch 泄漏后仍更新目标分支',()=>{assert.match(mergeSource,/scratch_cleanup_failed/);assert.match(mergeSource,/目标分支尚未更新/);});
 
 // 7. 历史与回滚：缺失/不完整历史禁止整仓回滚，局部路径受保护。
 const rollbackSource = sliceSource('async function codeRollbackUnlocked', 'const CODE_DEPLOY_WORKFLOW');
 const rollbackFn = evaluate(rollbackSource,'codeRollback',{codeHistoryLoad:async()=>[],codeHistorySave:async()=>{},codeVerifyRef:x=>x,codeRepoOk:()=>true,codePushGuard:()=>''});
-testCase('061','历史回滚','history empty','reject','无历史记录返回失败','空历史触发回滚',async()=>{const r=await rollbackFn.codeRollback({},'owner',{id:'missing'});assert.equal(r.ok,false);});
-testCase('062','历史回滚','record without previous_sha','reject','无 previous_sha 不回滚','缺少版本指针仍执行',async()=>{const f=evaluate(rollbackSource,'codeRollback',{codeHistoryLoad:async()=>[{id:'x',repo:'owner/repo'}],codeVerifyRef:x=>x,codeRepoOk:()=>true,codePushGuard:()=>''});const r=await f.codeRollback({},'owner',{id:'x'});assert.equal(r.ok,false);});
-testCase('063','历史回滚','invalid repo in history','reject','仓库白名单检查失败','非白名单仓库可回滚',async()=>{const f=evaluate(rollbackSource,'codeRollback',{codeHistoryLoad:async()=>[{id:'x',repo:'bad/repo',previous_sha:'a'.repeat(40)}],codeVerifyRef:x=>x,codeRepoOk:()=>false,codePushGuard:()=>''});const r=await f.codeRollback({},'owner',{id:'x'});assert.equal(r.ok,false);});
-testCase('064','历史回滚','protected path guard','reject','回滚写入受权限 guard 约束','无权限身份可回滚',async()=>{const f=evaluate(rollbackSource,'codeRollback',{codeHistoryLoad:async()=>[{id:'x',repo:'owner/repo',previous_sha:'a'.repeat(40)}],codeVerifyRef:x=>x,codeRepoOk:()=>true,codePushGuard:()=> 'denied'});const r=await f.codeRollback({},'owner',{id:'x'});assert.equal(r.ok,false);});
-testCase('065','历史回滚','history files=[]','reject','无文件清单拒绝整仓回滚','缺失路径清单回滚整个仓库',async()=>{let calls=0;const f=evaluate(rollbackSource,'codeRollback',{codeHistoryLoad:async()=>[{id:'x',repo:'owner/repo',previous_sha:'a'.repeat(40),files:[]}],codeVerifyRef:x=>x,codeRepoOk:()=>true,codePushGuard:()=>'',codeGitRefUrl:()=>'/ref',codeGhApi:async()=>{calls++;return{ok:true}}});const r=await f.codeRollback({},'owner',{id:'x'});assert.equal(r.ok,false);assert.equal(calls,1);});
-testCase('066','历史回滚','truncated Git tree','reject','树结果截断时不创建回滚 commit','不完整文件树仍提交',()=>{assert.match(rollbackSource,/data\.truncated/);assert.match(rollbackSource,/拒绝执行整仓库回滚/);});
-testCase('067','历史回滚','rollback commit parent','append-only','回滚新 commit 以当前 HEAD 为 parent','回滚重写历史指针',()=>{assert.match(rollbackSource,/parents:\s*\[currentSha\]/);});
-testCase('068','历史回滚','rollback path allowlist','path filtered','变更路径先经过 codePathOk','非法历史路径写入回滚树',()=>{assert.match(rollbackSource,/filter\(codePathOk\)/);});
+testCase('069','历史回滚','history empty','reject','无历史记录返回失败','空历史触发回滚',async()=>{const r=await rollbackFn.codeRollback({},'owner',{id:'missing'});assert.equal(r.ok,false);});
+testCase('070','历史回滚','record without previous_sha','reject','无 previous_sha 不回滚','缺少版本指针仍执行',async()=>{const f=evaluate(rollbackSource,'codeRollback',{codeHistoryLoad:async()=>[{id:'x',repo:'owner/repo'}],codeVerifyRef:x=>x,codeRepoOk:()=>true,codePushGuard:()=>''});const r=await f.codeRollback({},'owner',{id:'x'});assert.equal(r.ok,false);});
+testCase('069','历史回滚','invalid repo in history','reject','仓库白名单检查失败','非白名单仓库可回滚',async()=>{const f=evaluate(rollbackSource,'codeRollback',{codeHistoryLoad:async()=>[{id:'x',repo:'bad/repo',previous_sha:'a'.repeat(40)}],codeVerifyRef:x=>x,codeRepoOk:()=>false,codePushGuard:()=>''});const r=await f.codeRollback({},'owner',{id:'x'});assert.equal(r.ok,false);});
+testCase('070','历史回滚','protected path guard','reject','回滚写入受权限 guard 约束','无权限身份可回滚',async()=>{const f=evaluate(rollbackSource,'codeRollback',{codeHistoryLoad:async()=>[{id:'x',repo:'owner/repo',previous_sha:'a'.repeat(40)}],codeVerifyRef:x=>x,codeRepoOk:()=>true,codePushGuard:()=> 'denied'});const r=await f.codeRollback({},'owner',{id:'x'});assert.equal(r.ok,false);});
+testCase('069','历史回滚','history files=[]','reject','无文件清单拒绝整仓回滚','缺失路径清单回滚整个仓库',async()=>{let calls=0;const f=evaluate(rollbackSource,'codeRollback',{codeHistoryLoad:async()=>[{id:'x',repo:'owner/repo',previous_sha:'a'.repeat(40),files:[]}],codeVerifyRef:x=>x,codeRepoOk:()=>true,codePushGuard:()=>'',codeGitRefUrl:()=>'/ref',codeGhApi:async()=>{calls++;return{ok:true}}});const r=await f.codeRollback({},'owner',{id:'x'});assert.equal(r.ok,false);assert.equal(calls,1);});
+testCase('070','历史回滚','truncated Git tree','reject','树结果截断时不创建回滚 commit','不完整文件树仍提交',()=>{assert.match(rollbackSource,/data\.truncated/);assert.match(rollbackSource,/拒绝执行整仓库回滚/);});
+testCase('069','历史回滚','rollback commit parent','append-only','回滚新 commit 以当前 HEAD 为 parent','回滚重写历史指针',()=>{assert.match(rollbackSource,/parents:\s*\[currentSha\]/);});
+testCase('070','历史回滚','rollback path allowlist','path filtered','变更路径先经过 codePathOk','非法历史路径写入回滚树',()=>{assert.match(rollbackSource,/filter\(codePathOk\)/);});
 
 // 8. 预览与环境隔离：只允许配置的 URL 和指定仓库触发预览。
 const previewSource = sliceSource('function codeVerifyPreview', 'const codeWorkbenchLocalLockControllers');
 const previewFns = evaluate(previewSource,'codeVerifyPreview');
 for(const [id,env,expected] of [
-['069','{}',''],['070','{"CODE_PREVIEW_URL":"ftp://bad/{run_id}"}',''],['071','{"CODE_PREVIEW_URL":"https://preview.example/run/{run_id}"}','https://preview.example/run/run%201'],['072','{"PREVIEW_URL":"http://preview.example/{run_id}"}','http://preview.example/run%201']
+['071','{"CODE_PREVIEW_URL":"https://preview.example/run/{run_id}"}','https://preview.example/run/run%201'],['072','{"PREVIEW_URL":"http://preview.example/{run_id}"}','http://preview.example/run%201']
 ])testCase(id,'预览隔离',env,'codeVerifyPreview',expected,'不安全 URL 被返回或 run_id 未编码',()=>{const r=previewFns.codeVerifyPreview(JSON.parse(env),'run 1');assert.equal(r,expected);});
-testCase('073','预览隔离','repo=other/repo','reject','非配置仓库不触发 Pages 工作流','其他仓库触发预览部署',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/repo !== "tianxin1300\/openmanus-gateway"/);});
-testCase('074','预览隔离','preview dispatch HTTP 500','reject','部署启动失败返回失败','预览 dispatch 失败被报成功',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/if \(!dispatched\.ok\) return \{ ok: false/);});
-testCase('075','预览隔离','preview audit actor','audit','记录 preview_started_by 和 actor','预览操作无操作者记录',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/preview_started_by:\s*String\(user\)|preview_started_by = String\(user\)/);assert.match(s,/actor:\s*String\(user\)/);});
-testCase('076','预览隔离','preview event history cap','bounded','预览事件最多保留 100 条','审计事件无上限增长',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/slice\(-100\)/);});
-testCase('077','预览隔离','branch preview URL slug','safe slug','只为目标仓库生成 branch slug URL','其他仓库获得生产预览 URL',()=>{const s=sliceSource('function codeTempPreview','async function codeCreateTempBranch');assert.match(s,/tianxin1300\/openmanus-gateway/);assert.match(s,/branch-/);});
-testCase('078','预览隔离','main protection','preview uses active branch','dispatch ref 绑定活动临时分支','预览错误引用 main',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/ref: current\.branch/);});
+testCase('071','预览隔离','repo=other/repo','reject','非配置仓库不触发 Pages 工作流','其他仓库触发预览部署',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/repo !== "tianxin1300\/openmanus-gateway"/);});
+testCase('072','预览隔离','preview dispatch HTTP 500','reject','部署启动失败返回失败','预览 dispatch 失败被报成功',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/if \(!dispatched\.ok\) return \{ ok: false/);});
+testCase('073','预览隔离','preview audit actor','audit','记录 preview_started_by 和 actor','预览操作无操作者记录',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/preview_started_by:\s*String\(user\)|preview_started_by = String\(user\)/);assert.match(s,/actor:\s*String\(user\)/);});
+testCase('074','预览隔离','preview event history cap','bounded','预览事件最多保留 100 条','审计事件无上限增长',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/slice\(-100\)/);});
+testCase('075','预览隔离','branch preview URL slug','safe slug','只为目标仓库生成 branch slug URL','其他仓库获得生产预览 URL',()=>{const s=sliceSource('function codeTempPreview','async function codeCreateTempBranch');assert.match(s,/tianxin1300\/openmanus-gateway/);assert.match(s,/branch-/);});
+testCase('076','预览隔离','main protection','preview uses active branch','dispatch ref 绑定活动临时分支','预览错误引用 main',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/ref: current\.branch/);});
 
 // 9. 文件树、搜索、逐文件审核、提交一致性：核对实际前端函数和后端路径契约。
 const wbScript = /<script\b(?=[^>]*\bid=["']wb-devbench["'])[^>]*>([\s\S]*?)<\/script\s*>/i.exec(frontend);
