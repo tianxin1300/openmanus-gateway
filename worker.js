@@ -857,7 +857,7 @@ async function codeRepairPendingFromVerification(env, user, job) {
     const source = Object.keys(files).map((path) => "### " + path + "\n\n" + codeCut(files[path], 10000)).join("\n\n");
     const logs = (job.error_lines || []).slice(0, 60).map((line) => codeVerifyRedact(line)).join("\n");
     const system = "你是 OpenManus 仓库的自动测试修复代理。你必须依据真实 GitHub Actions 失败日志和下面给出的临时分支源码修复根因。只允许修改提供的文件；不能删除、跳过或弱化测试，不能用假数据绕过测试，不能修改密钥或受保护文件。输出必须只包含一个或多个精确修改块，格式：\n<<<<<<< SEARCH 文件路径\n原文中唯一且连续的片段\n=======\n替换后的完整片段\n>>>>>>> REPLACE\nSEARCH 必须逐字匹配当前源码。不要输出整文件，不要声称已经运行测试；修复后系统会重新运行 Actions 验证。若日志和源码不足以安全修复，只回复一行 ASK: 加上最关键的缺失信息。";
-    const prompt = "验证任务：" + String(job.request_id || "") + "\n失败步骤：" + String(job.failed_step || "未知") + "\n待验证 commit：" + String(job.expected_sha || "") + "\nActions 真实失败日志：\n" + logs + "\n\n临时分支源码：\n" + source + "\n\n请只修复这些失败直接相关的问题，保留所有既有功能和测试。";
+    const prompt = "原始改动目标：" + String(pend.summary || "未提供") + "\n验证任务：" + String(job.request_id || "") + "\n失败步骤：" + String(job.failed_step || "未知") + "\n待验证 commit：" + String(job.expected_sha || "") + "\nActions 真实失败日志：\n" + logs + "\n\n临时分支源码：\n" + source + "\n\n请只修复这些失败直接相关的问题，保留所有既有功能和测试。";
     const model = await codeLLM(env, [{ role: "system", content: system }, { role: "user", content: prompt }], 150000);
     if (!model.text) return await finish("verification_failed", { ok: false, reply: "自动修复模型调用失败：" + (model.tried || []).join("；") }, pend.edits);
     if (/^\s*ASK\s*[:：]/i.test(model.text)) return await finish("verification_failed", { ok: false, reply: "自动修复需要更多上下文：" + codeCut(model.text, 500) }, pend.edits);
@@ -886,7 +886,7 @@ async function codeRepairPendingFromVerification(env, user, job) {
   }
 }
 
-async function codeVerifyStatus(env, user, ctx) {
+async function codeVerifyStatus(env, user) {
   const old = env.KV ? await env.KV.get(codeVerifyKey(user), "json") : null;
   if (!old) return { ok: false, msg: "没有找到验证任务，请先点击运行 / 验证" };
   const repo = old.repo || codeVerifyRepo(env), base = "https://api.github.com/repos/" + repo;
@@ -9127,7 +9127,7 @@ async function handle(request, env, ctx) {
     if (path === "/api/code/verify" && request.method === "GET") {
       const user = await userFromReq(request, env, url, "");
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
-      const r = await codeVerifyStatus(env, user, ctx);
+      const r = await codeVerifyStatus(env, user);
       return json(r, r.ok ? 200 : 404);
     }
     if (path === "/api/code/deploy" && request.method === "POST") {
