@@ -640,6 +640,10 @@ async function codeWorkbenchBranchMerge(env, user, body = {}) {
   let compared = await codeGhApi(env, compareUrl);
   if (!compared.ok) return { ok: false, msg: "读取待合并改动失败：" + compared.msg };
   let files = Array.isArray(compared.data && compared.data.files) ? compared.data.files.map((f) => f.filename) : [];
+  for (const path of files) {
+    const fileGuard = codePushGuard(env, user, repo, path);
+    if (fileGuard) return { ok: false, msg: "文件 " + path + " 不允许合并：" + fileGuard };
+  }
   if (Array.isArray(body.accepted_paths)) {
     const accepted = new Set(body.accepted_paths.map((p) => String(p)));
     for (const path of files.filter((p) => accepted.has(p))) { const guard = codePushGuard(env, user, repo, path); if (guard) return { ok: false, msg: "文件 " + path + " 不允许合并：" + guard }; }
