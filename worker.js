@@ -848,12 +848,11 @@ async function codeRepairPendingFromVerification(env, user, job) {
     ])].filter((path) => path && codePathOk(path) && !codePathProtected(path)).slice(0, 8);
     if (!paths.length) return await finish("verification_failed", { ok: false, reply: "自动修复未找到可安全读取的失败相关文件。" }, pend.edits);
     const files = {}, shas = {};
-    for (const path of paths) {
-      const bad = codePushGuard(env, user, pend.repo, path);
-      if (bad) return await finish("verification_failed", { ok: false, reply: "自动修复被权限保护拦截：" + path + "：" + bad }, pend.edits);
-      const file = await codeGetFile(env, pend.repo, path, pend.branch);
-      if (!file.ok || !file.exists) return await finish("verification_failed", { ok: false, reply: "自动修复读取 " + path + " 失败：" + (file.msg || "文件不存在") }, pend.edits);
-      files[path] = file.text; shas[path] = file.sha;
+    const loaded = await Promise.all(paths.map(async (path) => ({ path, bad: codePushGuard(env, user, pend.repo, path), file: await codeGetFile(env, pend.repo, path, pend.branch) })));
+    for (const item of loaded) {
+      if (item.bad) return await finish("verification_failed", { ok: false, reply: "自动修复被权限保护拦截：" + item.path + "：" + item.bad }, pend.edits);
+      if (!item.file.ok || !item.file.exists) return await finish("verification_failed", { ok: false, reply: "自动修复读取 " + item.path + " 失败：" + (item.file.msg || "文件不存在") }, pend.edits);
+      files[item.path] = item.file.text; shas[item.path] = item.file.sha;
     }
     const source = Object.keys(files).map((path) => "### " + path + "\n\n" + codeCut(files[path], 18000)).join("\n\n");
     const logs = (job.error_lines || []).slice(0, 60).map((line) => codeVerifyRedact(line)).join("\n");
@@ -873,6 +872,7 @@ async function codeRepairPendingFromVerification(env, user, job) {
     const applied = codeApply(files, edits);
     if (applied.errs.length || !applied.done.length) return await finish("verification_failed", { ok: false, reply: "模型修复块无法安全应用：" + applied.errs.map((e) => e.msg).join("；") }, pend.edits);
     const changed = [...new Set(applied.done.map((e) => e.path))];
+    if (changed.length > 4) return await finish("verification_failed", { ok: false, reply: "自动修复涉及超过 4 个文件，已停止自动写入，保留临时分支供人工审查。" }, pend.edits);
     for (const path of changed) {
       const update = await codeUpdateFile(env, pend.repo, path, applied.out[path], "AI: repair failed verification", pend.branch, shas[path]);
       if (!update.ok) return await finish("verification_failed", { ok: false, reply: "自动修复写入 " + path + " 失败：" + update.msg }, pend.edits);
@@ -9491,7 +9491,7 @@ export class CodeClaimDO {
     const verificationActive = value.pending && value.pending.status === "verification_pending" && value.pending.verify_expires_at > Date.now();
     const repairActive = value.pending && value.pending.status === "repairing" && value.pending.repair_expires_at > Date.now();
     if (value.pending && value.pending.status === "repairing" && !repairActive) {
-      value.pending.status = "verification_failed"; value.pending.repair_error = "模型自动修复超过 4 分钟，已停止本轮修复"; value.pending.created_at = Date.now(); value.created_at = Date.now(); value.expires_at = Date.now() + CODE_PENDING_TTL_MS; value.version = Number(value.version || 0) + 1; value.pending.version = value.version; await this.storage.put("claim", value); await this.storage.setAlarm(value.expires_at); return value;
+      value.pending.status = "verification_failed"; value.pending.repair_error = "模型自动修复超过 8 分钟，已停止本轮修复"; value.pending.created_at = Date.now(); value.created_at = Date.now(); value.expires_at = Date.now() + CODE_PENDING_TTL_MS; value.version = Number(value.version || 0) + 1; value.pending.version = value.version; await this.storage.put("claim", value); await this.storage.setAlarm(value.expires_at); return value;
     }
     if (!verificationActive && !repairActive && ((value.expires_at && value.expires_at <= Date.now()) || (createdAt && Date.now() - createdAt >= CODE_PENDING_TTL_MS))) {
       const p = value.pending;
@@ -9588,7 +9588,7 @@ export class CodeClaimDO {
       if (!current || !p || p.id !== pendingId || p.status !== "verification_failed" || p.verify_request_id !== requestId || p.verify_run_id !== runId) return this.response({ ok: false, conflict: true, msg: "失败验证已变化，不能启动自动修复" }, 409);
       const attempts = Number(p.repair_attempts || 0);
       if (attempts >= 2) { p.repair_error = "自动修复已达到 2 次上限"; p.updatedAt = now; current.version = Number(current.version || 0) + 1; p.version = current.version; await this.save(current); return this.response({ ok: true, limit_reached: true, pending: p, version: current.version }); }
-      p.status = "repairing"; p.repair_attempts = attempts + 1; p.repair_started_at = now; p.repair_expires_at = now + 4 * 60 * 1000; p.repair_error = ""; p.updatedAt = now;
+      p.status = "repairing"; p.repair_attempts = attempts + 1; p.repair_started_at = now; p.repair_expires_at = now + 8 * 60 * 1000; p.repair_error = ""; p.updatedAt = now;
       current.version = Number(current.version || 0) + 1; p.version = current.version;
       await this.save(current);
       return this.response({ ok: true, pending: p, version: current.version });
