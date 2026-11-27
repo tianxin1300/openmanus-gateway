@@ -1560,7 +1560,87 @@ test('ACCEPTANCE AUTO-03: Monaco and textarea fallback both wrap long lines with
   assert.match(frontendSource, /scrollbar:\s*\{horizontal:\s*"hidden"\}/);
 });
 
-test('terminal panels and viewport behavior remain independently testable; terminal acceptance stays unpassed', () => {
+test('ACCEPTANCE AUTO-04: terminal and run-log tabs switch exclusively and follow visual viewport changes', () => {
+  const script = /<script\\b(?=[^>]*\\bid=["']wb-devbench["'])[^>]*>([\\s\\S]*?)<\\/script\\s*>/i.exec(frontendSource)[1];
+  assert.match(frontendSource, /<div id="wb-runlogs" aria-label="Pages 与 Worker 运行日志" hidden>/);
+  assert.doesNotMatch(frontendSource, /<details id="wb-runlogs"/);
+  const tabs = script.slice(script.indexOf('function setTerminalPanel(panel)'), script.indexOf('function appendTerminalCommand(', script.indexOf('function setTerminalPanel(panel)')));
+  assert.ok(tabs.includes('g("wb-terminal-tab").addEventListener("click"'));
+  assert.ok(tabs.includes('g("wb-runlogs-tab").addEventListener("click"'));
+
+  const nodes = new Map();
+  for (const id of ["wb-term", "wb-terminal", "wb-runlogs", "wb-terminal-tab", "wb-runlogs-tab"]) {
+    nodes.set(id, {
+      hidden: id === "wb-runlogs",
+      dataset: {},
+      attributes: {},
+      listeners: {},
+      addEventListener(name, callback) { this.listeners[name] = callback; },
+      setAttribute(name, value) { this.attributes[name] = value; }
+    });
+  }
+  let historyLoads = 0;
+  const tabContext = vm.createContext({
+    g: id => nodes.get(id),
+    loadRunHistory: () => { historyLoads++; }
+  });
+  vm.runInContext(tabs, tabContext, { filename: "terminal-tabs.vm.js", timeout: 1000 });
+
+  nodes.get("wb-runlogs-tab").listeners.click();
+  assert.equal(nodes.get("wb-term").dataset.panel, "logs");
+  assert.equal(nodes.get("wb-terminal").hidden, true);
+  assert.equal(nodes.get("wb-runlogs").hidden, false);
+  assert.equal(nodes.get("wb-terminal-tab").attributes["aria-selected"], "false");
+  assert.equal(nodes.get("wb-runlogs-tab").attributes["aria-selected"], "true");
+  assert.equal(historyLoads, 1);
+
+  nodes.get("wb-terminal-tab").listeners.click();
+  assert.equal(nodes.get("wb-term").dataset.panel, "terminal");
+  assert.equal(nodes.get("wb-terminal").hidden, false);
+  assert.equal(nodes.get("wb-runlogs").hidden, true);
+  assert.equal(nodes.get("wb-terminal-tab").attributes["aria-selected"], "true");
+  assert.equal(nodes.get("wb-runlogs-tab").attributes["aria-selected"], "false");
+  assert.equal(historyLoads, 1);
+
+  const viewportStart = script.indexOf("function syncWorkbenchViewport()");
+  const viewportEnd = script.indexOf("/*wb-pure-start*/", viewportStart);
+  assert.ok(viewportStart >= 0 && viewportEnd > viewportStart, "viewport synchronizer exists");
+  const viewportBlock = script.slice(viewportStart, viewportEnd);
+  let viewportHeight = 720, viewportTop = 18;
+  const viewportListeners = {};
+  const windowListeners = {};
+  const css = {};
+  const viewport = {
+    get height() { return viewportHeight; },
+    get offsetTop() { return viewportTop; },
+    addEventListener(name, callback) { viewportListeners[name] = callback; }
+  };
+  const viewportContext = vm.createContext({
+    window: {
+      visualViewport: viewport,
+      innerHeight: 800,
+      addEventListener(name, callback) { windowListeners[name] = callback; }
+    },
+    document: { documentElement: { style: { setProperty(name, value) { css[name] = value; } } } },
+    Math
+  });
+  vm.runInContext(viewportBlock, viewportContext, { filename: "workbench-viewport.vm.js", timeout: 1000 });
+  assert.equal(css["--wb-visual-height"], "720px");
+  assert.equal(css["--wb-visual-top"], "18px");
+  assert.equal(typeof viewportListeners.resize, "function");
+  assert.equal(typeof viewportListeners.scroll, "function");
+  assert.equal(typeof windowListeners.resize, "function");
+
+  viewportHeight = 540;
+  viewportTop = 4;
+  viewportListeners.resize();
+  viewportListeners.scroll();
+  assert.equal(css["--wb-visual-height"], "540px");
+  assert.equal(css["--wb-visual-top"], "4px");
+});
+
+
+test('terminal panels and viewport behavior expose the required independent controls', () => {
   assert.match(frontendSource, /id="wb-term-tabs" role="tablist"/);
   assert.match(frontendSource, /id="wb-terminal-tab" role="tab" aria-controls="wb-terminal" aria-selected="true"/);
   assert.match(frontendSource, /id="wb-runlogs-tab" role="tab" aria-controls="wb-runlogs" aria-selected="false"/);
@@ -1648,12 +1728,7 @@ test('ACCEPTANCE.md: ten code acceptance items each map to an executable npm tes
   const ids = ['AUTO-01', 'AUTO-02', 'AUTO-03', 'AUTO-04', 'CHAIN-01', 'CHAIN-02', 'CHAIN-03', 'CHAIN-04', 'CHAIN-05', 'CHAIN-06'];
   for (const id of ids) {
     assert.ok(doc.includes(id), 'ACCEPTANCE.md must define ' + id);
-    if (id === 'AUTO-04') {
-      const auto04Prefix = 'test(' + "'ACCEPTANCE AUTO-04:";
-      assert.ok(!fs.readFileSync(__filename, 'utf8').includes(auto04Prefix), 'terminal sign-off must remain unpassed in ACCEPTANCE.md');
-    } else {
-      assert.ok(fs.readFileSync(__filename, 'utf8').includes("test('ACCEPTANCE " + id + ":"), 'must have a dedicated Node test for ' + id);
-    }
+    assert.ok(fs.readFileSync(__filename, 'utf8').includes("test('ACCEPTANCE " + id + ":"), 'must have a dedicated Node test for ' + id);
   }
   assert.match(doc, /npm test/);
   assert.ok(doc.includes('- **通过**：该项对应的专属 Node.js 自动化测试本次执行成功'));
