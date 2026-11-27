@@ -2200,3 +2200,25 @@ test('Cloudflare minute cron is enabled for autonomous code verification polling
   assert.match(wranglerSource, /crons\s*=\s*\["\* \* \* \* \*"\]/);
   assert.match(workerSource, /if \(!fiveMin\) return/);
 });
+
+
+test('codeDeleteBranch uses the GitHub git/refs DELETE endpoint for nested code branches', async () => {
+  const start = workerSource.indexOf('async function codeDeleteBranch(');
+  const end = workerSource.indexOf('async function codeMergeTempBranch(', start);
+  assert.ok(start >= 0 && end > start, 'codeDeleteBranch source must exist');
+  const source = workerSource.slice(start, end);
+  const calls = [];
+  const sandbox = {
+    codeGhApi: async (_env, url, options) => {
+      calls.push({ url, method: options && options.method });
+      return { ok: true, status: 204 };
+    },
+    String, encodeURIComponent
+  };
+  vm.runInNewContext(source + String.fromCharCode(10) + 'globalThis.deleteCodeBranch = codeDeleteBranch;', sandbox);
+  const result = await sandbox.deleteCodeBranch({}, 'tianxin1300/openmanus-gateway', 'code/project-smoke-123');
+  assert.equal(result.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, 'DELETE');
+  assert.equal(calls[0].url, 'https://api.github.com/repos/tianxin1300/openmanus-gateway/git/refs/heads/code/project-smoke-123');
+});
