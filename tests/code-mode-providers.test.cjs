@@ -49,6 +49,28 @@ function loadFrontendForceClear(stubs) {
   return sandbox.testForceClear;
 }
 
+
+function loadPendingVerificationHelpers(stubs = {}) {
+  const start = workerSource.indexOf('async function codeQueuePendingVerification');
+  const end = workerSource.indexOf('async function codeConfirm', start);
+  assert.ok(start >= 0 && end > start, 'pending verification helpers must exist');
+  const source = workerSource.slice(start, end);
+  const sandbox = Object.assign({
+    codeVerifyRef: value => value,
+    codeGitRefUrl: (repo, ref) => repo + '/' + ref,
+    codeGhApi: async () => ({ ok: true, data: { object: { sha: 'verified-sha' } } }),
+    codeVerifyStart: async () => ({ ok: true, request_id: 'verify-req-1', actions_url: 'https://github.com/actions' }),
+    codeMergeTempBranch: async () => ({ ok: true, data: { sha: 'merged-sha' } }),
+    codeHistoryLoad: async () => [],
+    codeHistorySave: async () => {},
+    codeDeleteBranch: async () => ({ ok: true, status: 204 }),
+    codeTempPreview: () => 'https://preview.example/',
+    Date, String, Array, Set, Object, Math, Promise
+  }, stubs);
+  vm.runInNewContext(source + '\n' + 'globalThis.queueVerification = codeQueuePendingVerification; globalThis.mergeVerifiedPending = codeMergeVerifiedPending;', sandbox);
+  return sandbox;
+}
+
 function loadCodeClaimDO(deleteBranch) {
   const start = workerSource.indexOf('export class CodeClaimDO');
   const end = workerSource.indexOf('export class CodeRunnerDO', start);
@@ -1818,4 +1840,46 @@ test('codeVerifyStatus binds completed Actions run to the pending id, request id
   assert.match(status, /expected_sha: old\.expected_sha/);
   assert.match(status, /actual_sha: String\(old\.head_sha \|\| ""\)/);
   assert.match(status, /codeClaimCall\(env, user, "verification"/);
+});
+
+
+test('codeQueuePendingVerification dispatches the exact branch SHA and preserves edits without merging', async () => {
+  const calls = [];
+  const sandbox = loadPendingVerificationHelpers({
+    codeGhApi: async (env, url) => { calls.push(['head', url]); return { ok: true, data: { object: { sha: 'branch-sha-1' } } }; },
+    codeVerifyStart: async (env, user, body) => { calls.push(['dispatch', body]); return { ok: true, request_id: 'verify-req-1', actions_url: 'https://github.com/run/1' }; }
+  });
+  const pend = { id: 'pending-1', repo: 'owner/repo', branch: 'code/demo', edits: [{ path: 'a.js' }] };
+  let finished;
+  const result = await sandbox.queueVerification({}, 'owner', pend, async (...args) => { finished = args; return args[1]; }, pend.edits);
+  assert.equal(calls[0][1], 'owner/repo/heads/code/demo');
+  assert.deepEqual(calls[1][1], { ref: 'code/demo', pending_id: 'pending-1', expected_sha: 'branch-sha-1' });
+  assert.equal(finished[0], 'verification_pending');
+  assert.equal(finished[3].verify_expected_sha, 'branch-sha-1');
+  assert.equal(finished[3].verify_request_id, 'verify-req-1');
+  assert.equal(result.verification_pending, true);
+});
+
+test('codeQueuePendingVerification fails closed when the branch SHA cannot be read', async () => {
+  let dispatched = false, finished;
+  const sandbox = loadPendingVerificationHelpers({
+    codeGhApi: async () => ({ ok: false, msg: 'GitHub unavailable' }),
+    codeVerifyStart: async () => { dispatched = true; return { ok: true }; }
+  });
+  const result = await sandbox.queueVerification({}, 'owner', { id: 'p', repo: 'owner/repo', branch: 'code/demo' }, async (...args) => { finished = args; return args[1]; }, []);
+  assert.equal(dispatched, false);
+  assert.equal(finished[0], 'failed');
+  assert.equal(result.ok, false);
+});
+
+test('codeMergeVerifiedPending refuses a changed branch SHA before calling merge', async () => {
+  let mergeCalls = 0, finished;
+  const sandbox = loadPendingVerificationHelpers({
+    codeGhApi: async () => ({ ok: true, data: { object: { sha: 'newer-sha' } } }),
+    codeMergeTempBranch: async () => { mergeCalls++; return { ok: true }; }
+  });
+  const result = await sandbox.mergeVerifiedPending({}, 'owner', { id: 'p', repo: 'owner/repo', branch: 'code/demo', verify_head_sha: 'tested-sha', edits: [{ path: 'a.js' }] }, async (...args) => { finished = args; return args[1]; });
+  assert.equal(mergeCalls, 0);
+  assert.equal(finished[0], 'verification_failed');
+  assert.equal(result.ok, false);
 });
