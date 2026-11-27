@@ -6,6 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const worker = fs.readFileSync(path.join(root, 'worker.js'), 'utf8');
+const frontend = fs.readFileSync(path.join(root, 'frontend/index.html'), 'utf8');
 function sourceOf(start, end) {
   const a = worker.indexOf(start), b = worker.indexOf(end, a + start.length);
   assert.ok(a >= 0 && b > a, 'source markers exist: ' + start);
@@ -222,6 +223,43 @@ test('ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restore
   assert.equal(movedRef, 'rollback-commit');
 });
   
+test('ACCEPTANCE WORKBENCH-SAVE-CAS-01: editor saves share the repository lock and reject stale file SHA', async () => {
+  let currentSha = 'a'.repeat(40), writes = 0;
+  const lockOperations = [];
+  const save = runFunction(sourceOf('async function codeWorkbenchBranchSaveFileUnlocked(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchSaveFile', {
+    codeWorkbenchWithLock: async (_env, _user, _repo, operation, run) => {
+      lockOperations.push(operation);
+      return run();
+    },
+    codeRepoOk: () => true,
+    codePathOk: () => true,
+    codePushGuard: () => '',
+    codeWorkbenchBranchCurrent: async () => ({ ok: true, active: true, branch: 'code/save-test' }),
+    codeGetFile: async () => ({ ok: true, exists: true, sha: currentSha }),
+    codeUpdateFile: async (_env, _repo, _path, _content, _message, _branch, sha) => {
+      assert.equal(sha, currentSha);
+      writes++;
+      currentSha = 'b'.repeat(40);
+      return { ok: true, url: 'https://github.com/owner/repo/commit/save' };
+    }
+  });
+  const env = {};
+  const stale = await save(env, 'owner', { repo: 'owner/repo', branch: 'code/save-test', path: 'app.js', content: 'stale', sha: 'c'.repeat(40) });
+  assert.equal(stale.ok, false);
+  assert.equal(stale.conflict, true);
+  assert.equal(writes, 0, 'stale editor state must not write to GitHub');
+
+  const saved = await save(env, 'owner', { repo: 'owner/repo', branch: 'code/save-test', path: 'app.js', content: 'fresh', sha: 'a'.repeat(40) });
+  assert.equal(saved.ok, true);
+  assert.equal(saved.sha, 'b'.repeat(40));
+  assert.equal(writes, 1);
+  assert.deepEqual(lockOperations, ['save', 'save']);
+
+  const put = sourceOfFrontend(frontend, 'async function mcpPut(', 'const WORKBENCH_PROJECTS =');
+  assert.match(put, /\/api\/code\/branch\/save-file/);
+  assert.match(put, /sha/);
+});
+
 test('ACCEPTANCE WORKBENCH-ROLLBACK-LOCK-01: history rollback acquires the repository write lock', async () => {
   const calls = [];
   const rollback = runFunction(sourceOf('async function codeRollbackUnlocked(', 'const CODE_DEPLOY_WORKFLOW'), 'codeRollback', {
@@ -586,9 +624,14 @@ test('ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01: create and merge refuse to run w
   const merge = runFunction(helper + '\n' + mergeWrapper, 'codeWorkbenchBranchMerge', {
     codeWorkbenchBranchMergeUnlocked: async () => { throw new Error('must not execute'); }
   });
+  const saveWrapper = sourceOf('async function codeWorkbenchBranchSaveFileUnlocked(', 'async function codeWorkbenchBranchPreview(');
+  const save = runFunction(helper + '\\n' + saveWrapper, 'codeWorkbenchBranchSaveFile', {
+    codeWorkbenchBranchSaveFileUnlocked: async () => { throw new Error('must not execute'); }
+  });
   const noBinding = {};
   assert.equal((await create(noBinding, 'owner', { repo: 'tianxin1300/openmanus-gateway' })).ok, false);
   assert.equal((await merge(noBinding, 'owner', { repo: 'tianxin1300/openmanus-gateway' })).ok, false);
+  assert.equal((await save(noBinding, 'owner', { repo: 'tianxin1300/openmanus-gateway' })).ok, false);
 });
 
 
@@ -606,11 +649,17 @@ test('ACCEPTANCE WORKBENCH-LOCK-SCOPE-01: review and discard also acquire the re
     codeWorkbenchWithLock: lock,
     codeWorkbenchBranchDiscardUnlocked: async () => ({ ok: true, discarded: true })
   });
+  const save = runFunction(sourceOf('async function codeWorkbenchBranchSaveFileUnlocked(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchSaveFile', {
+    codeWorkbenchWithLock: lock,
+    codeWorkbenchBranchSaveFileUnlocked: async () => ({ ok: true, saved: true })
+  });
   assert.equal((await reject({}, 'reviewer', { repo: 'owner/repo', path: 'a.js' })).reviewed, true);
   assert.equal((await discard({}, 'owner', { repo: 'owner/repo' })).discarded, true);
+  assert.equal((await save({}, 'owner', { repo: 'owner/repo' })).saved, true);
   assert.deepEqual(calls, [
     { repo: 'owner/repo', operation: 'review' },
-    { repo: 'owner/repo', operation: 'discard' }
+    { repo: 'owner/repo', operation: 'discard' },
+    { repo: 'owner/repo', operation: 'save' }
   ]);
   assert.match(worker, /codeWorkbenchBranchRejectFileUnlocked\(env, user, \{ repo, path, previous_path:/);
 });
