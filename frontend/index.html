@@ -6503,7 +6503,7 @@ function renderVerifyResult(d) {
   const links = document.createElement("div");
   const actions = verifyLink("打开 Actions 运行记录", d.actions_url || d.run_url); if (actions) links.appendChild(actions);
   const preview = verifyLink("打开项目预览", d.preview_url); if (preview) links.appendChild(preview);
-  if (state === "failure" && /^\d+$/.test(String(d.run_id || ""))) { const retry = document.createElement("button"); retry.type = "button"; retry.textContent = "失败重试（重跑本次失败任务）"; retry.className = "sec"; retry.style.cssText = "margin-top:8px"; retry.onclick = () => runRemoteVerify(d); links.appendChild(retry); }
+  if (state === "failure" && d.conclusion && d.conclusion !== "success" && /^\d+$/.test(String(d.run_id || ""))) { const retry = document.createElement("button"); retry.type = "button"; retry.textContent = "失败重试（重跑本次失败任务）"; retry.className = "sec"; retry.style.cssText = "margin-top:8px"; retry.onclick = () => runRemoteVerify(d); links.appendChild(retry); }
   if (state === "success" && !d.preview_url) { const tip = document.createElement("div"); tip.textContent = "验证已通过，但当前没有配置预览地址；可在下方运行日志中打开 Pages / Worker Actions Run。"; tip.style.cssText = "margin-top:10px;color:#7a887d;font-size:12px"; links.appendChild(tip); }
   res.appendChild(links); showTab("run"); syncLocalTaskPreview(); if (!d.fromHistory) loadRunHistory();
 }
@@ -6514,7 +6514,7 @@ async function runRemoteVerify(retryRecord) {
   if (!authToken) { toast("请先登录"); return; }
   if (verifyTimer) { clearTimeout(verifyTimer); verifyTimer = null; }
   if (verifyAbort) { verifyAbort.abort(); verifyAbort = null; }
-  if (ciBtn) { ciBtn.disabled = true; ciBtn.textContent = "验证中…"; }
+  if (ciBtn) { ciBtn.disabled = true; ciBtn.textContent = retryingDeploy ? "部署重试中…" : "验证中…"; }
   const statusPath = retryRecord && retryRecord.run_id ? (retryKind === "deploy" ? "/api/code/deploy" : "/api/code/verify") : "/api/code/verify";
   const started = Date.now(); let polls = 0; let stopped = false;
   const finish = (text, bad = false, label = retryingDeploy ? "部署" : "运行 / 验证") => {
@@ -6526,7 +6526,7 @@ async function runRemoteVerify(retryRecord) {
     if (stopped) return;
     if (Date.now() - started >= VERIFY_MAX_MS || polls >= VERIFY_MAX_POLLS) {
       renderVerifyResult({state: "failure", deploy: retryingDeploy, error_lines: ["任务超时：10 分钟内未完成，请打开 Actions 查看运行记录。"]});
-      finish("验证超时，已恢复按钮", true, "重新验证"); return;
+      finish("任务超时，已恢复按钮", true, retryingDeploy ? "部署" : "重新验证"); return;
     }
     polls++;
     const ctl = new AbortController(); verifyAbort = ctl;
@@ -6535,8 +6535,8 @@ async function runRemoteVerify(retryRecord) {
       const r = await authFetch(GATEWAY + statusPath, {cache: "no-store", signal: ctl.signal}), d = await r.json().catch(() => ({}));
       if (!r.ok || d.ok === false) throw new Error(d.msg || "读取验证状态失败");
       renderVerifyResult({...d, deploy: retryingDeploy || d.deploy});
-      if (d.state === "success") { finish("验证通过", false, "运行 / 验证"); return; }
-      if (d.state === "failure") { finish("验证失败，已显示报错行", true, "重新验证"); return; }
+      if (d.state === "success") { finish(retryingDeploy ? "部署任务通过" : "验证通过", false, retryingDeploy ? "部署" : "运行 / 验证"); return; }
+      if (d.state === "failure") { finish("任务失败，已显示报错行", true, retryingDeploy ? "部署" : "重新验证"); return; }
       if (Date.now() - started >= VERIFY_MAX_MS || polls >= VERIFY_MAX_POLLS) {
         renderVerifyResult({...d, state: "failure", deploy: retryingDeploy, error_lines: ["任务超时：10 分钟内未完成，请打开 Actions 查看运行记录。"]});
         finish("验证超时，已恢复按钮", true, "重新验证"); return;
@@ -6548,7 +6548,7 @@ async function runRemoteVerify(retryRecord) {
       } else if (!stopped) {
         renderVerifyResult({state: "failure", deploy: retryingDeploy, error_lines: [e.message || String(e)]});
       }
-      if (!stopped) finish(e.name === "AbortError" ? "读取验证状态超时，已恢复按钮" : "验证状态读取失败，已恢复按钮", true, "重新验证");
+      if (!stopped) finish(e.name === "AbortError" ? "读取任务状态超时，已恢复按钮" : "任务状态读取失败，已恢复按钮", true, retryingDeploy ? "部署" : "重新验证");
     } finally { clearTimeout(timeout); if (verifyAbort === ctl) verifyAbort = null; }
   };
   try {
