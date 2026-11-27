@@ -6571,7 +6571,8 @@ async function save() {
     const out = await mcpPut(FILE, val, "workbench: update " + FILE + " (" + new Date().toISOString().slice(0, 16).replace("T", " ") + ")", curSha);
     let ns = null; try { const j = JSON.parse(out); ns = (j.content && j.content.sha) || j.sha || null; } catch (_) {}
     if (!ns) { try { const r = await mcpGet(FILE); ns = r.sha || null; } catch (_) {} }
-    curSha = ns || curSha; dirty = false;
+    if (!ns) throw new Error("保存请求已完成，但无法确认新文件 SHA；请重新读取文件后再继续。");
+    curSha = ns; dirty = false;
     say("已保存到临时分支 " + REPO.branch + "（" + new Date().toLocaleTimeString() + "），main 未改变"); note("已保存到临时分支");
     await Promise.all([loadWorkbenchChanges(), loadWorkbenchTree()]);
   } catch (e) { say("保存失败：" + e.message, true); }
