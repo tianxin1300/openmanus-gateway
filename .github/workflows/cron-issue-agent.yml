@@ -56,9 +56,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          API_URL="$(python3 -c 'import os,urllib.parse; u=urllib.parse.urlparse(os.environ["OPENMANUS_API_URL"].rstrip("/")); print(u.scheme + "://" + u.netloc)')"
           PROMPT="这是 PR #58 的预览联调，不处理真实 Issue。请只回复固定文本 CRON_AGENT_PREVIEW_OK。不要读取仓库文件，不要使用工具，不要修改文件，不要创建 PR 或部署。"
           BODY="$(jq -nc --arg prompt "$PROMPT" '{model:"claude-sonnet-4-5",provider:"OpenRouter",stream:false,message:$prompt,messages:[{role:"user",content:$prompt}]}')"
-          STATUS="$(curl --silent --show-error --max-time 180 --output /tmp/cron-agent-preview.json --write-out '%{http_code}' "$OPENMANUS_API_URL/v1/chat/completions" -H 'Content-Type: application/json' -H "Authorization: Bearer $OPENMANUS_USER_TOKEN" --data "$BODY")"
+          STATUS="$(curl --silent --show-error --max-time 180 --output /tmp/cron-agent-preview.json --write-out '%{http_code}' "$API_URL/v1/chat/completions" -H 'Content-Type: application/json' -H "Authorization: Bearer $OPENMANUS_USER_TOKEN" --data "$BODY")"
           if [ "$STATUS" != "200" ]; then
             echo "::error::Preview Worker returned HTTP $STATUS"
             jq -r '.error // .choices[0].message.content // "No error details returned"' /tmp/cron-agent-preview.json | head -c 1000
