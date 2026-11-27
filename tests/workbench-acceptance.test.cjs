@@ -1195,7 +1195,7 @@ test('ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-FAIL-01: failed lease renewal aborts s
     globalThis.__renewTick();
     await new Promise(resolve => setTimeout(resolve, 0));
     aborted = controller.signal.aborted;
-    const blocked = await api({}, 'https://api.github.com/repos/owner/repo/contents/a.js');
+    const blocked = await api({ GH_PAT: 'test-token' }, 'https://api.github.com/repos/owner/repo/contents/a.js');
     assert.equal(blocked.ok, false);
     assert.equal(blocked.status, 409);
     return { ok: true, merged: true };
