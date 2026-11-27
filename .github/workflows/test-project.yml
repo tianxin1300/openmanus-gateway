@@ -6,6 +6,7 @@ on:
       - main
       - 'code/**'
   pull_request:
+  workflow_dispatch:
 
 permissions:
   actions: write
@@ -117,7 +118,7 @@ jobs:
       # to same-repository PRs and never targets main. The generated PR's own
       # workflow run skips this step to prevent recursive test-PR creation.
       - name: GitHub branch and pull-request lifecycle E2E
-        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
+        if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/code/workbench-acceptance-phase1-20261128') }}
         uses: actions/github-script@v7
         with:
           script: |
@@ -127,7 +128,7 @@ jobs:
             const baseBranch = `e2e/workbench-${runKey}-base`;
             const headBranch = `e2e/workbench-${runKey}-head`;
             const filePath = `e2e-workbench-${runKey}.txt`;
-            const baseSha = context.payload.pull_request.head.sha;
+            const baseSha = context.payload.pull_request?.head?.sha || context.sha;
             let baseCreated = false;
             let headCreated = false;
             let pullNumber = null;
@@ -238,7 +239,7 @@ jobs:
       # Execute the exact Worker merge helper against disposable GitHub refs.
       # This exercises the real GitHub Git Data + merge endpoints without touching main.
       - name: Workbench merge transaction GitHub API E2E
-        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
+        if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/code/workbench-acceptance-phase1-20261128') }}
         uses: actions/github-script@v7
         with:
           script: |
@@ -254,7 +255,7 @@ jobs:
             const filePath = `e2e-workbench-merge-${runKey}.txt`;
             const casFilePath = `e2e-workbench-cas-${runKey}.txt`;
             const raceFilePath = `e2e-workbench-race-${runKey}.txt`;
-            const baseSha = context.payload.pull_request.head.sha;
+            const baseSha = context.payload.pull_request?.head?.sha || context.sha;
             const mainBefore = (await github.rest.git.getRef({ owner, repo, ref: 'heads/main' })).data.object.sha;
             let baseCreated = false;
             let headCreated = false;
