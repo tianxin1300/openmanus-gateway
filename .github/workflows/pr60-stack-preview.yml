@@ -1,5 +1,5 @@
 name: pr60-stack-preview
-run-name: PR #60 stack preview · ${{ github.event.pull_request.head.sha }}
+run-name: PR #60 stack preview · ${{ github.event.pull_request.head.sha || github.sha }}
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: write\n  issues: write
 
 concurrency:
   group: pr60-stack-preview
@@ -15,17 +15,17 @@ concurrency:
 
 jobs:
   preview:
-    if: github.event.pull_request.number == 60
+    if: github.event_name == 'push' || github.event.pull_request.number == 60
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      DEPLOY_REF: ${{ github.event.pull_request.head.ref }}
-      DEPLOY_SHA: ${{ github.event.pull_request.head.sha }}
+      DEPLOY_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
+      DEPLOY_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact PR head
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -142,7 +142,7 @@ jobs:
               "- API 验证：注册预览账号、读取状态、生成、检查权限隔离、撤销，全部通过。\\n" +
               "仅预览，不合并 main，不部署正式 Worker。";
             const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
+            const issue_number = 60;
             const comments = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
             const old = comments.data.find(c => c.body.includes(marker));
             if (old) {
