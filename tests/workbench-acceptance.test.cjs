@@ -1122,3 +1122,28 @@ test('ACCEPTANCE GIT-REF-WRITE-01: branch deletion uses GitHub write-ref endpoin
   assert.equal(invalid.ok, false);
   assert.equal(calls.length, 1, 'invalid branch names must not reach GitHub');
 });
+
+test('ACCEPTANCE WORKBENCH-CAS-CONFLICT-01: GitHub 422 non-fast-forward is surfaced as a workbench conflict', async () => {
+  const repo = 'owner/repo';
+  const merge = runFunction(sourceOf('async function codeWorkbenchBranchMergeUnlocked(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMergeUnlocked', {
+    codeRepoOk: () => true,
+    codePushGuard: () => '',
+    codeWorkbenchBranchKey: () => 'key',
+    codeGitRefUrl: (_repo, ref) => 'https://api.github.com/git/ref/' + ref,
+    codeGhApi: async (_env, url) => {
+      if (url.includes('/compare/')) return { ok: true, data: { files: [{ filename: 'app.js' }] } };
+      if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: 'a'.repeat(40) } } };
+      throw new Error('unexpected API ' + url);
+    },
+    codeMergeTempBranch: async () => ({ ok: false, status: 422, conflict: true, cas_rejected: true, msg: 'Update is not a fast forward' }),
+    codeHistoryLoad: async () => [],
+    codeHistorySave: async () => {},
+    codeDeleteBranch: async () => { throw new Error('failed merge must keep the temp branch'); },
+    codeVerifyRef: x => x,
+    codePathOk: () => true
+  });
+  const result = await merge({ KV: { get: async () => ({ repo, branch: 'code/p', baseBranch: 'main', baseCommit: 'a'.repeat(40), project: 'p' }) } }, 'actor', { repo, branch: 'code/p' });
+  assert.equal(result.ok, false);
+  assert.equal(result.conflict, true);
+  assert.match(result.msg, /Update is not a fast forward/);
+});
