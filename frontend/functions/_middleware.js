@@ -1,6 +1,5 @@
 export async function onRequest(context) {
-  const request = context.request;
-  const url = new URL(request.url);
+  const url = new URL(context.request.url);
   const match = url.pathname.match(/^\/branch-(code-[a-z0-9-]+)(\/.*)?$/i);
   if (!match) return context.next();
 
@@ -10,5 +9,5 @@ export async function onRequest(context) {
   target.hostname = branchAlias + ".zhineng.pages.dev";
   target.port = "";
   target.pathname = match[2] || "/";
-  return fetch(new Request(target.toString(), request));
+  return Response.redirect(target.toString(), 302);
 }
