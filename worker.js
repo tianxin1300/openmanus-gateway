@@ -917,7 +917,7 @@ async function codeVerifyStatus(env, user, ctx) {
     if (!verification.ok && !verification.conflict) old.verification_error = verification.msg || "无法更新待处理验证状态";
     if (verification.ok) {
       old.pending_status = verification.pending && verification.pending.status || "";
-      if (old.pending_status === "verification_failed") {
+      if (old.pending_status === "verification_failed" && old.conclusion !== "success" && old.head_sha && old.head_sha === old.expected_sha) {
         const repair = codeRepairPendingFromVerification(env, user, old).catch((e) => console.error("[code] automatic repair failed", String(e && e.message || e).slice(0, 200)));
         if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(repair); else await repair;
         old.auto_repair_started = true;
@@ -9615,6 +9615,7 @@ export class CodeClaimDO {
       const conclusion = String(body.conclusion || "success");
       p.verify_run_id = runId; p.verify_run_url = String(body.run_url || p.verify_run_url || "");
       p.status = conclusion === "success" && actualSha === expectedSha ? "verification_passed" : "verification_failed";
+      p.repair_error = actualSha !== expectedSha ? "Actions 实际验证的 commit SHA 与待验证分支不一致，已拒绝合并和自动修复。" : "";
       p.verify_conclusion = conclusion; p.verify_head_sha = actualSha; p.verify_completed_at = now; p.verify_error_lines = Array.isArray(body.error_lines) ? body.error_lines.slice(0, 60) : []; p.verify_failed_step = String(body.failed_step || "").slice(0, 160); p.created_at = now; current.created_at = now; current.expires_at = now + CODE_PENDING_TTL_MS; p.updatedAt = now; current.version = Number(current.version || 0) + 1; p.version = current.version; await this.storage.setAlarm(current.expires_at);
       await this.save(current);
       return this.response({ ok: true, pending: p, version: current.version });
