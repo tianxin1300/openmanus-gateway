@@ -259,12 +259,12 @@ npm test
 
 ### WORKBENCH-08 — 多文件审核及重命名/删除边界
 
-**自动化测试：** `ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rejects rename/delete side effects`；`ACCEPTANCE WORKBENCH-RENAME-DIFF-01`；Playwright `rejecting a renamed file sends the previous filename so the source path can be restored`；`failed renamed-file rejection keeps the row retryable after restoring its source path`
+**自动化测试：** `ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rejects rename/delete side effects`；`ACCEPTANCE WORKBENCH-RENAME-DIFF-01`；Playwright `rejecting a renamed file sends the previous filename so the source path can be restored`；`failed renamed-file rejection keeps the row retryable after restoring its source path`；`ACCEPTANCE RENAME-REJECT-MERGE-01: real rename rejection restores the source and excludes both paths from merge`
 
 **测试覆盖：**
 - 一次包含修改、新增、删除、重命名的多文件变更。
 - 只接受指定文件，其余文件不得进入最终比较结果。
-- 拒绝重命名时同时恢复 `previous_filename` 源路径，并移除目标路径。
+- 拒绝重命名时同时恢复 `previous_filename` 源路径，并移除目标路径；集成回归测试将真实拒绝处理函数接入合并协调器，拒绝后重新计算 GitHub 差异，确认最终合并列表只剩接受文件。
 - 拒绝删除时恢复基线文件；拒绝新增时删除新增文件。
 - 审核人写入审核事件。
 - Diff API 必须把 GitHub 的 `previous_filename` 映射为 `previous_path`，前端拒绝重命名时必须把旧路径传回 Worker；Node 与 Playwright 分别验证数据映射和实际按钮请求。
