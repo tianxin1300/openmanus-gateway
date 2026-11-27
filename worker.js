@@ -681,7 +681,7 @@ async function codeWorkbenchBranchDiff(env, user, repo) {
   const diff = await codeGhApi(env, url);
   if (!diff.ok) return { ok: false, msg: "读取分支改动失败：" + diff.msg };
   const files = Array.isArray(diff.data && diff.data.files) ? diff.data.files : [];
-  return { ok: true, branch: current.branch, baseBranch: current.baseBranch, files: files.map((f) => ({ path: f.filename, status: f.status, additions: f.additions, deletions: f.deletions, patch: f.patch || "" })) };
+  return { ok: true, branch: current.branch, baseBranch: current.baseBranch, files: files.map((f) => ({ path: f.filename, previous_path: f.previous_filename || "", status: f.status, additions: f.additions, deletions: f.deletions, patch: f.patch || "" })) };
 }
 async function codeWorkbenchBranchRejectFileUnlocked(env, user, body = {}) {
   const repo = String(body.repo || ""), path = String(body.path || "");
@@ -888,7 +888,7 @@ async function codeMemoryPrompt(env, user, repo) {   // 拼进 prompt：最近 2
   }
   return "\n\n【上下文记忆：最近 20 条对话 / 接受 / 拒绝】\n" + hist + "\n\n【最近 5 个 commit】\n" + commits + "\n\n【仓库文件列表】\n" + files + "\n\n硬规则：你上一次已经拒绝过删 worker.js，不要再生成删 worker.js 的改动；也不要再重复用户已经拒绝过的改法。";
 }
-async function codeRollback(env, user, body) {
+async function codeRollbackUnlocked(env, user, body) {
   const rows = await codeHistoryLoad(env, user), item = rows.find((x) => x.id === String(body && body.id || "")) || rows[Number(body && body.index)];
   if (!item || !item.previous_sha) return { ok: false, msg: "没有可回滚的上一版本" };
   const repo = item.repo, base = codeVerifyRef(item.baseBranch || "main");
@@ -943,6 +943,12 @@ async function codeRollback(env, user, body) {
   const rec = { id: "rollback-" + Date.now().toString(36), repo, project: item.project, baseBranch: base, commit_sha: newSha, previous_sha: currentSha, target_sha: item.previous_sha, summary: "回滚：" + item.summary, files: item.files || [], at: new Date().toISOString(), rollback: true };
   await codeHistorySave(env, user, [rec, ...rows]);
   return { ok: true, ...rec, reply: "已创建回滚提交并恢复到目标版本内容：" + newSha.slice(0, 12) };
+}
+async function codeRollback(env, user, body) {
+  const rows = await codeHistoryLoad(env, user);
+  const item = rows.find((x) => x.id === String(body && body.id || "")) || rows[Number(body && body.index)];
+  if (!item || !item.repo) return { ok: false, msg: "没有可回滚的历史记录" };
+  return codeWorkbenchWithLock(env, user, item.repo, "rollback", () => codeRollbackUnlocked(env, user, body));
 }
 const CODE_DEPLOY_WORKFLOW = "deploy-project.yml";
 const CODE_WORKER_DEPLOY_WORKFLOW = "deploy-worker.yml";
