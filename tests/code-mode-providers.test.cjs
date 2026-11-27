@@ -14,6 +14,7 @@ const { pathToFileURL } = require('node:url');
 
 const root = path.resolve(__dirname, '..');
 const workerSource = fs.readFileSync(path.join(root, 'worker.js'), 'utf8');
+const wranglerSource = fs.readFileSync(path.join(root, 'wrangler.toml'), 'utf8');
 const frontendSource = fs.readFileSync(path.join(root, 'frontend/index.html'), 'utf8');
 const studioSource = fs.readFileSync(path.join(root, 'studio.js'), 'utf8');
 const frontendStudioSource = fs.readFileSync(path.join(root, 'frontend/studio.js'), 'utf8');
@@ -2126,4 +2127,10 @@ test('codeVerifySweep rotates across users and polls only one active code verifi
 
 test('minute cron includes autonomous code verification polling', () => {
   assert.match(workerSource, /codeVerifySweep\(e2\)/);
+});
+
+
+test('Cloudflare minute cron is enabled for autonomous code verification polling', () => {
+  assert.match(wranglerSource, /crons\s*=\s*\["\* \* \* \* \*"\]/);
+  assert.match(workerSource, /if \(!fiveMin\) return/);
 });
