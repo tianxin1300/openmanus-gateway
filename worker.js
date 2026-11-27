@@ -577,11 +577,11 @@ async function codeWorkbenchBranchRejectFile(env, user, body = {}) {
   const base = await codeGetFile(env, repo, path, current.baseCommit);
   const staged = await codeGetFile(env, repo, path, current.branch);
   if (!base.ok || !staged.ok) return { ok: false, msg: "读取文件失败：" + (base.msg || staged.msg) };
-  if (!staged.exists) return { ok: true, rejected: true, unchanged: true, path };
+  if (!base.exists && !staged.exists) return { ok: true, rejected: true, unchanged: true, path };
   if (base.exists) {
-    const restored = await codeUpdateFile(env, repo, path, base.text, "Workbench: reject " + path, current.branch, staged.sha);
-    if (!restored.ok) return { ok: false, msg: "拒绝文件失败：" + restored.msg };
-  } else {
+    const restored = await codeUpdateFile(env, repo, path, base.text, "Workbench: reject " + path, current.branch, staged.exists ? staged.sha : undefined);
+    if (!restored.ok) return { ok: false, msg: "恢复基线文件失败：" + restored.msg };
+  } else if (staged.exists) {
     const deleted = await codeGhApi(env, codeGhUrl(repo, path), { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "Workbench: reject " + path, sha: staged.sha, branch: current.branch }) });
     if (!deleted.ok) return { ok: false, msg: "删除新增文件失败：" + deleted.msg };
   }
@@ -626,9 +626,19 @@ async function codeWorkbenchBranchMerge(env, user, body = {}) {
     return { ok: true, merged: true, branch_deleted: true, branch: record.branch, cleanup_retry: true };
   }
   const compareUrl = "https://api.github.com/repos/" + repo + "/compare/" + encodeURIComponent(record.baseBranch) + "..." + encodeURIComponent(record.branch);
-  const compared = await codeGhApi(env, compareUrl);
+  let compared = await codeGhApi(env, compareUrl);
   if (!compared.ok) return { ok: false, msg: "读取待合并改动失败：" + compared.msg };
-  const files = Array.isArray(compared.data && compared.data.files) ? compared.data.files.map((f) => f.filename) : [];
+  let files = Array.isArray(compared.data && compared.data.files) ? compared.data.files.map((f) => f.filename) : [];
+  if (Array.isArray(body.accepted_paths)) {
+    const accepted = new Set(body.accepted_paths.map((p) => String(p)));
+    for (const path of files.filter((p) => !accepted.has(p))) {
+      const rejected = await codeWorkbenchBranchRejectFile(env, user, { repo, path, branch: record.branch });
+      if (!rejected.ok) return { ok: false, msg: "拒绝文件 " + path + " 失败：" + rejected.msg };
+    }
+    compared = await codeGhApi(env, compareUrl);
+    if (!compared.ok) return { ok: false, msg: "重新读取待合并改动失败：" + compared.msg };
+    files = Array.isArray(compared.data && compared.data.files) ? compared.data.files.map((f) => f.filename) : [];
+  }
   if (!files.length) {
     const deleted = await codeDeleteBranch(env, repo, record.branch);
     if (!deleted.ok && deleted.status !== 404) return { ok: false, msg: "没有文件改动，但临时分支删除失败：" + deleted.msg };
