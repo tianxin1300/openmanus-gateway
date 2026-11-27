@@ -66,7 +66,7 @@ jobs:
               'e2e/workbench-45987441179-1-base'
             ]) {
               try { await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` }); }
-              catch (error) { if (error.status !== 404) throw error; }
+              catch (error) { if (!(error.status === 404 || (error.status === 422 && /Reference does not exist/i.test(error.message)))) throw error; }
             }
 
             try {
@@ -324,7 +324,7 @@ jobs:
               for (const [branch, created] of [[headBranch, headCreated], [baseBranch, baseCreated], [casHeadBranch, casHeadCreated], [casBaseBranch, casBaseCreated]]) {
                 if (!created) continue;
                 try { await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` }); }
-                catch (error) { if (error.status !== 404) { failure = failure || error; core.error(`Failed to clean ${branch}: ${error.message}`); } }
+                catch (error) { if (!(error.status === 404 || (error.status === 422 && /Reference does not exist/i.test(error.message)))) { failure = failure || error; core.error(`Failed to clean ${branch}: ${error.message}`); } }
               }
               try {
                 const mainAfter = (await github.rest.git.getRef({ owner, repo, ref: 'heads/main' })).data.object.sha;
