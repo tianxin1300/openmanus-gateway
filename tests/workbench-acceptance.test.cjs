@@ -767,21 +767,22 @@ test('ACCEPTANCE IDEMPOTENCY-CONCURRENT-CREATE-01: simultaneous duplicate create
   const wait = new Promise(resolve => { finishCreate = resolve; });
   const helper = sourceOf('async function codeWorkbenchLockCall(', 'async function codeWorkbenchBranchCurrent(');
   const createBlock = sourceOf('async function codeWorkbenchBranchCreateUnlocked(', 'async function codeWorkbenchBranchDiff(');
+  const lockStub = { fetch: async (url, init) => {
+    const action = new URL(url).pathname.slice(1);
+    if (action === 'branch-lock') {
+      if (held) return new Response(JSON.stringify({ ok: false, busy: true, msg: 'locked' }), { status: 409 });
+      held = true; return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }
+    held = false; return new Response(JSON.stringify({ ok: true, released: true }), { status: 200 });
+  } };
   const create = runFunction(helper + '\n' + createBlock, 'codeWorkbenchBranchCreate', {
-    codeWorkbenchLockCall: async (_env, _repo, action) => {
-      if (action === 'branch-lock') {
-        if (held) return { ok: false, busy: true, msg: 'locked' };
-        held = true; return { ok: true };
-      }
-      held = false; return { ok: true };
-    },
     codeVerifyRef: x => x, codeRepoOk: () => true, codePushGuard: () => '',
     codeWorkbenchBranchKey: () => 'branch-key', codeTempPreview: () => '',
     codeCreateTempBranch: async () => { createCalls++; await wait; return { ok: true, branch: 'code/p-once', base: 'main', sha: 'base-sha' }; },
     codeGitRefUrl: (_repo, ref) => 'https://api.github.com/heads/' + ref,
     codeGhApi: async () => ({ ok: true, data: { object: { sha: 'base-sha' } } })
   });
-  const env = { CODE_CLAIMS: {}, KV: {
+  const env = { CODE_CLAIMS: { idFromName: name => name, get: () => lockStub }, KV: {
     get: async () => record,
     put: async (_key, value) => { record = JSON.parse(value); },
     delete: async () => { record = null; }
