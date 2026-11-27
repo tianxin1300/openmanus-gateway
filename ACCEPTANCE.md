@@ -259,7 +259,7 @@ npm test
 
 ### WORKBENCH-08 — 多文件审核及重命名/删除边界
 
-**自动化测试：** `ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rejects rename/delete side effects`；`ACCEPTANCE WORKBENCH-RENAME-DIFF-01`、`ACCEPTANCE RENAME-REJECT-MERGE-01`；Playwright `rejecting a renamed file sends the previous filename so the source path can be restored`；`failed renamed-file rejection keeps the row retryable after restoring its source path`；`ACCEPTANCE RENAME-REJECT-MERGE-01: real rename rejection restores the source and excludes both paths from merge`
+**自动化测试：** `ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rejects rename/delete side effects`；`ACCEPTANCE WORKBENCH-RENAME-DIFF-01`、`ACCEPTANCE RENAME-REJECT-MERGE-01`；Playwright `rejecting a renamed file sends the previous filename so the source path can be restored`；`failed renamed-file rejection keeps the row retryable after restoring its source path`；`ACCEPTANCE RENAME-REJECT-MERGE-01: real rename rejection restores the source and excludes both paths from merge`；`ACCEPTANCE RENAME-REJECT-RESTORE-FAIL-01: failed source restoration never deletes the renamed destination or records a completed review`
 
 **测试覆盖：**
 - 一次包含修改、新增、删除、重命名的多文件变更。
@@ -269,6 +269,7 @@ npm test
 - 审核人写入审核事件。
 - Diff API 必须把 GitHub 的 `previous_filename` 映射为 `previous_path`，前端拒绝重命名时必须把旧路径传回 Worker；Node 与 Playwright 分别验证数据映射和实际按钮请求。
 - 重命名拒绝出现部分失败（旧路径已恢复、目标路径删除失败）时，改动行必须保留、拒绝按钮恢复可用；重试仍传递 `previous_path`，成功后才移除改动行。
+- 重命名拒绝时若旧路径恢复失败，必须在任何目标路径删除之前返回失败；新路径保持不变，审核事件不得记为成功，恢复成功后允许重试。
 
 **通过条件：** 最终合并差异只包含接受的文件；被拒绝文件的旧路径、新路径及删除/新增副作用均不能漏进合并。
 
