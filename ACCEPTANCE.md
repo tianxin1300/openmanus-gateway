@@ -341,3 +341,32 @@ npm test
 - 分支删除成功但 KV 记录删除失败：记录 `merged_record_cleanup_failed`；重试只完成状态清理，不重复合并。
 
 **通过条件：** 合并成功后的历史写入、分支删除和 KV 清理分别可恢复；重复请求不得生成第二次合并。
+
+
+## 12. 仓库锁原子性与租约续期（新增）
+
+### WORKBENCH-14 — Durable Object 仓库锁必须原子获取并支持续期
+
+**自动化测试：** `ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`WORKBENCH-LOCK-RENEW-01`。
+
+**测试覆盖：**
+- 两个并发请求同时获取同一仓库锁，事务竞争后只能有一个成功。
+- 锁持有者可续期；错误 token 不得续期或延长其他操作的租约。
+- 工作台长操作每 60 秒续租，结束时清除心跳并释放锁。
+
+**通过条件：** 锁获取/续期/释放全部在 Durable Object storage transaction 中完成；不能再用分离的 get/put 作为互斥依据。
+
+## 13. main 合并基线的 compare-and-swap（新增）
+
+### WORKBENCH-15 — 合并必须绑定审核时的 base SHA 与 head SHA
+
+**自动化测试：** `ACCEPTANCE MERGE-CAS-01`、`MERGE-CAS-02`、`MERGE-CAS-03`、`MERGE-CAS-04`。
+
+**实现约束：**
+- 合并前固定并核验 base SHA 与已审核 head SHA；任一发生变化，停止合并。
+- 在以固定 base SHA 创建的隔离临时分支上计算三方合并树。
+- 创建父提交固定为 `[expectedBaseSha, expectedHeadSha]` 的 merge commit。
+- 最终只用 GitHub ref `PATCH force:false` 更新目标分支；若 main 在计算期间前进，非 fast-forward 更新必须失败，不得覆盖新提交。
+- 隔离合并分支清理失败时，不得更新目标分支，并返回可追踪的遗留分支名。
+
+**通过条件：** main 在合并计算期间推进时，最终 ref 更新失败；只有目标分支仍处于预期基线时才可提交合并。
