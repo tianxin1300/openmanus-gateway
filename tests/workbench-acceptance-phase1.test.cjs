@@ -165,7 +165,7 @@ const uiCases = [
 ['079','file tree loads active project','async function loadWorkbenchTree','loadWorkbenchTree','文件树读取必须使用活动仓库/分支上下文'],
 ['080','file tree renders paths','function renderWorkbenchTree','renderWorkbenchTree','文件树渲染入口缺失'],
 ['081','file open uses selected path','async function openWorkbenchFile','openWorkbenchFile','逐文件打开入口缺失'],
-['082','file search filters query','searchQuery','searchQuery','文件搜索入口缺失'],
+['082','file search filters query','workbenchFiles.filter(path => !query','workbenchFiles.filter','文件搜索入口缺失'],
 ['083','branch diff drives review list','async function loadWorkbenchTree','diff','改动差异加载契约缺失'],
 ['084','review reject sends previous path','previous_path','previous_path','重命名审核未携带旧路径'],
 ['085','merge action sends branch identity','async function mergeWorkbenchBranch','branch','合并请求未绑定活动分支'],
