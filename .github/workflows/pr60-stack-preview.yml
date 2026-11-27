@@ -43,6 +43,21 @@ jobs:
           npm test
           npm run build
 
+      - name: Remove stale PR60 repair smoke branch
+        if: contains(github.event.head_commit.message, '[repair-smoke-cleanup]')
+        env:
+          GH_PAT: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRANCH='code/project-mwzi8bvw-32fd553ee5480148'
+          API="https://api.github.com/repos/tianxin1300/openmanus-gateway/git/refs/heads/$BRANCH"
+          DELETE_STATUS="$(curl --silent --show-error --output /tmp/pr60-stale-branch-delete.json --write-out '%{http_code}' -X DELETE "$API" -H "Authorization: Bearer $GH_PAT" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28')"
+          [[ "$DELETE_STATUS" == "204" || "$DELETE_STATUS" == "404" ]] || { echo "::error::Could not delete stale isolated smoke branch (HTTP $DELETE_STATUS)"; cat /tmp/pr60-stale-branch-delete.json; exit 1; }
+          GET_STATUS="$(curl --silent --show-error --output /tmp/pr60-stale-branch-check.json --write-out '%{http_code}' "$API" -H "Authorization: Bearer $GH_PAT" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28')"
+          [[ "$GET_STATUS" == "404" ]] || { echo "::error::Stale isolated smoke branch still exists (HTTP $GET_STATUS)"; exit 1; }
+          echo "PASS: stale PR60 smoke branch is deleted and GitHub confirms HTTP 404."
+
       - name: Select dedicated isolated preview KV namespace
         id: preview-kv
         env:
@@ -274,7 +289,7 @@ jobs:
           CURRENT_PROJECT="$(printf '%s' "$CURRENT" | jq -r '.pending.project // empty')"
           CLEAN="$(jq -nc --arg token "$LOGIN_TOKEN" --arg id "$CURRENT_ID" --arg project "$CURRENT_PROJECT" --argjson version "$CURRENT_VERSION" --arg op "repair-smoke-cleanup-$GITHUB_SHA" '{token:$token,yes:false,pending_id:$id,version:$version,project:$project,operation_id:$op}')"
           CLEAN_RESULT="$(curl --fail-with-body --silent --show-error --max-time 60 -X POST "$WORKER_URL/api/code/confirm" "${AUTH[@]}" -H 'Content-Type: application/json' --data "$CLEAN")"
-          printf '%s' "$CLEAN_RESULT" | jq -e '.ok == true and .discarded == true' >/dev/null || { echo "::error::Could not delete the temporary repair-smoke branch"; printf '%s' "$CLEAN_RESULT" | jq -c '{ok,reply,msg}'; exit 1; }
+          printf '%s' "$CLEAN_RESULT" | jq -e '.ok == true and .discarded == true and (.branch_deleted == true or .branch_already_gone == true)' >/dev/null || { echo "::error::Could not delete the temporary repair-smoke branch"; printf '%s' "$CLEAN_RESULT" | jq -c '{ok,reply,msg}'; exit 1; }
           CLEANED=true
           echo "PASS: isolated smoke branch deleted; no merge or main deployment was performed."
 
