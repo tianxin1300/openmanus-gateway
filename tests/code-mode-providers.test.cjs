@@ -1909,3 +1909,16 @@ test('CodeClaimDO preserves verification_passed as the origin of the final merge
   assert.equal(storage.value.pending.claimed_from_status, 'verification_passed');
   assert.equal(storage.value.pending.status, 'applying');
 });
+
+
+test('codeMergeVerifiedPending keeps the verified state when GitHub merge is temporarily rejected', async () => {
+  let finished;
+  const sandbox = loadPendingVerificationHelpers({
+    codeGhApi: async () => ({ ok: true, data: { object: { sha: 'tested-sha' } } }),
+    codeMergeTempBranch: async () => ({ ok: false, msg: 'base moved' })
+  });
+  const result = await sandbox.mergeVerifiedPending({}, 'owner', { id: 'p', repo: 'owner/repo', branch: 'code/demo', verify_head_sha: 'tested-sha', edits: [{ path: 'a.js' }] }, async (...args) => { finished = args; return args[1]; });
+  assert.equal(finished[0], 'verification_passed');
+  assert.equal(result.pending, true);
+  assert.match(result.reply, /再次确认重试/);
+});
