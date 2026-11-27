@@ -21,4 +21,4 @@ tag = "code-runner-v1"
 new_sqlite_classes = ["CodeRunnerDO"]
 
 [triggers]
-crons = ["0 0 * * *"]
+crons = ["* * * * *"]

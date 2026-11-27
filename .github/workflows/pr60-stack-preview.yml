@@ -1,0 +1,334 @@
+name: pr60-stack-preview
+run-name: PR #60 stack preview · ${{ github.sha }}
+
+on:
+  push:
+    branches: [code/cron-automation-token-20261128]
+
+permissions:
+  contents: write
+  actions: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: pr60-stack-preview
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    if: github.ref_name == 'code/cron-automation-token-20261128'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DEPLOY_REF: ${{ github.ref_name }}
+      DEPLOY_SHA: ${{ github.sha }}
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install, test and build the exact shared source
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+          npm run build
+
+      - name: Remove stale PR60 repair smoke branch
+        if: contains(github.event.head_commit.message, '[repair-smoke-cleanup]')
+        env:
+          GH_PAT: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRANCH='code/project-mwzi8bvw-32fd553ee5480148'
+          API="https://api.github.com/repos/tianxin1300/openmanus-gateway/git/refs/heads/$BRANCH"
+          DELETE_STATUS="$(curl --silent --show-error --output /tmp/pr60-stale-branch-delete.json --write-out '%{http_code}' -X DELETE "$API" -H "Authorization: Bearer $GH_PAT" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28')"
+          [[ "$DELETE_STATUS" == "204" || "$DELETE_STATUS" == "404" ]] || { echo "::error::Could not delete stale isolated smoke branch (HTTP $DELETE_STATUS)"; cat /tmp/pr60-stale-branch-delete.json; exit 1; }
+          GET_STATUS="$(curl --silent --show-error --output /tmp/pr60-stale-branch-check.json --write-out '%{http_code}' "$API" -H "Authorization: Bearer $GH_PAT" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28')"
+          [[ "$GET_STATUS" == "404" ]] || { echo "::error::Stale isolated smoke branch still exists (HTTP $GET_STATUS)"; exit 1; }
+          echo "PASS: stale PR60 smoke branch is deleted and GitHub confirms HTTP 404."
+
+      - name: Select dedicated isolated preview KV namespace
+        id: preview-kv
+        env:
+          PREVIEW_KV_ID: cd314c640091484d9fe3ed2e7799736a
+        run: |
+          test -n "$PREVIEW_KV_ID"
+          echo "kv_id=$PREVIEW_KV_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Build isolated Worker preview config
+        env:
+          PREVIEW_KV_ID: ${{ steps.preview-kv.outputs.kv_id }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          config = Path("wrangler.toml").read_text()
+          config = config.replace('name = "openmanus-gateway"', 'name = "openmanus-gateway-pr60-preview"', 1)
+          config = config.replace('id = "b7af651ce05a42049c6da51921ccbcd7"', f'id = "{os.environ["PREVIEW_KV_ID"]}"', 1)
+          Path("wrangler.pr60-preview.toml").write_text(config)
+          PY
+
+      - name: Deploy Worker preview from the same PR SHA
+        id: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 deploy --config wrangler.pr60-preview.toml 2>&1 | tee /tmp/worker-deploy.log
+          WORKER_URL="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.workers\.dev' /tmp/worker-deploy.log | tail -n 1)"
+          test -n "$WORKER_URL" || { echo "::error::Could not determine preview Worker URL"; exit 1; }
+          echo "url=$WORKER_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Configure OpenRouter key on isolated preview Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          OPENROUTER_KEYS: ${{ secrets.PR60_PREVIEW_OPENROUTER_KEYS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$OPENROUTER_KEYS" || { echo "::error::PR60_PREVIEW_OPENROUTER_KEYS is missing"; exit 1; }
+          printf '%s' "$OPENROUTER_KEYS" | npx --yes wrangler@4 secret put OPENROUTER_KEYS --config wrangler.pr60-preview.toml
+          echo "PASS: OpenRouter credential configured on the isolated PR #60 preview Worker; secret value was not printed."
+
+      - name: Deploy Pages preview from the same PR SHA
+        id: pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 pages deploy . --project-name zhineng --branch pr-60-stack-preview 2>&1 | tee /tmp/pages-deploy.log
+          PAGES_URL="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.pages\.dev' /tmp/pages-deploy.log | head -n 1)"
+          test -n "$PAGES_URL" || { echo "::error::Could not determine Pages preview URL"; exit 1; }
+          echo "url=$PAGES_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify automation-token API end to end on isolated preview
+        id: preview-api
+        env:
+          WORKER_URL: ${{ steps.worker.outputs.url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          USER="pr60-preview-${GITHUB_SHA:0:8}"
+          PASSWORD="$(openssl rand -hex 24)"
+          REGISTER="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/register" -H 'Content-Type: application/json' -d "$(jq -nc --arg user "$USER" --arg pw "$PASSWORD" '{user:$user,pw:$pw}')")"
+          LOGIN_TOKEN="$(printf '%s' "$REGISTER" | jq -r '.token // empty')"
+          test -n "$LOGIN_TOKEN" || { echo "::error::Preview test account registration did not return a login token"; exit 1; }
+          AUTH=(-H "Authorization: Bearer $LOGIN_TOKEN" -H 'Accept: application/json')
+          BEFORE="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/automation-token" "${AUTH[@]}")"
+          test "$(printf '%s' "$BEFORE" | jq -r '.ok and (.active == false)')" = "true"
+          CREATED="$(curl --fail-with-body --silent --show-error -X POST "$WORKER_URL/api/automation-token" "${AUTH[@]}")"
+          AUTOMATION_TOKEN="$(printf '%s' "$CREATED" | jq -r '.token // empty')"
+          test "${AUTOMATION_TOKEN#omcron_}" != "$AUTOMATION_TOKEN" || { echo "::error::Preview automation token was not created"; exit 1; }
+          test "$(printf '%s' "$CREATED" | jq -r '.expires == null')" = "true"
+          ACTIVE="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/automation-token" "${AUTH[@]}")"
+          test "$(printf '%s' "$ACTIVE" | jq -r '.active and (.last4 | length == 4)')" = "true"
+          STATUS="$(curl --silent --output /tmp/automation-denied.json --write-out '%{http_code}' "$WORKER_URL/api/automation-token" -H "Authorization: Bearer $AUTOMATION_TOKEN")"
+          test "$STATUS" = "401" || { echo "::error::Automation token unexpectedly accessed its management endpoint"; exit 1; }
+
+          # Ask the real model to perform a bounded review of codeLLM() from this exact checked-out commit.
+          CODE_LLM_SOURCE="$(sed -n '/^async function codeLLM(env, msgs, budgetMs)/,/^\/\/ GitHub 读写/p' worker.js | sed '$d')"
+          test -n "$CODE_LLM_SOURCE" || { echo "::error::Could not extract codeLLM() from the checked-out source"; exit 1; }
+          PROMPT="$(printf '%s\\n' \
+            '实际工程任务：审查下面从本次 PR commit 的 worker.js 原样提取的 codeLLM() 函数。请真正阅读代码并完成故障切换审查，不要只回复连通性标记。' \
+            '请用中文给出：' \
+            '1. 模型、Key 两层循环的实际执行顺序；' \
+            '2. HTTP 429、5xx、404 分别如何处理，是否会尝试下一个模型；' \
+            '3. TimeoutError 如何处理，60 秒 AbortSignal 超时后是否会继续；' \
+            '4. 结合代码指出一个真实边界风险或明确说明没有发现；' \
+            '5. 给出最小且可验证的测试建议。' \
+            '必须区分代码能证明的行为与无法从代码证明的线上行为，不要臆造模型供应商实测结果。' \
+            '' '待审查源码：' "$CODE_LLM_SOURCE")"
+          BODY="$(jq -nc --arg prompt "$PROMPT" '{model:"claude-sonnet-4-5",provider:"OpenRouter",stream:false,message:$prompt,messages:[{role:"user",content:$prompt}],code_budget_ms:420000}')"
+          MODEL_STATUS="$(curl --silent --show-error --max-time 480 --output /tmp/pr60-model-smoke.json --write-out '%{http_code}' "$WORKER_URL/v1/chat/completions" -H 'Content-Type: application/json' -H "Authorization: Bearer $AUTOMATION_TOKEN" --data "$BODY")"
+          if [ "$MODEL_STATUS" != "200" ]; then
+            echo "::error::Isolated codeLLM engineering task returned HTTP $MODEL_STATUS"
+            jq -r '.error // .choices[0].message.content // "No error details returned"' /tmp/pr60-model-smoke.json | head -c 1000
+            exit 1
+          fi
+          ANSWER="$(jq -r '.choices[0].message.content // .reply // empty' /tmp/pr60-model-smoke.json)"
+          if [ "${#ANSWER}" -lt 180 ] || [[ "$ANSWER" != *"429"* ]] || [[ "$ANSWER" != *"404"* ]]; then
+            echo "::error::Model response did not complete the requested source-based engineering review."
+            printf '%s\\n' "$ANSWER" | head -c 3000
+            exit 1
+          fi
+          echo "PASS: real codeLLM model completed the source-based engineering review."
+          echo "----- MODEL-GENERATED REVIEW (from this exact commit) -----"
+          printf '%s\\n' "$ANSWER" | head -c 6000
+          echo
+          echo "----- END MODEL-GENERATED REVIEW -----"
+          echo "Response characters: ${#ANSWER}"
+
+          curl --fail-with-body --silent --show-error -X DELETE "$WORKER_URL/api/automation-token" "${AUTH[@]}" >/tmp/automation-revoke.json
+          AFTER="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/automation-token" "${AUTH[@]}")"
+          test "$(printf '%s' "$AFTER" | jq -r '.ok and (.active == false)')" = "true"
+          echo "PASS: isolated preview register -> GET -> POST create -> GET active -> automation-token scope denial -> DELETE revoke -> GET inactive"
+          echo "Test account and tokens existed only in the isolated preview KV namespace."
+          echo "::add-mask::$LOGIN_TOKEN"
+          echo "login_token=$LOGIN_TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Real isolated code-mode failure → model repair → reverify smoke
+        if: contains(github.event.head_commit.message, '[repair-smoke]')
+        env:
+          WORKER_URL: ${{ steps.worker.outputs.url }}
+          LOGIN_TOKEN: ${{ steps.preview-api.outputs.login_token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GH_PAT: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$GH_PAT" || { echo "::error::GitHub workflow token is missing"; exit 1; }
+          echo "::add-mask::$GH_PAT"
+          printf '%s' "$GH_PAT" | npx --yes wrangler@4 secret put GH_PAT --config wrangler.pr60-preview.toml
+          printf '%s' "pr60-preview-${GITHUB_SHA:0:8}" | npx --yes wrangler@4 secret put CODE_OWNER --config wrangler.pr60-preview.toml
+          sleep 10 # allow the isolated Worker secret version to propagate before exercising code mode
+          AUTH=(-H "Authorization: Bearer $LOGIN_TOKEN" -H 'Accept: application/json')
+          CLEANED=false
+          cleanup() {
+            CURRENT="$(curl --silent --show-error "$WORKER_URL/api/code/pending" "${AUTH[@]}" || true)"
+            CURRENT_ID="$(printf '%s' "$CURRENT" | jq -r '.pending.pending_id // .pending.id // empty' 2>/dev/null || true)"
+            if [ -n "$CURRENT_ID" ]; then
+              CURRENT_VERSION="$(printf '%s' "$CURRENT" | jq -r '.pending.version // empty')"
+              CURRENT_PROJECT="$(printf '%s' "$CURRENT" | jq -r '.pending.project // empty')"
+              BODY="$(jq -nc --arg token "$LOGIN_TOKEN" --arg id "$CURRENT_ID" --arg project "$CURRENT_PROJECT" --argjson version "$CURRENT_VERSION" --arg op "repair-smoke-cleanup-$GITHUB_SHA" '{token:$token,yes:false,pending_id:$id,version:$version,project:$project,operation_id:$op}')"
+              curl --silent --show-error --max-time 30 -X POST "$WORKER_URL/api/code/confirm" "${AUTH[@]}" -H 'Content-Type: application/json' --data "$BODY" >/tmp/pr60-repair-cleanup.json || true
+            fi
+          }
+          trap cleanup EXIT
+
+          PROMPT='PR60 隔离环境的自动修复端到端验收。请只修改 worker.js 和 tests/code-mode-providers.test.cjs。第一，在 worker.js 的 const codePathOk 定义后新增这一行，故意保留这个错误实现：const codeRepairSmokeProbe = (value) => value === "repair-me" ? "broken" : value; 第二，在 tests/code-mode-providers.test.cjs 末尾增加一个 node:test，使用已有的 workerSource、vm、assert，从 workerSource 中提取 codeRepairSmokeProbe 定义并执行，断言传入 "repair-me" 必须返回 "repair-me"。这是有意注入的一次临时故障：本轮生成阶段必须让函数返回 broken、测试保持正确，从而让 Actions 的 npm test 真实失败。不要在生成阶段提前修复这个函数，不要改其他文件。'
+          REQUEST="$(jq -nc --arg token "$LOGIN_TOKEN" --arg text "$PROMPT" '{token:$token,text:$text,code_mode:true,code_project:"聚合体"}')"
+          echo "Starting real code-mode model task in the isolated preview Worker."
+          CODE_HTTP="$(curl --silent --show-error --max-time 240 --output /tmp/pr60-code-mode.json --write-out '%{http_code}' -X POST "$WORKER_URL/api/code" "${AUTH[@]}" -H 'Content-Type: application/json' --data "$REQUEST" || true)"
+          CODE_RESULT="$(cat /tmp/pr60-code-mode.json 2>/dev/null || true)"
+          if [ "$CODE_HTTP" != "200" ] || ! printf '%s' "$CODE_RESULT" | jq -e '.ok == true and .pending == true' >/dev/null; then
+            echo "::error::Code-mode model did not create the expected isolated pending patch (HTTP $CODE_HTTP)."
+            printf '%s' "$CODE_RESULT" | jq -c '{ok,reply,msg}' || printf '%s\\n' "$CODE_RESULT" | head -c 1500
+            exit 1
+          fi
+
+          PENDING="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/code/pending" "${AUTH[@]}")"
+          PENDING_ID="$(printf '%s' "$PENDING" | jq -r '.pending.pending_id // .pending.id // empty')"
+          VERSION="$(printf '%s' "$PENDING" | jq -r '.pending.version // empty')"
+          PROJECT="$(printf '%s' "$PENDING" | jq -r '.pending.project // empty')"
+          BRANCH="$(printf '%s' "$PENDING" | jq -r '.pending.branch // empty')"
+          PATHS="$(printf '%s' "$PENDING" | jq -r '[.pending.edits[].path] | unique | join(",")')"
+          WORKER_PATCH="$(printf '%s' "$PENDING" | jq -r '[.pending.edits[] | select(.path=="worker.js") | .new] | join("\n")')"
+          TEST_PATCH="$(printf '%s' "$PENDING" | jq -r '[.pending.edits[] | select(.path=="tests/code-mode-providers.test.cjs") | .new] | join("\n")')"
+          test -n "$PENDING_ID" && [[ "$BRANCH" == code/* ]] || { echo "::error::No safe code/* pending branch was created"; exit 1; }
+          [[ "$PATHS" == *"worker.js"* && "$PATHS" == *"tests/code-mode-providers.test.cjs"* ]] || { echo "::error::Model patch did not stay within the two expected smoke files: $PATHS"; exit 1; }
+          [[ "$WORKER_PATCH" == *"codeRepairSmokeProbe"* && "$WORKER_PATCH" == *"broken"* ]] || { echo "::error::Model did not create the intentional failing function"; exit 1; }
+          [[ "$TEST_PATCH" == *"codeRepairSmokeProbe"* && "$TEST_PATCH" == *"repair-me"* ]] || { echo "::error::Model did not create the expected regression test"; exit 1; }
+          echo "PASS: real code-mode model generated the intentional failing patch on a temporary branch: $BRANCH"
+
+          CONFIRM="$(jq -nc --arg token "$LOGIN_TOKEN" --arg id "$PENDING_ID" --arg project "$PROJECT" --argjson version "$VERSION" --arg op "repair-smoke-accept-$GITHUB_SHA" '{token:$token,yes:true,pending_id:$id,version:$version,project:$project,operation_id:$op}')"
+          ACCEPTED="$(curl --fail-with-body --silent --show-error --max-time 60 -X POST "$WORKER_URL/api/code/confirm" "${AUTH[@]}" -H 'Content-Type: application/json' --data "$CONFIRM")"
+          printf '%s' "$ACCEPTED" | jq -e '.ok == true and .verification_pending == true' >/dev/null || { echo "::error::Initial acceptance did not queue Actions verification"; printf '%s' "$ACCEPTED" | jq -c '{ok,status,reply,msg}'; exit 1; }
+
+          DEADLINE=$((SECONDS + 2100))
+          PASSED=false
+          while (( SECONDS < DEADLINE )); do
+            PENDING="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/code/pending" "${AUTH[@]}")"
+            STATUS="$(printf '%s' "$PENDING" | jq -r '.pending.status // empty')"
+            ATTEMPTS="$(printf '%s' "$PENDING" | jq -r '.pending.repair_attempts // 0')"
+            if [ "$STATUS" = "verification_passed" ]; then
+              if [ "$ATTEMPTS" -ge 1 ] && [ "$(printf '%s' "$PENDING" | jq -r '[.pending.edits[] | select(.auto_repair == true)] | length')" -ge 1 ]; then
+                EXPECTED="$(printf '%s' "$PENDING" | jq -r '.pending.verify_expected_sha // empty')"
+                ACTUAL="$(printf '%s' "$PENDING" | jq -r '.pending.verify_head_sha // empty')"
+                test -n "$EXPECTED" && [ "$EXPECTED" = "$ACTUAL" ] || { echo "::error::Repair re-verification SHA mismatch"; exit 1; }
+                PASSED=true
+                break
+              fi
+              echo "::error::Verification passed without a recorded automatic model repair."
+              exit 1
+            fi
+            if [ "$STATUS" = "repairing" ] || [ "$STATUS" = "verification_pending" ] || [ "$STATUS" = "verification_failed" ]; then
+              VERIFY="$(curl --silent --show-error --max-time 480 "$WORKER_URL/api/code/verify" "${AUTH[@]}" || true)"
+              PENDING="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/code/pending" "${AUTH[@]}")"
+              STATUS="$(printf '%s' "$PENDING" | jq -r '.pending.status // empty')"
+              ATTEMPTS="$(printf '%s' "$PENDING" | jq -r '.pending.repair_attempts // 0')"
+              if [ "$STATUS" = "verification_failed" ]; then
+                REPAIR_ERROR="$(printf '%s' "$PENDING" | jq -r '.pending.repair_error // empty')"
+                if [ -n "$REPAIR_ERROR" ] || [ "$ATTEMPTS" -ge 2 ]; then
+                  echo "::error::Automatic model repair did not recover the isolated failure: $REPAIR_ERROR"
+                  exit 1
+                fi
+              fi
+            fi
+            sleep 8
+          done
+          [ "$PASSED" = true ] || { echo "::error::Timed out waiting for real model repair and re-verification"; exit 1; }
+
+          REPAIRED_WORKER="$(curl --fail-with-body --silent --show-error --get "$WORKER_URL/api/code/file" "${AUTH[@]}" --data-urlencode 'repo=tianxin1300/openmanus-gateway' --data-urlencode "path=worker.js" --data-urlencode "ref=$BRANCH")"
+          REPAIRED_TEST="$(curl --fail-with-body --silent --show-error --get "$WORKER_URL/api/code/file" "${AUTH[@]}" --data-urlencode 'repo=tianxin1300/openmanus-gateway' --data-urlencode 'path=tests/code-mode-providers.test.cjs' --data-urlencode "ref=$BRANCH")"
+          printf '%s' "$REPAIRED_WORKER" | jq -r '.content' | grep -F 'codeRepairSmokeProbe' >/dev/null
+          printf '%s' "$REPAIRED_WORKER" | jq -r '.content' | grep -F 'broken' >/dev/null && { echo "::error::Repaired source still contains the injected broken return"; exit 1; } || true
+          printf '%s' "$REPAIRED_TEST" | jq -r '.content' | grep -F 'repair-me' >/dev/null || { echo "::error::Automatic repair weakened or removed the regression test"; exit 1; }
+          echo "PASS: real model repaired the temporary source, preserved the regression test, and Actions re-verified the exact commit."
+
+          CURRENT="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/code/pending" "${AUTH[@]}")"
+          CURRENT_ID="$(printf '%s' "$CURRENT" | jq -r '.pending.pending_id // .pending.id // empty')"
+          CURRENT_VERSION="$(printf '%s' "$CURRENT" | jq -r '.pending.version // empty')"
+          CURRENT_PROJECT="$(printf '%s' "$CURRENT" | jq -r '.pending.project // empty')"
+          CLEAN="$(jq -nc --arg token "$LOGIN_TOKEN" --arg id "$CURRENT_ID" --arg project "$CURRENT_PROJECT" --argjson version "$CURRENT_VERSION" --arg op "repair-smoke-cleanup-$GITHUB_SHA" '{token:$token,yes:false,pending_id:$id,version:$version,project:$project,operation_id:$op}')"
+          CLEAN_RESULT="$(curl --fail-with-body --silent --show-error --max-time 60 -X POST "$WORKER_URL/api/code/confirm" "${AUTH[@]}" -H 'Content-Type: application/json' --data "$CLEAN")"
+          printf '%s' "$CLEAN_RESULT" | jq -e '.ok == true and .discarded == true and (.branch_deleted == true or .branch_already_gone == true)' >/dev/null || { echo "::error::Could not delete the temporary repair-smoke branch"; printf '%s' "$CLEAN_RESULT" | jq -c '{ok,reply,msg}'; exit 1; }
+          CLEANED=true
+          echo "PASS: isolated smoke branch deleted; no merge or main deployment was performed."
+
+      - name: Publish paired preview URLs on PR #60
+        if: success()
+        uses: actions/github-script@v7
+        env:
+          PAGES_URL: ${{ steps.pages.outputs.url }}
+          WORKER_URL: ${{ steps.worker.outputs.url }}
+          DEPLOY_SHA: ${{ env.DEPLOY_SHA }}
+        with:
+          script: |
+            const pages = new URL(process.env.PAGES_URL);
+            pages.searchParams.set("gateway", process.env.WORKER_URL);
+            const marker = "<!-- pr60-stack-preview -->";
+            const body = marker + "\n## PR #60 前后端联动预览\n" +
+              "- Commit: \`" + process.env.DEPLOY_SHA + "\`\n" +
+              "- 前端 Pages 预览： " + pages.toString() + "\n" +
+              "- Worker 预览 API： " + process.env.WORKER_URL + "\n" +
+              "- 隔离 KV：独立预览命名空间，不连接正式用户数据\n" +
+              "- API 验证：注册预览账号、读取状态、生成、检查权限隔离、撤销，全部通过。\n" +
+              "仅预览，不合并 main，不部署正式 Worker。";
+            const { owner, repo } = context.repo;
+            const issue_number = 60;
+            const comments = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
+            const old = comments.data.find(c => c.body.includes(marker));
+            if (old) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: old.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "## PR #60 paired preview"
+            echo "- Exact source SHA: $DEPLOY_SHA"
+            echo "- Worker preview: ${{ steps.worker.outputs.url || 'not deployed' }}"
+            echo "- Pages preview: ${{ steps.pages.outputs.url || 'not deployed' }}"
+            echo "- Result: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"

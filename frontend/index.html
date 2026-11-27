@@ -795,7 +795,12 @@ const GATEWAY = (() => {
   try {
     const candidate = new URL(new URLSearchParams(location.search).get("gateway") || "");
     const expectedHost = location.hostname.replace(/^3000(?=--|-)/, "8787");
-    if (candidate.protocol === "https:" && candidate.hostname === expectedHost && candidate.pathname === "/" && !candidate.username && !candidate.password) return candidate.origin;
+    const localPreview = candidate.protocol === "https:" && candidate.hostname === expectedHost && candidate.pathname === "/" && !candidate.username && !candidate.password;
+    const branchPreview = location.hostname.endsWith(".pages.dev") &&
+      candidate.protocol === "https:" &&
+      /^openmanus-gateway-pr60-preview\.[a-z0-9-]+\.workers\.dev$/.test(candidate.hostname) &&
+      candidate.pathname === "/" && !candidate.username && !candidate.password;
+    if (localPreview || branchPreview) return candidate.origin;
   } catch (_) {}
   return production;
 })();
@@ -1562,8 +1567,8 @@ function hlCode(code, ext) {
   if (!code || code.length > 150000) { frag.appendChild(document.createTextNode(code)); return frag; }
   const markup = /^(html|htm|xml|svg|vue)$/.test(ext), hash = /^(py|sh|rb|yml|yaml|toml|ini|conf)$/.test(ext);
   const re = markup ? /(<!--[\s\S]*?-->|\/\*[\s\S]*?\*\/)|("[^"\n]*")|(<\/?[A-Za-z][\w:-]*|\/?>)|(\b\d+(?:\.\d+)?\b)/g
-    : hash ? /(#[^\n]*)|("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')|(\b\d+(?:\.\d+)?\b)|(\b[A-Za-z_]\w*\b)/g
-    : /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|--[^\n]*)|("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`)|(\b\d+(?:\.\d+)?\b)|(\b[A-Za-z_]\w*\b)/g;
+    : hash ? /(#[^\n]*)|("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\.|[^"\\\n])*"|'(?:\.|[^'\\\n])*')|(\b\d+(?:\.\d+)?\b)|(\b[A-Za-z_]\w*\b)/g
+    : /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|--[^\n]*)|("(?:\.|[^"\\\n])*"|'(?:\.|[^'\\\n])*'|`(?:\.|[^`\\])*`)|(\b\d+(?:\.\d+)?\b)|(\b[A-Za-z_]\w*\b)/g;
   const cls = markup ? ["c", "s", "t", "n"] : ["c", "s", "n", "w"];
   const noDash = ext !== "sql" && ext !== "lua" && !markup && !hash;   // “--” 只在 SQL / Lua 里是注释
   let last = 0, m;
@@ -1592,7 +1597,7 @@ function autoLinkRe() {
   if (autoRe && key === autoReKey) return { re: autoRe, map: autoMap };
   const map = new Map(); Object.keys(AUTO_SITES).forEach(k => map.set(k.toLowerCase(), AUTO_SITES[k])); [...AUTO_PLACES, ...picked].forEach(k => { if (!map.has(k.toLowerCase())) map.set(k.toLowerCase(), "https://map.baidu.com/search/" + encodeURIComponent(k)); });
   const esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), names = [...map.keys()].sort((a, b) => b.length - a.length).map(esc).join("|");
-  autoRe = new RegExp("(https?:\\/\\/[^\\s<>\"'，。；、）)】》]+)|((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+(?:" + AUTO_TLD + ")(?![a-z0-9-])(?:[\\/?#][^\\s<>\"'，。；、）)】》]*)?)|(" + names + ")", "gi");
+  autoRe = new RegExp("(https?:\\/\\/[^\\s<>\"'，。；、）)】》]+)|((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:" + AUTO_TLD + ")(?![a-z0-9-])(?:[\\/?#][^\\s<>\"'，。；、）)】》]*)?)|(" + names + ")", "gi");
   autoReKey = key; autoMap = map; return { re: autoRe, map };
 }
 function autoShort(u) { const t = String(u).replace(/^https?:\/\//i, "").replace(/\/$/, ""); return t.length > 34 ? t.slice(0, 32) + "…" : t; }
@@ -3225,6 +3230,78 @@ function showSettings(view = "main") {
       tokenSection.appendChild(setBtn("重新登录并生成令牌", () => { closeSettings(); showAuth("请登录当前账号以生成新的登录令牌"); }, "settings-token-copy"));
     }
     box.appendChild(tokenSection);
+
+    const automationSection = artEl("section", "settings-token-section");
+    automationSection.appendChild(artEl("strong", "", "Cron Issue Agent 自动化令牌"));
+    const automationStatus = artEl("div", "settings-note", "正在读取自动化令牌状态…");
+    automationSection.appendChild(automationStatus);
+    const automationActions = artEl("div", "");
+    automationActions.style.display = "flex";
+    automationActions.style.flexWrap = "wrap";
+    automationActions.style.gap = "8px";
+    const automationGenerate = setBtn("生成 Cron 专用长期令牌", async () => {
+      if (automationGenerate.disabled) return;
+      if (automationActive && !window.confirm("更换后，旧的 Cron 自动化令牌会立即失效。继续吗？")) return;
+      automationGenerate.disabled = true;
+      try {
+        const response = await authFetch(GATEWAY + "/api/automation-token", { method: "POST", headers: { "Accept": "application/json" } });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok || !data.token) throw new Error(data.msg || "生成自动化令牌失败");
+        automationActive = true;
+        automationStatus.textContent = "已启用 · 永不过期 · 末尾 " + data.last4;
+        automationReveal.replaceChildren();
+        const value = artEl("textarea", "settings-token-value");
+        value.value = data.token; value.readOnly = true; value.setAttribute("aria-label", "新生成的 Cron 自动化令牌"); value.setAttribute("autocomplete", "off"); value.setAttribute("autocapitalize", "off"); value.spellcheck = false;
+        automationReveal.appendChild(value);
+        automationReveal.appendChild(setBtn("复制自动化令牌", () => copy(data.token), "settings-token-copy"));
+        automationReveal.appendChild(artEl("small", "settings-note", "令牌只在本次生成时完整显示。请立即复制到 GitHub 仓库 Settings → Secrets and variables → Actions，Secret 名称使用 OPENMANUS_USER_TOKEN。"));
+        automationGenerate.textContent = "更换自动化令牌";
+        automationRevoke.hidden = false;
+      } catch (error) {
+        toast(error.message || "生成自动化令牌失败");
+      } finally { automationGenerate.disabled = false; }
+    }, "settings-token-copy");
+    automationActions.appendChild(automationGenerate);
+    const automationRevoke = setBtn("撤销自动化令牌", async () => {
+      if (!automationActive || !window.confirm("撤销后，Cron Issue Agent 将无法再调用网关。确定撤销？")) return;
+      automationRevoke.disabled = true;
+      try {
+        const response = await authFetch(GATEWAY + "/api/automation-token", { method: "DELETE", headers: { "Accept": "application/json" } });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) throw new Error(data.msg || "撤销自动化令牌失败");
+        automationActive = false;
+        automationStatus.textContent = "尚未启用";
+        automationReveal.replaceChildren();
+        automationGenerate.textContent = "生成 Cron 专用长期令牌";
+        automationRevoke.hidden = true;
+        toast("Cron 自动化令牌已撤销");
+      } catch (error) { toast(error.message || "撤销自动化令牌失败"); }
+      finally { automationRevoke.disabled = false; }
+    }, "settings-token-copy");
+    automationRevoke.hidden = true;
+    automationActions.appendChild(automationRevoke);
+    automationSection.appendChild(automationActions);
+    const automationReveal = artEl("div", "");
+    automationSection.appendChild(automationReveal);
+    box.appendChild(automationSection);
+    let automationActive = false;
+    if (authToken) {
+      authFetch(GATEWAY + "/api/automation-token", { cache: "no-store", headers: { "Accept": "application/json" } })
+        .then(response => response.json().then(data => ({ response, data })))
+        .then(({ response, data }) => {
+          if (!response.ok || !data.ok) throw new Error(data.msg || "读取失败");
+          automationActive = !!data.active;
+          automationStatus.textContent = automationActive ? "已启用 · 永不过期 · 末尾 " + data.last4 : "尚未启用";
+          automationGenerate.textContent = automationActive ? "更换自动化令牌" : "生成 Cron 专用长期令牌";
+          automationRevoke.hidden = !automationActive;
+        })
+        .catch(error => { automationStatus.textContent = "状态读取失败：" + (error.message || "未知错误"); });
+    } else {
+      automationStatus.textContent = "请先登录，再创建独立的 Cron 自动化令牌。";
+      automationGenerate.disabled = true;
+    }
+    const automationHint = artEl("small", "settings-note", "此令牌与正常登录令牌分开保存，不设自动过期；仅授权 POST /v1/chat/completions。生成或更换不会改变正常登录状态。");
+    automationSection.appendChild(automationHint);
     box.appendChild(setRow(authToken ? "退出当前账号" : "重新登录", setBtn(authToken ? "退出登录" : "去登录", () => { closeSettings(); logout(authToken ? "已退出登录" : ""); })));
   } else if (view === "billing") {
     note("当前通过 OpenManus 网关使用免费额度（例如生成图片的次数），前端不展示账单明细。额度用完时会在对应功能里提示。");

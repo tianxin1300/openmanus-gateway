@@ -23,7 +23,8 @@
 
   var KEY_ON = "om_code_mode", KEY_PROJ = "om_code_project", PROJECTS = ["聚合体", "就医伴侣"];
   var state = { on: false, project: window.OM_CODE_PROJECT || "聚合体" };
-  var panelState = "";   // "" | "pending"（等你点推/不推）| "result"（已出结果，等你关掉）
+  var panelState = "";   // "" | "pending"（等验证或确认）| "result"（已出结果，等你关掉）
+  var verifyPollTimer = null, verifyPollBusy = false, autoRepairPoll = false;
 
   function ls(k, v) {
     try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {}
@@ -244,16 +245,40 @@
     return panel;
   }
   function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
-  function hide() { clearTimeout(closeTimer); clearTimeout(expTimer); if (panel) panel.hidden = true; if (reopenBtn) reopenBtn.classList.remove("on"); panelState = ""; panelCollapsed = false; currentPending = null; }
+  function hide() { clearTimeout(closeTimer); clearTimeout(expTimer); clearTimeout(verifyPollTimer); if (panel) panel.hidden = true; if (reopenBtn) reopenBtn.classList.remove("on"); panelState = ""; panelCollapsed = false; currentPending = null; }
   function collapse() { clearTimeout(closeTimer); if (panel) panel.hidden = true; if (reopenBtn) reopenBtn.classList.add("on"); panelCollapsed = true; }
   function refreshPending(quiet) {
     if (refreshBusy) return Promise.resolve(); refreshBusy = true;
     if (stEl && !quiet) say("正在刷新待处理改动…");
     return api("/api/code/pending", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
-      if (j && j.ok && j.pending && j.pending.edits && j.pending.edits.length) { currentPending = j.pending; render(j.pending); if (panelCollapsed) { panel.hidden = true; if (reopenBtn) reopenBtn.classList.add("on"); } }
+      if (j && j.ok && j.pending && j.pending.edits && j.pending.edits.length) {
+        currentPending = j.pending;
+        if (j.pending.status === "repairing") autoRepairPoll = true;
+        else if (j.pending.status === "verification_pending") autoRepairPoll = false;
+        else if (j.pending.status === "verification_failed" && (j.pending.repair_error || Number(j.pending.repair_attempts || 0) >= 2)) autoRepairPoll = false;
+        render(j.pending); if (panelCollapsed) { panel.hidden = true; if (reopenBtn) reopenBtn.classList.add("on"); } scheduleVerificationPoll();
+      }
       else { currentPending = null; hide(); if (!quiet) toast("当前没有待处理的改动"); }
     }).catch(function (e) { if (!quiet) toast("刷新失败：" + (e && e.message || e)); })
       .finally(function () { refreshBusy = false; });
+  }
+  function scheduleVerificationPoll() {
+    clearTimeout(verifyPollTimer); verifyPollTimer = null;
+    if (!currentPending || verifyPollBusy || (currentPending.status !== "verification_pending" && currentPending.status !== "repairing" && !(currentPending.status === "verification_failed" && autoRepairPoll))) return;
+    verifyPollTimer = setTimeout(pollVerification, 4000);
+  }
+  function pollVerification() {
+    if (verifyPollBusy || !currentPending) return;
+    var repairing = currentPending.status === "repairing" || (currentPending.status === "verification_failed" && autoRepairPoll);
+    if (!repairing && currentPending.status !== "verification_pending") return;
+    verifyPollBusy = true;
+    if (!repairing) say("正在检查 Actions 结果；如果测试失败，系统会自动读取日志并尝试修复。");
+    var request = repairing ? api("/api/code/pending", { cache: "no-store" }) : api("/api/code/verify", { cache: "no-store" });
+    request.then(function (r) { return r.json(); }).then(function (j) {
+      if (repairing) return refreshPending(true);
+      if (j && j.ok && j.auto_repair_started) autoRepairPoll = true;
+      if (j && j.ok && j.status === "completed") return refreshPending(true);
+    }).catch(function () {}).finally(function () { verifyPollBusy = false; scheduleVerificationPoll(); });
   }
   function linkify(node, text) {   // 文字里的网址变成可点的链接（只处理 http / https）
     clear(node);
@@ -286,23 +311,43 @@
     (p.warn || []).forEach(function (w) { body.appendChild(el("div", "om-warn", "⚠️ " + w + "（可能是括号写漏了，推之前请留意）")); });
     p.edits.forEach(function (e) {
       var card = el("div", "om-edit");
-      card.appendChild(el("div", "om-file", e.path + (e.line ? " · 第 " + e.line + " 行" : "")));
+      card.appendChild(el("div", "om-file", e.path + (e.line ? " · 第 " + e.line + " 行" : "") + (e.auto_repair ? " · 模型自动修复" : "")));
       card.appendChild(diffBox(e.old, e.new)); body.appendChild(card);
     });
+    if (p.status === "verification_pending") {
+      body.appendChild(el("div", "om-warn", "⏳ GitHub Actions 正在验证此临时分支：npm install → npm test → npm run build。验证期间禁止合并。"));
+      if (p.verify_run_url) { var runLink = el("a", "", "查看 Actions 验证运行"); runLink.href = p.verify_run_url; runLink.target = "_blank"; runLink.rel = "noopener noreferrer"; body.appendChild(runLink); }
+    } else if (p.status === "repairing") {
+      body.appendChild(el("div", "om-warn", "模型正在读取 Actions 失败日志和临时分支源码，尝试自动修复；最多自动修复 2 次。修复期间不会合并。"));
+      body.appendChild(el("div", "om-meta", "自动修复进度：" + Number(p.repair_attempts || 1) + " / 2"));
+    } else if (p.status === "verification_passed") {
+      body.appendChild(el("div", "om-okc", "✓ 验证通过。请再次点击“确认合并”，才会合并到目标分支。"));
+      if (p.verify_run_url) { var passLink = el("a", "", "查看通过的 Actions 运行"); passLink.href = p.verify_run_url; passLink.target = "_blank"; passLink.rel = "noopener noreferrer"; body.appendChild(passLink); }
+    } else if (p.status === "verification_failed") {
+      body.appendChild(el("div", "om-errc", "✕ 验证失败，未合并。系统会先尝试自动修复；如果修复用尽或失败，可重新验证或拒绝并删除。"));
+      if (p.repair_error) body.appendChild(el("div", "om-meta", "自动修复结果：" + p.repair_error));
+      if (p.verify_failed_step) body.appendChild(el("div", "om-meta", "失败步骤：" + p.verify_failed_step));
+      (p.verify_error_lines || []).forEach(function (line) { var logLine = el("pre", "om-diff", line); logLine.style.whiteSpace = "pre-wrap"; body.appendChild(logLine); });
+      if (p.verify_run_url) { var failLink = el("a", "", "查看失败的 Actions 日志"); failLink.href = p.verify_run_url; failLink.target = "_blank"; failLink.rel = "noopener noreferrer"; body.appendChild(failLink); }
+    }
     root.appendChild(body);
-    footer = el("div", "om-pf"); stEl = el("div", "om-st", "10 分钟内点「推」或「不推」，超时自动丢弃。推到 " + p.branch + " 后，Cloudflare 会自动重新部署。");
-    noBtn = el("button", "om-btn om-no", "不推"); noBtn.type = "button";
-    yesBtn = el("button", "om-btn om-yes", "推"); yesBtn.type = "button";
+    footer = el("div", "om-pf");
+    var verifying = p.status === "verification_pending" || p.status === "repairing", passed = p.status === "verification_passed", failed = p.status === "verification_failed";
+    stEl = el("div", "om-st", p.status === "repairing" ? "模型正在自动修复，修复完成后会重新运行测试。" : verifying ? "验证运行中，页面会自动刷新状态；验证未通过前不会合并。" : passed ? "测试与构建已通过。再次确认后才会合并到 " + (p.baseBranch || "目标分支") + "。" : failed ? "验证失败，修改仍保留在临时分支。" : "先推送到临时分支并运行测试，测试通过后再确认合并。");
+    noBtn = el("button", "om-btn om-no", "不推"); noBtn.type = "button"; noBtn.disabled = verifying; if (fcBtn) fcBtn.disabled = verifying;
+    yesBtn = el("button", "om-btn om-yes", p.status === "repairing" ? "自动修复中" : passed ? "确认合并" : failed ? "重新验证" : "推送并验证"); yesBtn.type = "button"; yesBtn.disabled = verifying;
     noBtn.addEventListener("click", function () { decide(false); });
     yesBtn.addEventListener("click", function () { decide(true); });
     footer.appendChild(stEl); footer.appendChild(noBtn); footer.appendChild(yesBtn); root.appendChild(footer);
     root.hidden = !!panelCollapsed; if (reopenBtn) reopenBtn.classList.toggle("on", !!panelCollapsed); body.scrollTop = 0;
-    var left = typeof p.left === "number" ? p.left : 10 * 60 * 1000;   // v108：到点自动收面板 + 清掉服务器里的暂存
-    expTimer = setTimeout(function () {
-      if (panelState !== "pending") return;
-      hide(); toast("预览超过 10 分钟没处理，已自动丢弃");
-      clearOnServer().catch(function () {});
-    }, Math.max(1000, left));
+    if (!verifying) {
+      var left = typeof p.left === "number" ? p.left : 10 * 60 * 1000;
+      expTimer = setTimeout(function () {
+        if (panelState !== "pending") return;
+        hide(); toast("预览超过 10 分钟没处理，已自动丢弃");
+        clearOnServer().catch(function () {});
+      }, Math.max(1000, left));
+    }
   }
   function busy(b) { if (yesBtn) yesBtn.disabled = b; if (noBtn) noBtn.disabled = b; if (fcBtn) fcBtn.disabled = b; }
   function say(text, cls) { if (!stEl) return; stEl.className = "om-st" + (cls ? " " + cls : ""); linkify(stEl, text); }
@@ -327,15 +372,18 @@
       project: String(p.project),
       operation_id: operationId
     };
-    busy(true); say(yes ? "正在接受并合并到 " + (p.baseBranch || "main") + "…" : "正在拒绝并删除临时修改…");
+    busy(true); say(!yes ? "正在拒绝并删除临时修改…" : p.status === "verification_passed" ? "正在核对已验证 commit 并确认合并…" : p.status === "verification_failed" ? "正在重新运行验证…" : "正在写入临时分支并启动测试验证…");
     api("/api/code/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       .then(function (r) { return r.json().catch(function () { return { ok: false, reply: "服务器返回的不是 JSON（HTTP " + r.status + "）" }; }); })
       .then(function (j) {
         var message = j.reply || j.msg || (j.ok ? "操作完成" : "操作失败");
         return api("/api/code/pending", { cache: "no-store" }).then(function (r) { return r.json(); }).catch(function () { return null; }).then(function (pj) {
           var still = !!(pj && pj.ok && pj.pending && pj.pending.edits && pj.pending.edits.length);
-          if (!still && j.ok) currentPending = null;
-          showResult(message, !!j.ok, still, !yes);
+          if (!still && j.ok) { currentPending = null; showResult(message, !!j.ok, false, !yes); return; }
+          if (still) {
+            currentPending = pj.pending; render(pj.pending); say(message, j.ok ? "" : "om-errc"); scheduleVerificationPoll(); return;
+          }
+          showResult(message, !!j.ok, false, !yes);
         });
       })
       .catch(function (e) { showResult("请求失败：" + (e && e.message || e), false, true, !yes); });

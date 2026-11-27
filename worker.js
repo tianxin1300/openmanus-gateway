@@ -446,24 +446,67 @@ const CODE_NVIDIA_MODELS = [
   "mistral-large-4",
   "kimi-k3.1-pro"
 ];
+const CODE_OPENROUTER_CATALOG_URL = "https://openrouter.ai/api/v1/models?input_modalities=text";
+const CODE_OPENROUTER_CATALOG_TIMEOUT_MS = 8000;
+const CODE_OPENROUTER_DYNAMIC_LIMIT = 30;
+async function codeOpenRouterFreeModels(key, budgetLeft) {
+  if (!key || budgetLeft < 1000) return [];
+  try {
+    const response = await fetch(CODE_OPENROUTER_CATALOG_URL, {
+      method: "GET",
+      headers: { Authorization: "Bearer " + key, Accept: "application/json" },
+      signal: T(Math.min(CODE_OPENROUTER_CATALOG_TIMEOUT_MS, budgetLeft))
+    });
+    if (!response.ok) return [];
+    const payload = await response.json().catch(() => null);
+    const models = payload && Array.isArray(payload.data) ? payload.data : [];
+    const ids = [];
+    for (const model of models) {
+      const id = typeof model.id === "string" ? model.id.trim() : "";
+      const architecture = model.architecture || {};
+      const pricing = model.pricing || {};
+      const inputs = Array.isArray(architecture.input_modalities) ? architecture.input_modalities : [];
+      const outputs = Array.isArray(architecture.output_modalities) ? architecture.output_modalities : [];
+      const endpoints = Array.isArray(model.endpoints) ? model.endpoints : null;
+      if (!id || !id.endsWith(":free") || !inputs.includes("text") || !outputs.includes("text")) continue;
+      if (String(pricing.prompt) !== "0" || String(pricing.completion) !== "0") continue;
+      if (endpoints && !endpoints.includes("/api/v1/chat/completions")) continue;
+      ids.push(id);
+      if (ids.length >= CODE_OPENROUTER_DYNAMIC_LIMIT) break;
+    }
+    return ids;
+  } catch (_) {
+    return [];
+  }
+}
 const CODE_PUSH_LIMIT = 40000;   // 被改的原文件超过这个字数，不让模型整份重写，也不推送
 async function codeLLM(env, msgs, budgetMs) {
   const tried = [], t0 = Date.now(), budget = Math.max(15000, Number(budgetMs) || 110000), targets = [];
   // 代码模式不使用肖恩AI（Toter）；普通聊天的供应商配置保持不变。
-  for (const m of [...new Set([...getKeys(env.CODE_MODELS), ...CODE_OR_MODELS])]) targets.push({ name: "OpenRouter", url: "https://openrouter.ai/api/v1/chat/completions", keys: getKeys(env.OPENROUTER_KEYS), model: m });
+  const openRouterKeys = getKeys(env.OPENROUTER_KEYS);
+  if (openRouterKeys.length) {
+    const customModels = getKeys(env.CODE_MODELS);
+    const dynamicModels = await codeOpenRouterFreeModels(openRouterKeys[0], Math.max(0, budget - (Date.now() - t0)));
+    const openRouterModels = [...new Set([...customModels, ...dynamicModels, ...CODE_OR_MODELS])];
+    for (const m of openRouterModels) targets.push({ name: "OpenRouter", url: "https://openrouter.ai/api/v1/chat/completions", keys: openRouterKeys, model: m });
+  }
   for (const m of CODE_GROQ_MODELS) targets.push({ name: "Groq", url: "https://api.groq.com/openai/v1/chat/completions", keys: getKeys(env.GROQ_KEYS || env.GROQ_API_KEY), model: m });
   for (const m of CODE_NVIDIA_MODELS) targets.push({ name: "NVIDIA", url: "https://integrate.api.nvidia.com/v1/chat/completions", keys: getKeys(env.NVIDIA_KEYS), model: m });
   for (const t of targets) {
     for (const key of t.keys) {
       const left = budget - (Date.now() - t0); if (left < 8000) return { text: "", tried };
       try {
-        const r = await fetch(t.url, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + key }, body: JSON.stringify({ model: t.model, messages: msgs, temperature: 0.2, max_tokens: 16000 }), signal: T(Math.min(70000, left)) });
+        const r = await fetch(t.url, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + key }, body: JSON.stringify({ model: t.model, messages: msgs, temperature: 0.2, max_tokens: 16000 }), signal: T(Math.min(60000, left)) });
         if (!r.ok) { tried.push(t.name + "·" + t.model + " HTTP " + r.status); if (r.status === 404) break; continue; }
         const j = await r.json().catch(() => null), c = j && j.choices && j.choices[0];
         const text = c && c.message && typeof c.message.content === "string" ? c.message.content.trim() : "";
         if (!text) { tried.push(t.name + "·" + t.model + " 空回复"); continue; }
         return { text, from: t.name + " · " + t.model, truncated: c.finish_reason === "length", tried };
-      } catch (e) { tried.push(t.name + "·" + t.model + " " + (e && e.name === "TimeoutError" ? "超时" : String(e && e.message || e).slice(0, 60))); }
+      } catch (e) {
+        const timedOut = e && (e.name === "TimeoutError" || e.name === "AbortError");
+        tried.push(t.name + "·" + t.model + " " + (timedOut ? "超时" : String(e && e.message || e).slice(0, 60)));
+        if (timedOut) break; // A model timeout skips its remaining keys and advances to the next model.
+      }
     }
   }
   return { text: "", tried };
@@ -519,7 +562,8 @@ async function codeCreateTempBranch(env, repo, project, base = "main") {
 }
 async function codeDeleteBranch(env, repo, branch) {
   if (!/^code\/[A-Za-z0-9._\/-]+$/.test(String(branch || ""))) return { ok: false, msg: "只允许删除代码模式创建的临时分支" };
-  return await codeGhApi(env, codeGitRefUrl(repo, "heads/" + branch), { method: "DELETE" });
+  const ref = "heads/" + String(branch).split("/").map(encodeURIComponent).join("/");
+  return await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/refs/" + ref, { method: "DELETE" });
 }
 async function codeMergeTempBranch(env, repo, branch, base, message) {
   if (!/^code\/[A-Za-z0-9._\/-]+$/.test(String(branch || ""))) return { ok: false, msg: "临时分支名不合法" };
@@ -756,7 +800,7 @@ async function codeVerifyStart(env, user, body) {
   const api = "https://api.github.com/repos/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW + "/dispatches";
   const dispatched = await codeGhApi(env, api, { method: "POST", body: JSON.stringify({ ref, inputs: { request_id: requestId, ref } }), headers: { "Content-Type": "application/json" } });
   if (!dispatched.ok) return { ok: false, msg: "无法启动验证：" + dispatched.msg, status: dispatched.status };
-  const job = { request_id: requestId, repo, ref, kind: "verify", workflow: CODE_VERIFY_WORKFLOW, started_at: new Date().toISOString(), status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW, preview_url: codeVerifyPreview(env, ""), error_lines: [] };
+  const job = { request_id: requestId, repo, ref, kind: "verify", pending_id: String(body && body.pending_id || ""), expected_sha: String(body && body.expected_sha || ""), started_at: new Date().toISOString(), status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW, preview_url: codeVerifyPreview(env, ""), error_lines: [] };
   if (env.KV) await env.KV.put(codeVerifyKey(user), JSON.stringify(job), { expirationTtl: 86400 });
   await codePersistRun(env, user, job);
   return { ok: true, ...job, log_key: codeRunLogKey(requestId), message: "验证已排队：checkout → npm install → npm test → npm run build" };
@@ -782,6 +826,136 @@ function codeVerifyErrorLines(text) {
   const indexes = selected.size ? [...selected].sort((a, b) => a - b) : lines.map((_, i) => i);
   return indexes.slice(-60).map((i) => codeVerifyRedact(lines[i]).slice(0, 1000));
 }
+function codeRepairSourceContext(path, source, edits, logs) {
+  const lines = String(source || "").split(/\r?\n/), ranges = [];
+  const add = (center, before, after) => {
+    const start = Math.max(0, center - before), end = Math.min(lines.length - 1, center + after);
+    if (end < start) return;
+    ranges.push([start, end]);
+  };
+  const escapedPath = String(path || "").replace(/[.*+?^${}()|[\]\\]/g, (match) => "\\" + match);
+  const location = new RegExp("(?:^|[\\s(])" + escapedPath + ":(\\d+)(?::\\d+)?");
+  for (const log of logs || []) {
+    const match = location.exec(String(log || ""));
+    if (match) add(Number(match[1]) - 1, 24, 36);
+  }
+  const stop = new Set(["function", "const", "return", "string", "value", "async", "await", "false", "true", "null", "undefined", "assert", "equal", "test"]);
+  const keywords = new Set();
+  for (const edit of edits || []) {
+    if (String(edit.path || "") !== String(path || "")) continue;
+    for (const token of (String(edit.old || "") + " " + String(edit.new || "")).match(/[A-Za-z_$][A-Za-z0-9_$]{4,}/g) || []) {
+      if (token.length >= 6 && !stop.has(token.toLowerCase())) keywords.add(token);
+    }
+  }
+  for (const keyword of keywords) {
+    let hits = 0;
+    for (let i = 0; i < lines.length && hits < 4; i++) {
+      if (lines[i].includes(keyword)) { add(i, 24, 36); hits++; }
+    }
+  }
+  if (!ranges.length) { add(0, 0, 100); if (lines.length > 100) add(lines.length - 80, 60, 79); }
+  ranges.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const range of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && range[0] <= last[1] + 2) last[1] = Math.max(last[1], range[1]);
+    else merged.push(range.slice());
+  }
+  let remaining = 260, out = [];
+  for (const [start, end] of merged) {
+    if (remaining <= 0) break;
+    const takeEnd = Math.min(end, start + remaining - 1);
+    out.push(lines.slice(start, takeEnd + 1).map((line, index) => String(start + index + 1).padStart(5, " ") + " | " + line).join("\n"));
+    remaining -= takeEnd - start + 1;
+  }
+  return out.join("\n...\n").slice(0, 18000);
+}
+
+async function codeRepairPendingFromVerification(env, user, job) {
+  const claimed = await codeClaimCall(env, user, "repair-claim", {
+    pending_id: String(job.pending_id || ""), request_id: String(job.request_id || ""),
+    run_id: String(job.run_id || "")
+  });
+  if (!claimed.ok || !claimed.pending || claimed.limit_reached) return claimed;
+  const pend = claimed.pending;
+  const finish = async (status, result, edits, verification) => {
+    const saved = await codeClaimCall(env, user, "repair-finish", {
+      pending_id: pend.id, ok: status === "verification_pending", verification, edits,
+      error: result && (result.reply || result.msg) || "自动修复未完成"
+    });
+    return saved.ok ? { ...result, pending: true, status: saved.pending && saved.pending.status } : { ok: false, pending: true, reply: (result.reply || result.msg || "自动修复失败") + "；状态保存失败：" + (saved.msg || "请刷新确认") };
+  };
+  try {
+    const tree = await codeFileTree(env, pend.repo, pend.branch);
+    if (!tree.ok) return await finish("verification_failed", { ok: false, reply: "自动修复无法读取临时分支文件树：" + tree.msg }, pend.edits);
+    const paths = [...new Set([
+      ...(pend.edits || []).map((e) => String(e.path || "")),
+      ...tree.files.filter((path) => (job.error_lines || []).some((line) => String(line).includes(path)))
+    ])].filter((path) => path && codePathOk(path) && !codePathProtected(path)).slice(0, 3);
+    if (!paths.length) return await finish("verification_failed", { ok: false, reply: "自动修复未找到可安全读取的失败相关文件。" }, pend.edits);
+    const files = {}, shas = {};
+    const loaded = await Promise.all(paths.map(async (path) => ({ path, bad: codePushGuard(env, user, pend.repo, path), file: await codeGetFile(env, pend.repo, path, pend.branch) })));
+    for (const item of loaded) {
+      if (item.bad) return await finish("verification_failed", { ok: false, reply: "自动修复被权限保护拦截：" + item.path + "：" + item.bad }, pend.edits);
+      if (!item.file.ok || !item.file.exists) return await finish("verification_failed", { ok: false, reply: "自动修复读取 " + item.path + " 失败：" + (item.file.msg || "文件不存在") }, pend.edits);
+      files[item.path] = item.file.text; shas[item.path] = item.file.sha;
+    }
+    const logs = (job.error_lines || []).slice(0, 60).map((line) => codeVerifyRedact(line));
+    const source = Object.keys(files).map((path) => "### " + path + "\n\n" + codeRepairSourceContext(path, files[path], pend.edits || [], logs)).join("\n\n");
+    const originalChanges = (pend.edits || []).map((edit) => "### 原始修改 " + edit.path + "\n" + codeCut(edit.new || "", 1600)).join("\n\n");
+    const system = "你是 OpenManus 仓库的自动测试修复代理。你必须依据真实 GitHub Actions 失败日志和下面给出的临时分支源码修复根因。只允许修改提供的文件；不能删除、跳过或弱化测试，不能用假数据绕过测试，不能修改密钥或受保护文件。输出必须只包含一个或多个精确修改块，格式：\n<<<<<<< SEARCH 文件路径\n原文中唯一且连续的片段\n=======\n替换后的完整片段\n>>>>>>> REPLACE\nSEARCH 必须逐字匹配当前源码。不要输出整文件，不要声称已经运行测试；修复后系统会重新运行 Actions 验证。若日志和源码不足以安全修复，只回复一行 ASK: 加上最关键的缺失信息。";
+    const prompt = "原始改动目标：" + String(pend.summary || "未提供") + "\n验证任务：" + String(job.request_id || "") + "\n失败步骤：" + String(job.failed_step || "未知") + "\n待验证 commit：" + String(job.expected_sha || "") + "\nActions 真实失败日志：\n" + logs.join("\n") + "\n\n初始修改块：\n" + originalChanges + "\n\n按失败路径和修改标识符从完整文件中截取的相关源码（每行带行号）：\n" + source + "\n\n必须先对照失败测试和相关实现定位根因。不要要求用户再次提供已经包含在上下文中的源码；如果仍缺少信息，只问一个具体问题。请只修复这些失败直接相关的问题，保留所有既有功能和测试。";
+    const model = await codeLLM(env, [{ role: "system", content: system }, { role: "user", content: prompt }], 150000);
+    if (!model.text) return await finish("verification_failed", { ok: false, reply: "自动修复模型调用失败：" + (model.tried || []).join("；") }, pend.edits);
+    if (/^\s*ASK\s*[:：]/i.test(model.text)) return await finish("verification_failed", { ok: false, reply: "自动修复需要更多上下文：" + codeCut(model.text, 500) }, pend.edits);
+    const edits = codeParseEdits(model.text);
+    if (!edits.length) return await finish("verification_failed", { ok: false, reply: "模型已响应，但没有返回可应用的 SEARCH/REPLACE 修复块。" }, pend.edits);
+    for (const edit of edits) {
+      const path = String(edit.path || "").replace(/^\.?\//, "");
+      if (!Object.prototype.hasOwnProperty.call(files, path)) return await finish("verification_failed", { ok: false, reply: "模型尝试修改未提供的文件，已拒绝：" + path }, pend.edits);
+      const bad = codePushGuard(env, user, pend.repo, path);
+      if (bad) return await finish("verification_failed", { ok: false, reply: "模型修复触发权限保护，已拒绝：" + bad }, pend.edits);
+    }
+    const applied = codeApply(files, edits);
+    if (applied.errs.length || !applied.done.length) return await finish("verification_failed", { ok: false, reply: "模型修复块无法安全应用：" + applied.errs.map((e) => e.msg).join("；") }, pend.edits);
+    const changed = [...new Set(applied.done.map((e) => e.path))];
+    if (changed.length > 3) return await finish("verification_failed", { ok: false, reply: "自动修复涉及超过 3 个文件，已停止自动写入，保留临时分支供人工审查。" }, pend.edits);
+    const repairedEdits = [...(pend.edits || [])];
+    for (const path of changed) {
+      const update = await codeUpdateFile(env, pend.repo, path, applied.out[path], "AI: repair failed verification", pend.branch, shas[path]);
+      if (!update.ok) return await finish("verification_failed", { ok: false, reply: "自动修复写入 " + path + " 失败：" + update.msg }, repairedEdits);
+      repairedEdits.push(...applied.done.filter((e) => e.path === path).map((e) => ({ ...e, auto_repair: true })));
+    }
+    pend.edits = repairedEdits; pend.repair_model = model.from || "unknown";
+    return await codeQueuePendingVerification(env, user, pend, finish, repairedEdits);
+  } catch (e) {
+    return await finish("verification_failed", { ok: false, reply: "自动修复过程异常：" + String(e && e.message || e).slice(0, 300) }, pend.edits);
+  }
+}
+
+async function codeVerifySweep(env) {
+  if (!env.KV || !env.GH_PAT) return { checked: 0, skipped: true };
+  const cursorKey = "code:verify-sweep:last";
+  let page;
+  try { page = await env.KV.list({ prefix: "code:verify:", limit: 1000 }); }
+  catch (e) { return { checked: 0, msg: "验证任务索引读取失败：" + String(e && e.message || e).slice(0, 160) }; }
+  const names = (page.keys || []).map((k) => k.name).filter((name) => name !== cursorKey);
+  if (!names.length) return { checked: 0 };
+  const last = await env.KV.get(cursorKey).catch(() => "");
+  const found = names.indexOf(last);
+  const start = found >= 0 ? (found + 1) % names.length : 0;
+  for (let offset = 0; offset < names.length; offset++) {
+    const name = names[(start + offset) % names.length], user = name.slice("code:verify:".length);
+    if (!user) continue;
+    const job = await env.KV.get(name, "json").catch(() => null);
+    if (!job || !job.pending_id || (job.status === "completed" && (job.pending_status || job.auto_repair_started))) continue;
+    await env.KV.put(cursorKey, name, { expirationTtl: 86400 * 30 });
+    const status = await codeVerifyStatus(env, user);
+    return { checked: 1, status: status.status || "", state: status.state || "", auto_repair_started: !!status.auto_repair_started };
+  }
+  return { checked: 0 };
+}
+
 async function codeVerifyStatus(env, user) {
   const old = env.KV ? await env.KV.get(codeVerifyKey(user), "json") : null;
   if (!old) return { ok: false, msg: "没有找到验证任务，请先点击运行 / 验证" };
@@ -810,7 +984,22 @@ async function codeVerifyStatus(env, user) {
   old.logs = Array.isArray(old.error_lines) ? old.error_lines : [];
   old.preview_url = codeVerifyPreview(env, old.run_id);
   old.state = old.status === "completed" ? (old.conclusion === "success" ? "success" : "failure") : "running";
-  if (env.KV) await env.KV.put(codeVerifyKey(user), JSON.stringify(old), { expirationTtl: 86400 });
+  let repairStarted = false, verificationConflict = false;
+  if (old.pending_id && old.run_id && old.status === "completed") {
+    const verification = await codeClaimCall(env, user, "verification", { pending_id: old.pending_id, request_id: old.request_id, run_id: String(old.run_id), run_url: old.run_url, expected_sha: old.expected_sha, actual_sha: String(old.head_sha || ""), conclusion: old.conclusion || "failure", error_lines: old.error_lines || [], failed_step: old.failed_step || "" });
+    if (!verification.ok && verification.conflict) verificationConflict = true;
+    else if (!verification.ok) old.verification_error = verification.msg || "无法更新待处理验证状态";
+    if (verification.ok) {
+      old.pending_status = verification.pending && verification.pending.status || "";
+      if (old.pending_status === "verification_failed" && old.conclusion !== "success" && old.head_sha && old.head_sha === old.expected_sha) {
+        old.auto_repair_started = true;
+        if (env.KV) await env.KV.put(codeVerifyKey(user), JSON.stringify(old), { expirationTtl: 86400 });
+        old.auto_repair_result = await codeRepairPendingFromVerification(env, user, old).catch((e) => ({ ok: false, reply: "自动修复异常：" + String(e && e.message || e).slice(0, 200) }));
+        repairStarted = true;
+      }
+    }
+  }
+  if (env.KV && !repairStarted && !verificationConflict) await env.KV.put(codeVerifyKey(user), JSON.stringify(old), { expirationTtl: 86400 });
   await codePersistRun(env, user, old);
   return { ok: true, ...old, log_key: codeRunLogKey(old.run_id || old.request_id), actions_url: old.run_url || ("https://github.com/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW) };
 }
@@ -866,7 +1055,7 @@ function codeParse(raw) {
   return { text: t.trim(), repo, path, push };
 }
 function codeBlocks(text) { const out = [], re = /```[^\n`]*\n([\s\S]*?)```/g; let m; while ((m = re.exec(String(text)))) out.push({ code: m[1] }); return out; }
-async function codeAssist(env, user, raw, history) {
+async function codeAssist(env, user, raw, history, budgetMs) {
   const d = codeParse(raw), notes = [], branch = String(env.CODE_PUSH_BRANCH || "main");
   if (!d.text) return { ok: false, reply: "请告诉我要写什么代码。" };
   if (CODE_CONFIRM_RE.test(d.text)) await codeMemoryAppend(env, user, { action: "用户", text: /不推|别推|取消/.test(d.text) ? "用户拒绝了推送（含删 worker.js 的改动）" : "用户接受了推送" }).catch(() => {});
@@ -882,7 +1071,7 @@ async function codeAssist(env, user, raw, history) {
   }
   const hist = (Array.isArray(history) ? history : []).filter((m) => m && (m.role === "user" || m.role === "assistant")).map((m) => ({ role: m.role, content: textOf(m.content).slice(0, 12000) })).filter((m) => m.content);
   while (hist.length && hist[hist.length - 1].role === "user") hist.pop();   // 最后一条用户话用去掉口令后的 d.text 替代
-  const r = await codeLLM(env, [{ role: "system", content: sys }, ...hist.slice(-10), { role: "user", content: d.text }]);
+  const r = await codeLLM(env, [{ role: "system", content: sys }, ...hist.slice(-10), { role: "user", content: d.text }], budgetMs);
   if (!r.text) return { ok: false, reply: "❌ 代码模型都没接上：" + (r.tried.join("；") || "没有可用的 OPENROUTER_KEYS / GROQ_KEYS") };
   let pushed = false;
   if (d.push) {
@@ -984,7 +1173,7 @@ async function codeClaimState(env, user) {
   return await r.json().catch(() => ({ ok: false, msg: "Durable Object 返回了无效响应" }));
 }
 function codePendingActive(p) {
-  return p && Array.isArray(p.edits) && p.edits.length && ["awaiting_approval", "applying", "partial", "conflict", "failed"].includes(p.status || "awaiting_approval");
+  return p && Array.isArray(p.edits) && p.edits.length && ["awaiting_approval", "applying", "partial", "conflict", "failed", "verification_pending", "verification_passed", "verification_failed", "repairing"].includes(p.status || "awaiting_approval");
 }
 async function codePendingLoad(env, user) {
   const d = await codeClaimState(env, user);
@@ -1070,8 +1259,8 @@ async function codePendingSweep(env) {
 }
 
 function codePendingView(p) {
-  if (!p || !Array.isArray(p.edits) || !p.edits.length || !["awaiting_approval", "applying", "partial", "conflict", "failed"].includes(p.status || "awaiting_approval")) return null;
-  return { id: p.id || "", pending_id: p.id || "", version: Number(p.version) || 1, project: p.project || "", status: p.status || "awaiting_approval", repo: p.repo, branch: p.branch, baseBranch: p.baseBranch || "main", preview_url: p.preview_url || codeTempPreview(p.branch), summary: p.summary, at: p.at, updatedAt: p.updatedAt || p.at, warn: p.warn || [], edits: p.edits.map((e) => ({ path: e.path, line: e.line || 0, old: codeCut(e.old, 4000), new: codeCut(e.new, 4000) })) };
+  if (!p || !Array.isArray(p.edits) || !p.edits.length || !["awaiting_approval", "applying", "partial", "conflict", "failed", "verification_pending", "verification_passed", "verification_failed", "repairing"].includes(p.status || "awaiting_approval")) return null;
+  return { id: p.id || "", pending_id: p.id || "", version: Number(p.version) || 1, project: p.project || "", status: p.status || "awaiting_approval", repo: p.repo, branch: p.branch, baseBranch: p.baseBranch || "main", preview_url: p.preview_url || codeTempPreview(p.branch), summary: p.summary, at: p.at, updatedAt: p.updatedAt || p.at, verify_request_id: p.verify_request_id || "", verify_run_id: p.verify_run_id || "", verify_run_url: p.verify_run_url || "", verify_expected_sha: p.verify_expected_sha || "", verify_head_sha: p.verify_head_sha || "", verify_error_lines: p.verify_error_lines || [], verify_failed_step: p.verify_failed_step || "", repair_attempts: Number(p.repair_attempts || 0), repair_error: p.repair_error || "", warn: p.warn || [], edits: p.edits.map((e) => ({ path: e.path, line: e.line || 0, old: codeCut(e.old, 4000), new: codeCut(e.new, 4000), auto_repair: !!e.auto_repair })) };
 }
 const codeBalanceWarn = (a, b) => ["{}", "()", "[]"].filter((p) => { const d = (t) => t.split(p[0]).length - t.split(p[1]).length; return d(a) !== d(b); });
 const codeCut = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n) + "…（共 " + s.length + " 字）" : s; };
@@ -1158,6 +1347,54 @@ async function codeProject(env, user, proj, req, history, ui) {
   if (ui) return { ok: true, pending: true, model, reply: head + "已生成 " + final.done.length + " 处改动（" + tag + "）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行").join("\n") + tail };
   return { ok: true, pending: true, model, reply: head + "改动预览（" + tag + "，共 " + final.done.length + " 处）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行\n- " + codeCut(d.old, 400).replace(/\n/g, "\n- ") + "\n+ " + codeCut(d.new, 400).replace(/\n/g, "\n+ ")).join("\n\n") + tail + "\n\n要推上去吗？" };
 }
+async function codeQueuePendingVerification(env, user, pend, finish, edits) {
+  const branch = String(pend.branch || "");
+  if (!/^code\/[A-Za-z0-9._\/-]+$/.test(branch)) return await finish("failed", { ok: false, pending: true, reply: "验证未启动：临时分支名不合法，修改仍保留。" }, edits);
+  const head = await codeGhApi(env, codeGitRefUrl(pend.repo, "heads/" + branch));
+  const expectedSha = String(head.data && head.data.object && head.data.object.sha || "");
+  if (!head.ok || !expectedSha) return await finish("failed", { ok: false, pending: true, reply: "验证未启动：无法读取临时分支当前 commit SHA，修改仍保留。" }, edits);
+  const started = await codeVerifyStart(env, user, { ref: pend.branch, pending_id: pend.id, expected_sha: expectedSha });
+  if (!started.ok) return await finish("failed", { ok: false, pending: true, reply: "验证启动失败，未合并，临时分支保留：" + (started.msg || "未知错误") }, edits);
+  const verification = {
+    verify_request_id: started.request_id,
+    verify_run_id: "",
+    verify_run_url: started.actions_url || "",
+    verify_expected_sha: expectedSha,
+    verify_head_sha: "",
+    verify_started_at: Date.now(),
+    verify_expires_at: Date.now() + 20 * 60 * 1000,
+    verify_conclusion: "",
+    verify_error_lines: [],
+    verify_failed_step: ""
+  };
+  return await finish("verification_pending", {
+    ok: true, pending: true, verification_pending: true, status: "verification_pending",
+    request_id: started.request_id, expected_sha: expectedSha, actions_url: started.actions_url,
+    reply: "修改已写入临时分支，GitHub Actions 正在执行 npm install、npm test、npm run build。验证通过后还需要你再次确认合并。"
+  }, edits, verification);
+}
+
+async function codeMergeVerifiedPending(env, user, pend, finish) {
+  const branch = String(pend.branch || "");
+  const validBranch = /^code\/[A-Za-z0-9._\/-]+$/.test(branch);
+  const head = validBranch ? await codeGhApi(env, codeGitRefUrl(pend.repo, "heads/" + branch)) : { ok: false };
+  const currentSha = String(head.data && head.data.object && head.data.object.sha || "");
+  if (!head.ok || !currentSha || currentSha !== String(pend.verify_head_sha || "")) {
+    return await finish("verification_failed", { ok: false, pending: true, status: "verification_failed", reply: "❌ 验证通过后临时分支内容又发生变化，commit SHA 不一致，拒绝合并。请重新验证。" }, pend.edits);
+  }
+  const base = pend.baseBranch || String(env.CODE_PUSH_BRANCH || "main");
+  let merged;
+  try { merged = await codeMergeTempBranch(env, pend.repo, pend.branch, base, "AI: " + pend.summary); }
+  catch (e) { return await finish("verification_passed", { ok: false, pending: true, status: "verification_passed", reply: "验证已通过，但合并请求异常：" + String(e && e.message || e).slice(0, 160) + "。未放行其他路径，可再次确认重试。" }, pend.edits); }
+  if (!merged.ok) return await finish("verification_passed", { ok: false, pending: true, status: "verification_passed", reply: "验证已通过，但合并失败：" + merged.msg + "。临时分支仍保留，可再次确认重试。" }, pend.edits);
+  const commitSha = String((merged.data && merged.data.sha) || "");
+  const rows = await codeHistoryLoad(env, user);
+  const record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: base, commit_sha: commitSha, previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: [...new Set(pend.edits.map((e) => e.path))], preview_url: pend.preview_url || codeTempPreview(pend.branch) };
+  try { await codeHistorySave(env, user, [record, ...rows]); } catch (_) {}
+  const removed = await codeDeleteBranch(env, pend.repo, pend.branch).catch((e) => ({ ok: false, msg: String(e && e.message || e) }));
+  return await finish("applied", { ok: true, pushed: true, consumed: true, status: "applied", merged: true, commit_sha: commitSha, branch_deleted: !!removed.ok, history_id: record.id, reply: "✅ 已通过 Actions 验证并合并到 " + base + (removed.ok ? "，临时分支已删除。" : "；临时分支删除失败，请稍后清理：" + (removed.msg || "")) }, []);
+}
+
 async function codeConfirm(env, user, yes, input = {}) {
   const pending = await codePendingLoad(env, user);
   if (!pending || !Array.isArray(pending.edits) || !pending.edits.length) return { ok: false, reply: "没有待推送的修改（可能放了超过 1 小时，已经过期）。" };
@@ -1169,15 +1406,28 @@ async function codeConfirm(env, user, yes, input = {}) {
   if (!claim.ok || !claim.claimed) return { ok: false, pending: !!claim.pending, conflict: !!claim.conflict, busy: !!claim.busy, reply: claim.msg || "待推送内容已变化，请刷新预览后再操作。" };
   const selected = Array.isArray(input.accepted_paths) ? new Set(input.accepted_paths.map(String)) : null;
   const pend = selected ? { ...claim.pending, edits: claim.pending.edits.filter((e) => selected.has(e.path)) } : claim.pending;
-  const finish = async (status, result, edits) => {
-    const done = await codeClaimCall(env, user, "finish", { pending_id: pendingId, operation_id: operationId, status, result, edits });
+  const finish = async (status, result, edits, verification) => {
+    const done = await codeClaimCall(env, user, "finish", { pending_id: pendingId, operation_id: operationId, status, result, edits, verification });
     return done.ok ? (done.result || result) : { ...result, ok: false, pending: true, reply: result.reply + "（状态写入失败，请刷新确认）" };
   };
   if (!yes) {
-    // v108：丢弃 = 删临时分支（尽力而为，删失败也不把记录留着卡死）→ 一定清掉待处理记录。
-    const removed = await codeDeleteBranch(env, pend.repo, pend.branch);
-    const note = removed.ok ? "临时分支已删除" : removed.status === 404 ? "临时分支本来就不存在" : "⚠️ 临时分支删除失败（" + removed.msg + "），可稍后在 GitHub 手动删 " + pend.branch;
-    return await finish("discarded", { ok: true, discarded: true, consumed: true, status: "discarded", branch_deleted: !!removed.ok, branch_already_gone: removed.status === 404, reply: "好，这次的修改已丢弃：" + note + "，没推到主分支。" }, pend.edits);
+    let removed;
+    try { removed = await codeDeleteBranch(env, pend.repo, pend.branch); }
+    catch (e) { removed = { ok: false, msg: String(e && e.message || e) }; }
+    if (!removed.ok && removed.status !== 404) {
+      return await finish("conflict", { ok: false, pending: true, conflict: true, status: "conflict", branch_deleted: false, reply: "GitHub 临时分支删除失败，待处理记录保留，不能报告丢弃成功：" + (removed.msg || "未知错误") + "。请重试删除。" }, pend.edits);
+    }
+    const alreadyGone = removed.status === 404;
+    return await finish("discarded", { ok: true, discarded: true, consumed: true, status: "discarded", branch_deleted: !!removed.ok, branch_already_gone: alreadyGone, reply: "好，这次的修改已丢弃：" + (removed.ok ? "临时分支已删除" : "临时分支本来就不存在") + "，没推到目标分支。" }, pend.edits);
+  }
+  const claimedFrom = String(claim.pending && claim.pending.claimed_from_status || "awaiting_approval");
+  if (yes && claimedFrom === "verification_passed") {
+    try { return await codeMergeVerifiedPending(env, user, pend, finish); }
+    catch (e) { return await finish("verification_passed", { ok: false, pending: true, status: "verification_passed", reply: "合并前检查异常，未绕过验证：" + String(e && e.message || e).slice(0, 160) }, pend.edits); }
+  }
+  if (yes && claimedFrom === "verification_failed") {
+    try { return await codeQueuePendingVerification(env, user, pend, finish, pend.edits); }
+    catch (e) { return await finish("verification_failed", { ok: false, pending: true, status: "verification_failed", reply: "重新验证启动异常，临时分支保留：" + String(e && e.message || e).slice(0, 160) }, pend.edits); }
   }
   if (!pend.edits.length) {
     const removed = await codeDeleteBranch(env, claim.pending.repo, claim.pending.branch);
@@ -1218,14 +1468,7 @@ async function codeConfirm(env, user, yes, input = {}) {
     }
     editsForApply = pend.edits.filter((e) => !resolved.has(e.path));
     paths = paths.filter((path) => !resolved.has(path));
-    if (!paths.length) {
-      const merged = await codeMergeTempBranch(env, pend.repo, pend.branch, pend.baseBranch || String(env.CODE_PUSH_BRANCH || "main"), "AI: " + pend.summary);
-      if (!merged.ok) return await finish("conflict", { ok: false, pending: true, conflict: true, reply: "冲突解决后仍无法合并：" + merged.msg }, pend.edits);
-      const rows = await codeHistoryLoad(env, user), record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: pend.baseBranch || "main", commit_sha: String((merged.data && merged.data.sha) || ""), previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: Object.keys(files), preview_url: pend.preview_url || codeTempPreview(pend.branch) };
-      await codeHistorySave(env, user, [record, ...rows]);
-      const removed = await codeDeleteBranch(env, pend.repo, pend.branch);
-      return await finish("applied", { ok: true, pushed: true, consumed: true, status: "applied", merged: true, commit_sha: record.commit_sha, branch_deleted: !!removed.ok, history_id: record.id, reply: "✅ 冲突已解决并合并到 " + (pend.baseBranch || "main") }, []);
-    }
+    if (!paths.length) return await codeQueuePendingVerification(env, user, pend, finish, pend.edits);
     const applied = codeApply(files, editsForApply);
     if (applied.errs.length) return await finish("conflict", { ok: false, pending: true, conflict: true, conflicts: paths.map((path) => ({ path, mine: codeCut((pend.edits.find((e) => e.path === path) || {}).new || "", 12000), theirs: codeCut(files[path] || "", 12000), merge: "" })), reply: "⚠️ 没推送：你确认之前文件已经变化，有 " + applied.errs.length + " 处对不上原文。下面可逐文件选择我的 / 他的 / 合并。" }, pend.edits);
     const lines = [], failed = [], succeeded = [];
@@ -1240,14 +1483,7 @@ async function codeConfirm(env, user, yes, input = {}) {
       const remaining = pend.edits.filter((e) => failed.includes(e.path));
       return await finish("partial", { ok: false, pending: true, partial: true, pushed: succeeded.length > 0, status: "partial", reply: lines.join("\n") + "\n⚠️ 已保留未成功的文件修改，可以重试。" }, remaining);
     }
-    const merged = await codeMergeTempBranch(env, pend.repo, pend.branch, pend.baseBranch || String(env.CODE_PUSH_BRANCH || "main"), "AI: " + pend.summary);
-    if (!merged.ok) return await finish("conflict", { ok: false, pending: true, conflict: true, status: "conflict", reply: lines.join("\n") + "\n❌ 临时分支未能合并到 " + (pend.baseBranch || "main") + "：" + merged.msg + "。临时分支仍保留，可重试或删除。" }, pend.edits);
-    const commitSha = String((merged.data && merged.data.sha) || "");
-    const rows = await codeHistoryLoad(env, user);
-    const record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: pend.baseBranch || "main", commit_sha: commitSha, previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: paths, preview_url: pend.preview_url || codeTempPreview(pend.branch) };
-    await codeHistorySave(env, user, [record, ...rows]);
-    const removed = await codeDeleteBranch(env, pend.repo, pend.branch);
-    return await finish("applied", { ok: true, pushed: true, consumed: true, status: "applied", merged: true, commit_sha: commitSha, branch_deleted: !!removed.ok, history_id: record.id, reply: lines.join("\n") + "\n✅ 已合并到 " + (pend.baseBranch || "main") + (removed.ok ? "，临时分支已删除。" : "；临时分支删除失败，请稍后清理：" + removed.msg) }, []);
+    return await codeQueuePendingVerification(env, user, pend, finish, pend.edits);
   } catch (e) {
     return await finish("failed", { ok: false, pending: true, reply: "❌ 推送过程出错，修改仍保留，可重试：" + String(e && e.message || e).slice(0, 160) }, pend.edits);
   }
@@ -1267,7 +1503,7 @@ async function codeChatEntry(env, user, text, history, o) {   // 返回 {ok, rep
     const req = String(text).replace(CODE_TRIGGER_RE, " ").replace(/^[\s,，:：、]+/, "").trim();
     return await codeProject(env, user, proj, req, history, !!o.ui);
   }
-  return inCode ? await codeAssist(env, user, text, history) : null;
+  return inCode ? await codeAssist(env, user, text, history, o.budgetMs) : null;
 }
 // 前端带 stream:true → SSE 流式(每 5 秒心跳)；老前端不带 → 一整段 JSON(等待时发空格保活)
 // 需要：KV 绑定(变量名 KV)、REG_TOKEN；可选：GROQ_KEYS / OPENROUTER_KEYS / GEMINI_KEYS(逗号分隔)、AGG_URL、
@@ -1366,7 +1602,13 @@ async function userFromReq(request, env, url, bodyToken) {
   if (!env.KV) return null;
   const m = /^Bearer (.+)$/.exec(request.headers.get("Authorization") || "");
   if (m && m[1] && env.AGENT_TOOL_KEY && env.AGENT_USER && AG_RE.test(url.pathname) && sameStr(m[1], String(env.AGENT_TOOL_KEY))) return String(env.AGENT_USER);   // v90：Dify / n8n 的服务密钥，只放行 AG_RE 里的路径
-  const token = (m && m[1]) || bodyToken || (request.method === "GET" ? url.searchParams.get("token") : "") || "";
+  const bearer = m && m[1];
+  if (bearer && bearer.startsWith("omcron_")) {
+    if (request.method !== "POST" || url.pathname !== "/v1/chat/completions") return null;
+    const hash = await sha256Hex(bearer);
+    return await env.KV.get("automation_token:" + hash);
+  }
+  const token = bearer || bodyToken || (request.method === "GET" ? url.searchParams.get("token") : "") || "";
   return token ? await env.KV.get("token:" + token) : null;
 }
 
@@ -5284,6 +5526,10 @@ const WORKER_DEFAULT = {
       try { const r = await refreshCandy(e2); console.log("[cron] candy done", JSON.stringify({ ok: r.ok, skipped: !!r.skipped })); } catch (e) { console.error("[cron] candy failed", e && e.stack || e); }
       console.log("[cron] finish", new Date().toISOString());
     })());
+    ctx.waitUntil((async () => {
+      try { const verified = await codeVerifySweep(e2); if (verified.checked || verified.msg) console.log("[cron] code-verify-sweep", JSON.stringify(verified)); }
+      catch (e) { console.error("[cron] code-verify-sweep failed", String(e && e.message || e).slice(0, 200)); }
+    })());
   }   // v89：Cron 先真实刷新热榜并记录每一步，再执行其他任务
 };
 // ================= v90：Dify 主 Agent 工具层 + Worker Cron 到点提醒（推飞书）=================
@@ -7958,6 +8204,30 @@ async function handle(request, env, ctx) {
       return dbgRes(dv);
     }
 
+    // ---- Cron Issue Agent 专用长期令牌（与 30 天登录令牌完全分离）----
+    if (path === "/api/automation-token" && ["GET", "POST", "DELETE"].includes(request.method)) {
+      if (!env.KV) return json({ ok: false, msg: "KV 没有绑定" }, 500);
+      const user = await userFromReq(request, env, url);
+      if (!user) return json({ ok: false, msg: "请使用正常登录令牌管理自动化令牌" }, 401);
+      const indexKey = "automation_token_index:" + user;
+      const current = await env.KV.get(indexKey, "json");
+      if (request.method === "GET") {
+        return json({ ok: true, active: !!(current && current.hash), created_at: current && current.created_at || null, last4: current && current.last4 || null });
+      }
+      if (request.method === "DELETE") {
+        if (current && current.hash) await env.KV.delete("automation_token:" + current.hash);
+        await env.KV.delete(indexKey);
+        return json({ ok: true, revoked: !!(current && current.hash) });
+      }
+      if (current && current.hash) await env.KV.delete("automation_token:" + current.hash);
+      const token = "omcron_" + rand(32);
+      const hash = await sha256Hex(token);
+      const createdAt = new Date().toISOString();
+      await env.KV.put("automation_token:" + hash, user);
+      await env.KV.put(indexKey, JSON.stringify({ hash, created_at: createdAt, last4: token.slice(-4) }));
+      return json({ ok: true, token, created_at: createdAt, last4: token.slice(-4), expires: null });
+    }
+
     // ---- 账号（v23：加限速，防撞库/刷注册）----
     if ((path === "/api/register" || path === "/api/login") && request.method === "POST") {
       if (!env.KV) return json({ ok: false, msg: "KV 没有绑定" });
@@ -9034,6 +9304,8 @@ async function handle(request, env, ctx) {
 
     // ---- 对话（SSE 流式）----
     if (path === "/v1/chat/completions" && request.method === "POST") {
+      const authHeader = request.headers.get("Authorization") || "";
+      if (/^Bearer\s+omcron_/.test(authHeader) && !(await userFromReq(request, env, url))) return json({ error: "自动化令牌无效或已撤销", choices: [{ message: { role: "assistant", content: "❌ 自动化令牌无效或已撤销" } }] }, 401);
       if (env.REQUIRE_LOGIN === "1" && !(await userFromReq(request, env, url))) return json({ error: "请先登录", choices: [{ message: { role: "assistant", content: "❌ 请先登录" } }] }, 401);
       const raw = await request.text();
       if (raw.length > 400000) return json({ error: "请求太大", choices: [{ message: { role: "assistant", content: "❌ 请求太大" } }] }, 413);
@@ -9095,7 +9367,7 @@ async function handle(request, env, ctx) {
               const cu = await userFromReq(request, env, url, String(b.token || ""));
               if (!cu) { if (codeForced || codeIn || codeKind === "edit") { await emit("请先登录后再用代码助手。"); handled = true; } }
               else {
-                const cr = await codeChatEntry(env, cu, (codeForced || codeKind) ? rawMsg : lastText, msgs, { inCode: codeIn || codeForced, forced: codeForced, project: String(b.code_project || ""), ui: codeForced });
+                const cr = await codeChatEntry(env, cu, (codeForced || codeKind) ? rawMsg : lastText, msgs, { inCode: codeIn || codeForced, forced: codeForced, project: String(b.code_project || ""), ui: codeForced, budgetMs: Math.min(420000, Math.max(15000, Number(b.code_budget_ms) || 110000)) });
                 if (cr) { await emit(cr.reply); handled = true; }
               }
             } catch (e) { await emit("代码助手出错：" + String(e && e.message || e).slice(0, 200)); handled = true; }
@@ -9297,9 +9569,14 @@ export class CodeClaimDO {
     const value = await this.storage.get("claim");
     if (!value) return null;
     const createdAt = (value.pending && value.pending.created_at) || value.created_at || 0;
-    if ((value.expires_at && value.expires_at <= Date.now()) || (createdAt && Date.now() - createdAt >= CODE_PENDING_TTL_MS)) {
+    const verificationActive = value.pending && value.pending.status === "verification_pending" && value.pending.verify_expires_at > Date.now();
+    const repairActive = value.pending && value.pending.status === "repairing" && value.pending.repair_expires_at > Date.now();
+    if (value.pending && value.pending.status === "repairing" && !repairActive) {
+      value.pending.status = "verification_failed"; value.pending.repair_error = "模型自动修复超过 8 分钟，已停止本轮修复"; value.pending.created_at = Date.now(); value.created_at = Date.now(); value.expires_at = Date.now() + CODE_PENDING_TTL_MS; value.version = Number(value.version || 0) + 1; value.pending.version = value.version; await this.storage.put("claim", value); await this.storage.setAlarm(value.expires_at); return value;
+    }
+    if (!verificationActive && !repairActive && ((value.expires_at && value.expires_at <= Date.now()) || (createdAt && Date.now() - createdAt >= CODE_PENDING_TTL_MS))) {
       const p = value.pending;
-      if (p && ["applying", "discarding"].includes(p.status)) {
+      if (p && ["applying", "discarding", "repairing"].includes(p.status)) {
         await this.storage.setAlarm(Date.now() + 60000);
         return value;
       }
@@ -9320,11 +9597,14 @@ export class CodeClaimDO {
   async alarm() {
     const value = await this.storage.get("claim");
     if (!value) return;
-    const createdAt = (value.pending && value.pending.created_at) || value.created_at || 0;
-    const expiresAt = value.expires_at || (createdAt ? createdAt + CODE_PENDING_TTL_MS : 0);
-    if (expiresAt && expiresAt > Date.now()) { await this.storage.setAlarm(expiresAt); return; }
     const p = value.pending;
-    if (p && ["applying", "discarding"].includes(p.status)) {
+    const createdAt = (p && p.created_at) || value.created_at || 0;
+    const expiresAt = value.expires_at || (createdAt ? createdAt + CODE_PENDING_TTL_MS : 0);
+    if (p && p.status === "verification_pending" && p.verify_expires_at > Date.now()) { await this.storage.setAlarm(Math.min(p.verify_expires_at, Date.now() + 60000)); return; }
+    if (p && p.status === "repairing" && p.repair_expires_at > Date.now()) { await this.storage.setAlarm(Math.min(p.repair_expires_at, Date.now() + 60000)); return; }
+    if (p && p.status === "repairing") { p.status = "verification_failed"; p.repair_error = "模型自动修复超过 8 分钟，已停止本轮修复"; p.created_at = Date.now(); value.created_at = Date.now(); value.expires_at = Date.now() + CODE_PENDING_TTL_MS; value.version = Number(value.version || 0) + 1; p.version = value.version; await this.storage.put("claim", value); await this.storage.setAlarm(value.expires_at); return; }
+    if (expiresAt && expiresAt > Date.now()) { await this.storage.setAlarm(expiresAt); return; }
+    if (p && ["applying", "discarding", "repairing"].includes(p.status)) {
       await this.storage.setAlarm(Date.now() + 60000);
       return;
     }
@@ -9349,7 +9629,7 @@ export class CodeClaimDO {
     if (action === "create") {
       const current = await this.load(), incoming = body.pending;
       if (!incoming || !incoming.id || !incoming.project || !Array.isArray(incoming.edits) || !incoming.edits.length) return this.response({ ok: false, msg: "缺少有效 pending" }, 400);
-      if (current && current.pending && ["awaiting_approval", "applying", "discarding", "partial", "conflict", "failed"].includes(current.pending.status || "awaiting_approval")) return this.response({ ok: false, conflict: true, pending: current.pending, msg: "已有待处理修改" }, 409);
+      if (current && current.pending && ["awaiting_approval", "applying", "discarding", "partial", "conflict", "failed", "verification_pending", "verification_passed", "verification_failed", "repairing"].includes(current.pending.status || "awaiting_approval")) return this.response({ ok: false, conflict: true, pending: current.pending, msg: "已有待处理修改" }, 409);
       incoming.status = "awaiting_approval"; incoming.version = 1; incoming.updatedAt = now;
       if (!incoming.created_at) incoming.created_at = now;   // v108：记录创建时间，10 分钟后自动过期
       await this.save({ pending: incoming, created_at: now, version: 1, claims: {}, results: {}, expires_at: now + CODE_PENDING_TTL_MS });
@@ -9363,8 +9643,9 @@ export class CodeClaimDO {
       if (current && current.results && current.results[operationId]) return this.response({ ok: true, replayed: true, result: current.results[operationId] });
       if (current && current.claims && current.claims[operationId]) return this.response({ ok: false, replayed: true, in_progress: true, pending: true, msg: "相同操作正在处理，请等待第一次请求完成" }, 409);
       if (!p || p.id !== pendingId || Number(current.version) !== Number(body.version) || p.project !== project) return this.response({ ok: false, conflict: true, pending: codePendingView(p), msg: "待推送内容已变化，请刷新预览后再操作" }, 409);
-      if (!["awaiting_approval", "partial", "failed"].includes(p.status || "awaiting_approval")) return this.response({ ok: false, pending: true, busy: p.status === "applying", msg: p.status === "applying" ? "这项修改正在处理，请不要重复点击" : "这项修改当前不能确认" }, 409);
+      if (!["awaiting_approval", "partial", "failed", "verification_failed", "verification_passed"].includes(p.status || "awaiting_approval")) return this.response({ ok: false, pending: true, busy: p.status === "applying", msg: p.status === "applying" ? "这项修改正在处理，请不要重复点击" : "这项修改当前不能确认" }, 409);
       current.claims[operationId] = { at: now, yes: body.yes === true };
+      p.claimed_from_status = p.status || "awaiting_approval";
       p.status = "applying"; p.updatedAt = now; p.operation_id = operationId;
       await this.save(current);
       return this.response({ ok: true, claimed: true, pending: p, version: current.version, operation_id: operationId });
@@ -9374,18 +9655,62 @@ export class CodeClaimDO {
       if (!current || !p || p.id !== String(body.pending_id || "") || p.operation_id !== operationId || !current.claims[operationId]) return this.response({ ok: false, msg: "操作已失效或不属于当前 claim" }, 409);
       const result = body.result && typeof body.result === "object" ? body.result : { ok: false, reply: "操作完成" };
       p.status = String(body.status || (result.ok ? "applied" : "failed"));
+      if (p.status === "verification_pending") { current.expires_at = now + 20 * 60 * 1000; p.verify_expires_at = current.expires_at; await this.storage.setAlarm(current.expires_at); }
       if (Array.isArray(body.edits)) p.edits = body.edits;
-      p.updatedAt = now; current.results[operationId] = result; current.version = Number(current.version) + 1;
+      if (body.verification && typeof body.verification === "object") Object.assign(p, body.verification);
+      p.updatedAt = now; current.results[operationId] = result; current.version = Number(current.version) + 1; p.version = current.version;
       delete current.claims[operationId];
       await this.save(current);
       return this.response({ ok: true, result, pending: p, version: current.version });
+    }
+    if (action === "repair-claim") {
+      const current = await this.load(), p = current && current.pending;
+      const pendingId = String(body.pending_id || ""), requestId = String(body.request_id || ""), runId = String(body.run_id || "");
+      if (!current || !p || p.id !== pendingId || p.status !== "verification_failed" || p.verify_request_id !== requestId || p.verify_run_id !== runId) return this.response({ ok: false, conflict: true, msg: "失败验证已变化，不能启动自动修复" }, 409);
+      const attempts = Number(p.repair_attempts || 0);
+      if (attempts >= 2) { p.repair_error = "自动修复已达到 2 次上限"; p.updatedAt = now; current.version = Number(current.version || 0) + 1; p.version = current.version; await this.save(current); return this.response({ ok: true, limit_reached: true, pending: p, version: current.version }); }
+      p.status = "repairing"; p.repair_attempts = attempts + 1; p.repair_started_at = now; p.repair_expires_at = now + 8 * 60 * 1000; p.repair_error = ""; p.updatedAt = now;
+      current.version = Number(current.version || 0) + 1; p.version = current.version;
+      await this.storage.setAlarm(p.repair_expires_at);
+      await this.save(current);
+      return this.response({ ok: true, pending: p, version: current.version });
+    }
+    if (action === "repair-finish") {
+      const current = await this.load(), p = current && current.pending;
+      if (!current || !p || p.id !== String(body.pending_id || "") || p.status !== "repairing") return this.response({ ok: false, conflict: true, msg: "自动修复占位已变化" }, 409);
+      const verification = body.verification && typeof body.verification === "object" ? body.verification : null;
+      if (Array.isArray(body.edits)) p.edits = body.edits;
+      if (body.ok === true && verification && verification.verify_request_id && verification.verify_expected_sha) {
+        Object.assign(p, verification); p.status = "verification_pending"; p.repair_error = "";
+        current.expires_at = now + 20 * 60 * 1000; p.verify_expires_at = current.expires_at;
+        await this.storage.setAlarm(current.expires_at);
+      } else {
+        p.status = "verification_failed"; p.repair_error = String(body.error || "模型未能生成可应用的修复").slice(0, 1200);
+        p.created_at = now; current.created_at = now; current.expires_at = now + CODE_PENDING_TTL_MS;
+        await this.storage.setAlarm(current.expires_at);
+      }
+      p.updatedAt = now; current.version = Number(current.version || 0) + 1; p.version = current.version;
+      await this.save(current);
+      return this.response({ ok: true, pending: p, version: current.version });
+    }
+    if (action === "verification") {
+      const current = await this.load(), p = current && current.pending;
+      const pendingId = String(body.pending_id || ""), runId = String(body.run_id || ""), expectedSha = String(body.expected_sha || ""), actualSha = String(body.actual_sha || "");
+      if (!current || !p || p.id !== pendingId || p.status !== "verification_pending" || !runId || String(p.verify_request_id || "") !== String(body.request_id || "") || (p.verify_run_id && p.verify_run_id !== runId) || !expectedSha || p.verify_expected_sha !== expectedSha) return this.response({ ok: false, conflict: true, msg: "验证结果与当前待处理提交不匹配，拒绝标记通过" }, 409);
+      const conclusion = String(body.conclusion || "success");
+      p.verify_run_id = runId; p.verify_run_url = String(body.run_url || p.verify_run_url || "");
+      p.status = conclusion === "success" && actualSha === expectedSha ? "verification_passed" : "verification_failed";
+      p.repair_error = actualSha !== expectedSha ? "Actions 实际验证的 commit SHA 与待验证分支不一致，已拒绝合并和自动修复。" : "";
+      p.verify_conclusion = conclusion; p.verify_head_sha = actualSha; p.verify_completed_at = now; p.verify_error_lines = Array.isArray(body.error_lines) ? body.error_lines.slice(0, 60) : []; p.verify_failed_step = String(body.failed_step || "").slice(0, 160); p.created_at = now; current.created_at = now; current.expires_at = now + CODE_PENDING_TTL_MS; p.updatedAt = now; current.version = Number(current.version || 0) + 1; p.version = current.version; await this.storage.setAlarm(current.expires_at);
+      await this.save(current);
+      return this.response({ ok: true, pending: p, version: current.version });
     }
     if (action === "discard") {
       const current = await this.load(), p = current && current.pending;
       const pendingId = String(body.pending_id || ""), version = Number(body.version);
       if (!current || !p || !pendingId || p.id !== pendingId || !Number.isInteger(version) || Number(current.version) !== version) return this.response({ ok: false, conflict: true, msg: "待处理内容已变化，拒绝丢弃" }, 409);
       if (p.status === "applying" || Object.keys(current.claims || {}).length) return this.response({ ok: false, busy: true, msg: "这项修改正在执行接受操作，不能自动丢弃" }, 409);
-      if (!["awaiting_approval", "partial", "conflict", "failed"].includes(p.status || "awaiting_approval")) return this.response({ ok: false, busy: true, msg: "当前状态不允许丢弃：" + p.status }, 409);
+      if (!["awaiting_approval", "partial", "conflict", "failed", "verification_failed", "verification_passed"].includes(p.status || "awaiting_approval")) return this.response({ ok: false, busy: true, msg: "当前状态不允许丢弃：" + p.status }, 409);
       p.discard_previous_status = p.status || "awaiting_approval";
       p.status = "discarding"; p.updatedAt = now;
       await this.save(current);

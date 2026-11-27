@@ -14,6 +14,7 @@ const { pathToFileURL } = require('node:url');
 
 const root = path.resolve(__dirname, '..');
 const workerSource = fs.readFileSync(path.join(root, 'worker.js'), 'utf8');
+const wranglerSource = fs.readFileSync(path.join(root, 'wrangler.toml'), 'utf8');
 const frontendSource = fs.readFileSync(path.join(root, 'frontend/index.html'), 'utf8');
 const studioSource = fs.readFileSync(path.join(root, 'studio.js'), 'utf8');
 const frontendStudioSource = fs.readFileSync(path.join(root, 'frontend/studio.js'), 'utf8');
@@ -47,6 +48,67 @@ function loadFrontendForceClear(stubs) {
   const sandbox = { api: stubs.api, busy: stubs.busy, say: stubs.say, hide: stubs.hide, toast: stubs.toast };
   vm.runInNewContext(source + String.fromCharCode(10) + 'globalThis.testForceClear = forceClear;', sandbox);
   return sandbox.testForceClear;
+}
+
+
+function loadPendingVerificationHelpers(stubs = {}) {
+  const start = workerSource.indexOf('async function codeQueuePendingVerification');
+  const end = workerSource.indexOf('async function codeConfirm', start);
+  assert.ok(start >= 0 && end > start, 'pending verification helpers must exist');
+  const source = workerSource.slice(start, end);
+  const sandbox = Object.assign({
+    codeVerifyRef: value => value,
+    codeGitRefUrl: (repo, ref) => repo + '/' + ref,
+    codeGhApi: async () => ({ ok: true, data: { object: { sha: 'verified-sha' } } }),
+    codeVerifyStart: async () => ({ ok: true, request_id: 'verify-req-1', actions_url: 'https://github.com/actions' }),
+    codeMergeTempBranch: async () => ({ ok: true, data: { sha: 'merged-sha' } }),
+    codeHistoryLoad: async () => [],
+    codeHistorySave: async () => {},
+    codeDeleteBranch: async () => ({ ok: true, status: 204 }),
+    codeTempPreview: () => 'https://preview.example/',
+    Date, String, Array, Set, Object, Math, Promise
+  }, stubs);
+  vm.runInNewContext(source + '\n' + 'globalThis.queueVerification = codeQueuePendingVerification; globalThis.mergeVerifiedPending = codeMergeVerifiedPending;', sandbox);
+  return sandbox;
+}
+
+
+
+function loadCodeVerifySweep(stubs = {}) {
+  const start = workerSource.indexOf('async function codeVerifySweep');
+  const end = workerSource.indexOf('async function codeVerifyStatus', start);
+  assert.ok(start >= 0 && end > start, 'verification sweep must exist');
+  const sandbox = Object.assign({
+    codeVerifyStatus: async (_env, user) => ({ ok: true, status: 'in_progress', state: 'running', user }),
+    Date, String, Array, Object, Promise
+  }, stubs);
+  vm.runInNewContext(workerSource.slice(start, end) + String.fromCharCode(10) + 'globalThis.runCodeVerifySweep = codeVerifySweep;', sandbox);
+  return sandbox;
+}
+
+function loadCodeRepairHelper(stubs = {}) {
+  const start = workerSource.indexOf('function codeRepairSourceContext');
+  const end = workerSource.indexOf('async function codeVerifyStatus', start);
+  assert.ok(start >= 0 && end > start, 'automatic repair helper must exist');
+  const source = workerSource.slice(start, end);
+  const sandbox = Object.assign({
+    codeClaimCall: async () => ({ ok: true, pending: { id: 'repair-p', repo: 'owner/repo', branch: 'code/demo', edits: [{ path: 'worker.js' }] } }),
+    codeFileTree: async () => ({ ok: true, files: ['worker.js'] }),
+    codePathOk: () => true,
+    codePathProtected: () => false,
+    codePushGuard: () => '',
+    codeGetFile: async () => ({ ok: true, exists: true, sha: 'old-sha', text: 'const before = 1;\\n' }),
+    codeCut: value => String(value),
+    codeVerifyRedact: value => String(value),
+    codeLLM: async () => ({ text: 'patch', from: 'OpenRouter · fake' }),
+    codeParseEdits: () => [{ path: 'worker.js', old: 'const before = 1;', new: 'const after = 2;' }],
+    codeApply: () => ({ errs: [], done: [{ path: 'worker.js' }], out: { 'worker.js': 'const after = 2;\\n' } }),
+    codeUpdateFile: async () => ({ ok: true }),
+    codeQueuePendingVerification: async () => ({ ok: true, pending: true, verification_pending: true }),
+    Date, String, Array, Set, Object, Math, Promise
+  }, stubs);
+  vm.runInNewContext(source + String.fromCharCode(10) + 'globalThis.runCodeRepair = codeRepairPendingFromVerification;', sandbox);
+  return sandbox;
 }
 
 function loadCodeClaimDO(deleteBranch) {
@@ -437,7 +499,7 @@ test('P0-02/03: expiry and force-clear lock pending before deleting the GitHub b
   assert.match(claimDO, /action === "discard-release"/);
   assert.match(claimDO, /p\.status === "applying"[\s\S]*不能自动丢弃/);
   assert.match(claimDO, /p\.status !== "discarding"/);
-  assert.match(claimDO, /\["applying", "discarding"\]/);
+  assert.match(claimDO, /\["applying", "discarding", "repairing"\]/);
   assert.match(claimDO, /async alarm\(\)/);
   assert.match(claimDO, /this\.storage\.setAlarm\(now \+ CODE_PENDING_TTL_MS\)/);
   assert.match(claimDO, /GitHub 临时分支删除失败/);
@@ -659,8 +721,9 @@ const chatDefinitions = (() => {
 })();
 const codeDefinitions = extract(workerSource, 'const CODE_MODEL_ID =', 'const codeGhHeaders =');
 
-function loadCodeLLM(respond = () => success()) {
+function loadCodeLLM(respond = () => success(), catalogRespond = () => failure()) {
   const calls = [];
+  const catalogCalls = [];
   const timeouts = [];
   const context = vm.createContext({
     getKeys,
@@ -669,15 +732,20 @@ function loadCodeLLM(respond = () => success()) {
       return undefined; // No AbortSignal timers are created.
     },
     async fetch(url, options) {
+      if (String(url).includes('/api/v1/models?')) {
+        const call = { url: String(url), options };
+        catalogCalls.push(call);
+        return catalogRespond(call, catalogCalls.length - 1);
+      }
       const call = { url: String(url), options, body: JSON.parse(options.body) };
       calls.push(call);
       return respond(call, calls.length - 1);
     }
   });
   vm.runInContext(chatDefinitions + '\n' + codeDefinitions + '\n' +
-    'globalThis.subject = { codeLLM, CODE_OR_MODELS, CODE_GROQ_MODELS, EXTRA, toterModels, toterUrl, toterUrl2 };',
+    'globalThis.subject = { codeLLM, CODE_OR_MODELS, CODE_GROQ_MODELS, CODE_OPENROUTER_CATALOG_URL, CODE_OPENROUTER_CATALOG_TIMEOUT_MS, EXTRA, toterModels, toterUrl, toterUrl2 };',
     context, { filename: 'worker-code-mode.vm.js', timeout: 1000 });
-  return { context, subject: context.subject, calls, timeouts };
+  return { context, subject: context.subject, calls, catalogCalls, timeouts };
 }
 
 function success(content = '  mocked code reply  ') {
@@ -707,6 +775,39 @@ function assertOpenRouterCalls(calls) {
     assert.match(call.options.headers.Authorization, /^Bearer or-key/);
   }
 }
+
+test('codeLLM: discovers only free text-to-text chat models and keeps custom models first', async () => {
+  const catalog = [
+    { id: 'vendor/free-a:free', architecture: { input_modalities: ['text'], output_modalities: ['text'] }, pricing: { prompt: '0', completion: '0' }, endpoints: ['/api/v1/chat/completions'] },
+    { id: 'vendor/free-vision:free', architecture: { input_modalities: ['image'], output_modalities: ['text'] }, pricing: { prompt: '0', completion: '0' } },
+    { id: 'vendor/free-image:free', architecture: { input_modalities: ['text'], output_modalities: ['image'] }, pricing: { prompt: '0', completion: '0' } },
+    { id: 'vendor/paid', architecture: { input_modalities: ['text'], output_modalities: ['text'] }, pricing: { prompt: '0.1', completion: '0.2' } },
+    { id: 'vendor/mislabelled:free', architecture: { input_modalities: ['text'], output_modalities: ['text'] }, pricing: { prompt: '0.1', completion: '0' } },
+    { id: 'vendor/free-b:free', architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] }, pricing: { prompt: 0, completion: 0 } }
+  ];
+  const { subject, calls, catalogCalls } = loadCodeLLM(
+    () => failure(),
+    () => ({ ok: true, status: 200, async json() { return { data: catalog }; } })
+  );
+  const result = await subject.codeLLM({ ...toterEnv, OPENROUTER_KEYS: 'or-key', CODE_MODELS: 'custom/first' }, messages);
+  assert.equal(catalogCalls.length, 1);
+  assert.equal(catalogCalls[0].url, subject.CODE_OPENROUTER_CATALOG_URL);
+  assert.equal(catalogCalls[0].options.method, 'GET');
+  assert.equal(catalogCalls[0].options.headers.Authorization, 'Bearer or-key');
+  assert.deepEqual(calls.map(call => call.body.model), [
+    'custom/first', 'vendor/free-a:free', 'vendor/free-b:free',
+    ...Array.from(subject.CODE_OR_MODELS)
+  ]);
+  assert.equal(result.text, '');
+});
+
+test('codeLLM: catalog failure falls back to the fixed free model list', async () => {
+  const { subject, calls, catalogCalls, timeouts } = loadCodeLLM(() => failure());
+  await subject.codeLLM({ ...toterEnv, OPENROUTER_KEYS: 'or-key' }, messages);
+  assert.equal(catalogCalls.length, 1);
+  assert.deepEqual(calls.map(call => call.body.model), Array.from(subject.CODE_OR_MODELS));
+  assert.ok(timeouts.includes(8000), 'catalog discovery has its own bounded timeout');
+});
 
 test('codeLLM: only Toter keys produce no fetch calls and no usable reply', async () => {
   const { subject, calls, timeouts } = loadCodeLLM();
@@ -778,6 +879,97 @@ test('codeLLM: CODE_MODELS keeps custom-first order and removes duplicates', asy
   assertOpenRouterCalls(calls);
   assert.deepEqual(calls.map(call => call.body.model), [...new Set([...custom, ...defaults])]);
   assert.equal(result.text, '');
+});
+
+test('codeLLM: rate-limited model is skipped and the next OpenRouter model succeeds', async () => {
+  const { subject, calls } = loadCodeLLM((call, index) =>
+    index === 0 ? failure(429) : success('after rate limit'));
+  const result = await subject.codeLLM({
+    ...toterEnv, OPENROUTER_KEYS: 'or-key',
+    CODE_MODELS: 'custom/rate-limited,custom/healthy'
+  }, messages);
+  assert.deepEqual(calls.map(call => call.body.model), [
+    'custom/rate-limited', 'custom/healthy'
+  ]);
+  assert.equal(result.text, 'after rate limit');
+  assert.equal(result.from, 'OpenRouter · custom/healthy');
+  assert.ok(result.tried.some(entry => entry.includes('custom/rate-limited HTTP 429')));
+});
+test('codeLLM: 429 and 5xx retry the same model with the next key before model fallback', async () => {
+  for (const status of [429, 503]) {
+    const { subject, calls } = loadCodeLLM((call, index) =>
+      index === 0 ? failure(status) : success('same model recovered'));
+    const result = await subject.codeLLM({
+      ...toterEnv, OPENROUTER_KEYS: 'or-key-a,or-key-b',
+      CODE_MODELS: 'custom/transient,custom/next'
+    }, messages);
+    assert.deepEqual(calls.map(call => [call.body.model, call.options.headers.Authorization]), [
+      ['custom/transient', 'Bearer or-key-a'],
+      ['custom/transient', 'Bearer or-key-b']
+    ], '429 and 5xx continue with the next key for the same model');
+    assert.equal(result.text, 'same model recovered');
+    assert.equal(result.from, 'OpenRouter · custom/transient');
+    assert.ok(result.tried.some(entry => entry.includes('custom/transient HTTP ' + status)));
+  }
+});
+
+test('codeLLM: timeout skips the remaining keys for that model and advances to the next model', async () => {
+  const { subject, calls, timeouts } = loadCodeLLM((call, index) => {
+    if (index === 0) {
+      const error = new Error('mock timeout');
+      error.name = 'TimeoutError';
+      throw error;
+    }
+    return success('after timeout');
+  });
+  const result = await subject.codeLLM({
+    ...toterEnv, OPENROUTER_KEYS: 'or-key-a,or-key-b',
+    CODE_MODELS: 'custom/slow,custom/healthy'
+  }, messages);
+  assert.deepEqual(calls.map(call => [call.body.model, call.options.headers.Authorization]), [
+    ['custom/slow', 'Bearer or-key-a'],
+    ['custom/healthy', 'Bearer or-key-a']
+  ], 'the second key must not be tried for the model that timed out');
+  assert.ok(timeouts.includes(60000), 'model request retains the 60-second timeout');
+  assert.equal(result.text, 'after timeout');
+  assert.equal(result.from, 'OpenRouter · custom/healthy');
+  assert.ok(result.tried.some(entry => entry.includes('custom/slow 超时')));
+});
+
+test('codeLLM: AbortError timeout also skips remaining keys for that model', async () => {
+  const { subject, calls } = loadCodeLLM((call, index) => {
+    if (index === 0) {
+      const error = new Error('aborted by timeout signal');
+      error.name = 'AbortError';
+      throw error;
+    }
+    return success('after abort timeout');
+  });
+  const result = await subject.codeLLM({
+    ...toterEnv, OPENROUTER_KEYS: 'or-key-a,or-key-b',
+    CODE_MODELS: 'custom/slow,custom/healthy'
+  }, messages);
+  assert.deepEqual(calls.map(call => [call.body.model, call.options.headers.Authorization]), [
+    ['custom/slow', 'Bearer or-key-a'],
+    ['custom/healthy', 'Bearer or-key-a']
+  ]);
+  assert.equal(result.text, 'after abort timeout');
+  assert.ok(result.tried.some(entry => entry.includes('custom/slow 超时')));
+});
+
+test('codeLLM: HTTP 404 skips the unavailable model and tries the next model', async () => {
+  const { subject, calls } = loadCodeLLM((call, index) =>
+    index === 0 ? failure(404) : success('after missing model'));
+  const result = await subject.codeLLM({
+    ...toterEnv, OPENROUTER_KEYS: 'or-key',
+    CODE_MODELS: 'custom/not-found,custom/healthy'
+  }, messages);
+  assert.deepEqual(calls.map(call => call.body.model), [
+    'custom/not-found', 'custom/healthy'
+  ]);
+  assert.equal(result.text, 'after missing model');
+  assert.equal(result.from, 'OpenRouter · custom/healthy');
+  assert.ok(result.tried.some(entry => entry.includes('custom/not-found HTTP 404')));
 });
 
 test('codeLLM: first usable custom model succeeds without attempting later models', async () => {
@@ -1621,4 +1813,412 @@ test('workbench history loads on tab open and exposes full both Runner state', (
   assert.ok(script.includes('任务 KV 持久化记录'));
   assert.ok(!script.includes('else renderVerifyResult({...j,state:j.state||x.state,fromHistory:true})'));
   assert.ok(script.includes('历史记录加载失败'));
+});
+
+
+test('CodeClaimDO: verification accepts only its dispatched run and records SHA mismatch as failure', async () => {
+  const value = {
+    pending: { id: 'verify-1', project: 'demo', status: 'verification_pending', verify_request_id: 'req-42', verify_run_id: '', verify_expected_sha: 'abc1234', edits: [{ path: 'a.js' }] },
+    created_at: 1700000000000, expires_at: 1700000600000, version: 3, claims: {}, results: {}
+  };
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async put(key, next) { this.value = next; },
+    async setAlarm() {}
+  };
+  const DO = loadCodeClaimDO(async () => ({ ok: true, status: 204 }));
+  const instance = new DO({ storage }, {});
+  const request = body => instance.fetch(new Request('https://code-claims/verification', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  }));
+  const wrongRun = await request({ pending_id: 'verify-1', request_id: 'req-other', run_id: 'run-other', expected_sha: 'abc1234', actual_sha: 'abc1234' });
+  assert.equal(wrongRun.status, 409);
+  const mismatch = await request({ pending_id: 'verify-1', request_id: 'req-42', run_id: 'run-42', expected_sha: 'abc1234', actual_sha: 'def5678', conclusion: 'success' });
+  assert.equal(mismatch.status, 200);
+  assert.equal(storage.value.pending.status, 'verification_failed');
+  assert.equal(storage.value.pending.verify_head_sha, 'def5678');
+  storage.value.pending.status = 'verification_pending';
+  storage.value.pending.verify_run_id = '';
+  const passed = await request({ pending_id: 'verify-1', request_id: 'req-42', run_id: 'run-42', expected_sha: 'abc1234', actual_sha: 'abc1234', conclusion: 'success' });
+  assert.equal(passed.status, 200);
+  assert.equal(storage.value.pending.status, 'verification_passed');
+  assert.equal(storage.value.pending.verify_head_sha, 'abc1234');
+  assert.equal(storage.value.version, 5);
+  assert.equal(storage.value.pending.version, 5);
+});
+
+test('CodeClaimDO: verification_pending extends expiry and cannot be claimed or discarded', async () => {
+  const value = {
+    pending: { id: 'verify-2', project: 'demo', status: 'verification_pending', verify_expires_at: 1700001200000, created_at: 1, repo: 'owner/repo', branch: 'code/demo', edits: [{ path: 'a.js' }] },
+    created_at: 1, expires_at: 1, version: 4, claims: {}, results: {}
+  };
+  const events = [];
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async put(key, next) { this.value = next; },
+    async setAlarm(at) { events.push(at); }
+  };
+  const DO = loadCodeClaimDO(async () => { throw new Error('must not delete while verification active'); });
+  const instance = new DO({ storage }, {});
+  const state = await instance.fetch(new Request('https://code-claims/state'));
+  assert.equal(state.status, 200);
+  const claim = await instance.fetch(new Request('https://code-claims/claim', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pending_id: 'verify-2', version: 4, project: 'demo', operation_id: 'op-1', yes: true })
+  }));
+  assert.equal(claim.status, 409);
+  const discard = await instance.fetch(new Request('https://code-claims/discard', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pending_id: 'verify-2', version: 4 })
+  }));
+  assert.equal(discard.status, 409);
+  assert.equal(storage.value.pending.status, 'verification_pending');
+});
+
+
+test('codeConfirm cannot merge before verification and both apply paths queue the same verification gate', () => {
+  const start = workerSource.indexOf('async function codeConfirm(');
+  const end = workerSource.indexOf('async function codeChatEntry', start);
+  const confirm = workerSource.slice(start, end);
+  assert.doesNotMatch(confirm, /codeMergeTempBranch\(/, 'codeConfirm must not call the merge API directly');
+  assert.match(confirm, /claimedFrom === "verification_passed"[\s\S]{0,180}codeMergeVerifiedPending/);
+  assert.match(confirm, /claimedFrom === "verification_failed"[\s\S]{0,180}codeQueuePendingVerification/);
+  assert.match(confirm, /if \(!paths\.length\) return await codeQueuePendingVerification/);
+  assert.match(confirm, /return await codeQueuePendingVerification\(env, user, pend, finish, pend\.edits\)/);
+  const merge = workerSource.slice(workerSource.indexOf('async function codeMergeVerifiedPending'), workerSource.indexOf('async function codeConfirm'));
+  assert.ok(merge.indexOf('currentSha !== String(pend.verify_head_sha || "")') < merge.indexOf('codeMergeTempBranch('));
+  assert.match(merge, /拒绝合并/);
+});
+
+test('codeVerifyStatus binds completed Actions run to the pending id, request id and expected SHA', () => {
+  const start = workerSource.indexOf('async function codeVerifyStatus(');
+  const end = workerSource.indexOf('async function codeGetFile', start);
+  const status = workerSource.slice(start, end);
+  assert.match(status, /old\.pending_id && old\.run_id && old\.status === "completed"/);
+  assert.match(status, /request_id: old\.request_id/);
+  assert.match(status, /expected_sha: old\.expected_sha/);
+  assert.match(status, /actual_sha: String\(old\.head_sha \|\| ""\)/);
+  assert.match(status, /codeClaimCall\(env, user, "verification"/);
+});
+
+
+test('codeQueuePendingVerification dispatches the exact branch SHA and preserves edits without merging', async () => {
+  const calls = [];
+  const sandbox = loadPendingVerificationHelpers({
+    codeGhApi: async (env, url) => { calls.push(['head', url]); return { ok: true, data: { object: { sha: 'branch-sha-1' } } }; },
+    codeVerifyStart: async (env, user, body) => { calls.push(['dispatch', body]); return { ok: true, request_id: 'verify-req-1', actions_url: 'https://github.com/run/1' }; }
+  });
+  const pend = { id: 'pending-1', repo: 'owner/repo', branch: 'code/demo', edits: [{ path: 'a.js' }] };
+  let finished;
+  const result = await sandbox.queueVerification({}, 'owner', pend, async (...args) => { finished = args; return args[1]; }, pend.edits);
+  assert.equal(calls[0][1], 'owner/repo/heads/code/demo');
+  assert.equal(calls[1][1].ref, 'code/demo');
+  assert.equal(calls[1][1].pending_id, 'pending-1');
+  assert.equal(calls[1][1].expected_sha, 'branch-sha-1');
+  assert.equal(finished[0], 'verification_pending');
+  assert.equal(finished[3].verify_expected_sha, 'branch-sha-1');
+  assert.equal(finished[3].verify_request_id, 'verify-req-1');
+  assert.equal(result.verification_pending, true);
+});
+
+test('codeQueuePendingVerification fails closed when the branch SHA cannot be read', async () => {
+  let dispatched = false, finished;
+  const sandbox = loadPendingVerificationHelpers({
+    codeGhApi: async () => ({ ok: false, msg: 'GitHub unavailable' }),
+    codeVerifyStart: async () => { dispatched = true; return { ok: true }; }
+  });
+  const result = await sandbox.queueVerification({}, 'owner', { id: 'p', repo: 'owner/repo', branch: 'code/demo' }, async (...args) => { finished = args; return args[1]; }, []);
+  assert.equal(dispatched, false);
+  assert.equal(finished[0], 'failed');
+  assert.equal(result.ok, false);
+});
+
+test('codeMergeVerifiedPending refuses a changed branch SHA before calling merge', async () => {
+  let mergeCalls = 0, finished;
+  const sandbox = loadPendingVerificationHelpers({
+    codeGhApi: async () => ({ ok: true, data: { object: { sha: 'newer-sha' } } }),
+    codeMergeTempBranch: async () => { mergeCalls++; return { ok: true }; }
+  });
+  const result = await sandbox.mergeVerifiedPending({}, 'owner', { id: 'p', repo: 'owner/repo', branch: 'code/demo', verify_head_sha: 'tested-sha', edits: [{ path: 'a.js' }] }, async (...args) => { finished = args; return args[1]; });
+  assert.equal(mergeCalls, 0);
+  assert.equal(finished[0], 'verification_failed');
+  assert.equal(result.ok, false);
+});
+
+
+test('CodeClaimDO preserves verification_passed as the origin of the final merge claim', async () => {
+  const value = {
+    pending: { id: 'verified-pending', project: 'demo', status: 'verification_passed', verify_head_sha: 'abc1234', edits: [{ path: 'a.js' }] },
+    created_at: 1700000000000, expires_at: 1700000600000, version: 7, claims: {}, results: {}
+  };
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async put(key, next) { this.value = next; },
+    async setAlarm() {}
+  };
+  const DO = loadCodeClaimDO(async () => ({ ok: true, status: 204 }));
+  const instance = new DO({ storage }, {});
+  const response = await instance.fetch(new Request('https://code-claims/claim', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pending_id: 'verified-pending', version: 7, project: 'demo', operation_id: 'merge-op', yes: true })
+  }));
+  const result = await response.json();
+  assert.equal(result.ok, true);
+  assert.equal(storage.value.pending.claimed_from_status, 'verification_passed');
+  assert.equal(storage.value.pending.status, 'applying');
+});
+
+
+test('codeMergeVerifiedPending keeps the verified state when GitHub merge is temporarily rejected', async () => {
+  let finished;
+  const sandbox = loadPendingVerificationHelpers({
+    codeGhApi: async () => ({ ok: true, data: { object: { sha: 'tested-sha' } } }),
+    codeMergeTempBranch: async () => ({ ok: false, msg: 'base moved' })
+  });
+  const result = await sandbox.mergeVerifiedPending({}, 'owner', { id: 'p', repo: 'owner/repo', branch: 'code/demo', verify_head_sha: 'tested-sha', edits: [{ path: 'a.js' }] }, async (...args) => { finished = args; return args[1]; });
+  assert.equal(finished[0], 'verification_passed');
+  assert.equal(result.pending, true);
+  assert.match(result.reply, /再次确认重试/);
+});
+
+
+test('CodeClaimDO: automatic repair is single-flight, bounded and re-verifies after patching', async () => {
+  const value = {
+    pending: { id: 'repair-1', project: 'demo', status: 'verification_failed', verify_request_id: 'req-1', verify_run_id: 'run-1', verify_expected_sha: 'sha-1', repair_attempts: 0, edits: [{ path: 'worker.js' }] },
+    created_at: 1700000000000, expires_at: 1700000600000, version: 5, claims: {}, results: {}
+  };
+  const events = [];
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async put(key, next) { this.value = next; },
+    async setAlarm(at) { events.push(at); }
+  };
+  const DO = loadCodeClaimDO(async () => ({ ok: true, status: 204 }));
+  const instance = new DO({ storage }, {});
+  const call = (action, body) => instance.fetch(new Request('https://code-claims/' + action, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  }));
+  const wrong = await call('repair-claim', { pending_id: 'repair-1', request_id: 'req-1', run_id: 'other' });
+  assert.equal(wrong.status, 409);
+  const claimed = await call('repair-claim', { pending_id: 'repair-1', request_id: 'req-1', run_id: 'run-1' });
+  assert.equal(claimed.status, 200);
+  assert.equal(storage.value.pending.status, 'repairing');
+  assert.equal(storage.value.pending.repair_attempts, 1);
+  assert.ok(events.includes(storage.value.pending.repair_expires_at), 'repair expiry must be armed as a Durable Object alarm');
+  const duplicate = await call('repair-claim', { pending_id: 'repair-1', request_id: 'req-1', run_id: 'run-1' });
+  assert.equal(duplicate.status, 409);
+  const finished = await call('repair-finish', {
+    pending_id: 'repair-1', ok: true, edits: [{ path: 'worker.js', auto_repair: true }],
+    verification: { verify_request_id: 'req-2', verify_expected_sha: 'sha-2', verify_run_id: '', verify_error_lines: [] }
+  });
+  assert.equal(finished.status, 200);
+  assert.equal(storage.value.pending.status, 'verification_pending');
+  assert.equal(storage.value.pending.verify_request_id, 'req-2');
+  assert.equal(storage.value.pending.edits[0].auto_repair, true);
+  assert.equal(storage.value.pending.version, storage.value.version);
+  assert.ok(storage.value.pending.verify_expires_at > 1700000000000);
+  assert.ok(events.length > 0);
+});
+
+test('CodeClaimDO alarm releases a stalled model repair without deleting its branch record', async () => {
+  const value = {
+    pending: { id: 'repair-timeout', status: 'repairing', repair_expires_at: 1699999999000, repair_attempts: 1, edits: [{ path: 'worker.js' }] },
+    created_at: 1699999000000, expires_at: 1700000000000, version: 3, claims: {}, results: {}
+  };
+  const alarms = [];
+  let deleted = false;
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async put(key, next) { this.value = next; },
+    async setAlarm(at) { alarms.push(at); },
+    async delete() { deleted = true; }
+  };
+  const DO = loadCodeClaimDO(async () => ({ ok: true }));
+  const instance = new DO({ storage }, {});
+  await instance.alarm();
+  assert.equal(storage.value.pending.status, 'verification_failed');
+  assert.match(storage.value.pending.repair_error, /超过 8 分钟/);
+  assert.ok(storage.value.expires_at > 1700000000000);
+  assert.ok(alarms.includes(storage.value.expires_at));
+  assert.equal(deleted, false, 'stalled repair must keep the temporary branch and pending record');
+});
+
+test('codeRepairSourceContext finds relevant identifiers deep in large source files', () => {
+  const start = workerSource.indexOf('function codeRepairSourceContext');
+  const end = workerSource.indexOf('async function codeRepairPendingFromVerification', start);
+  assert.ok(start >= 0 && end > start);
+  const sandbox = {};
+  vm.runInNewContext(workerSource.slice(start, end) + String.fromCharCode(10) + 'globalThis.pickRepairContext = codeRepairSourceContext;', sandbox);
+  const lines = Array.from({ length: 600 }, (_, i) => 'unrelated source line ' + (i + 1));
+  lines[479] = 'const codeRepairSmokeProbe = (value) => value === "repair-me" ? "broken" : value;';
+  lines[480] = 'function nearbyRepairAssertion() { return codeRepairSmokeProbe("repair-me"); }';
+  const context = sandbox.pickRepairContext('worker.js', lines.join(String.fromCharCode(10)), [
+    { path: 'worker.js', old: '', new: 'const codeRepairSmokeProbe = (value) => value === "repair-me" ? "broken" : value;' }
+  ], ['worker.js:481:1']);
+  assert.match(context, /codeRepairSmokeProbe/);
+  assert.match(context, /nearbyRepairAssertion/);
+  assert.doesNotMatch(context, /unrelated source line 1\s/);
+});
+
+test('automatic repair uses real Actions logs, source patches and a fresh verification dispatch', () => {
+  const start = workerSource.indexOf('async function codeRepairPendingFromVerification');
+  const end = workerSource.indexOf('async function codeVerifyStatus', start);
+  const repair = workerSource.slice(start, end);
+  assert.match(repair, /"repair-claim"/);
+  assert.match(repair, /codeLLM\(/);
+  assert.match(repair, /codeRepairSourceContext\(path, files\[path\], pend\.edits \|\| \[\], logs\)/);
+  assert.match(repair, /codeParseEdits\(/);
+  assert.match(repair, /codeApply\(/);
+  assert.match(repair, /codePushGuard\(/);
+  assert.match(repair, /codeUpdateFile\(/);
+  assert.match(repair, /codeQueuePendingVerification\(/);
+  const statusStart = workerSource.indexOf('async function codeVerifyStatus');
+  const statusEnd = workerSource.indexOf('async function codeGetFile', statusStart);
+  const status = workerSource.slice(statusStart, statusEnd);
+  assert.match(status, /old\.pending_status === "verification_failed"/);
+  assert.match(status, /old\.head_sha === old\.expected_sha/);
+  assert.match(status, /await codeRepairPendingFromVerification\(env, user, old\)/);
+  assert.match(status, /verificationConflict = true/);
+  assert.match(status, /!repairStarted && !verificationConflict/);
+  assert.match(status, /if \(env\.KV\) await env\.KV\.put\(codeVerifyKey\(user\), JSON\.stringify\(old\)/);
+  assert.match(frontendStudioSource, /自动修复中/);
+  assert.match(frontendStudioSource, /function pollVerification\(\)/);
+});
+
+
+test('automatic repair reads failed logs, applies model SEARCH/REPLACE and queues fresh verification', async () => {
+  const calls = [];
+  const sandbox = loadCodeRepairHelper({
+    codeClaimCall: async (_env, _user, action, body) => {
+      calls.push(['claim', action, body]);
+      if (action === 'repair-claim') return { ok: true, pending: { id: 'repair-p', repo: 'owner/repo', branch: 'code/demo', edits: [{ path: 'worker.js' }] } };
+      return { ok: true, pending: { status: 'verification_pending' } };
+    },
+    codeFileTree: async () => ({ ok: true, files: ['worker.js', 'tests/a.test.js'] }),
+    codeGetFile: async (_env, _repo, path) => ({ ok: true, exists: true, sha: 'sha-' + path, text: 'source for ' + path }),
+    codeLLM: async (_env, messages) => {
+      calls.push(['model', messages[1].content]);
+      return { text: 'model patch', from: 'OpenRouter · fake' };
+    },
+    codeParseEdits: () => [{ path: 'worker.js', old: 'before', new: 'after' }],
+    codeApply: () => ({ errs: [], done: [{ path: 'worker.js' }], out: { 'worker.js': 'after' } }),
+    codeUpdateFile: async (_env, _repo, path, content, message, branch, sha) => {
+      calls.push(['update', path, content, branch, sha]);
+      return { ok: true };
+    },
+    codeQueuePendingVerification: async (_env, _user, pend, finish, edits) => {
+      calls.push(['verify', pend.repair_model, edits.length]);
+      return await finish('verification_pending', { ok: true, reply: 'queued' }, edits, { verify_request_id: 'req-2', verify_expected_sha: 'sha-2' });
+    }
+  });
+  const result = await sandbox.runCodeRepair({}, 'owner', {
+    pending_id: 'repair-p', request_id: 'req-1', run_id: 'run-1', expected_sha: 'sha-1',
+    failed_step: 'npm test', error_lines: ['worker.js:1 expected before']
+  });
+  assert.equal(result.ok, true);
+  assert.ok(calls.some(x => x[0] === 'model' && x[1].includes('worker.js:1 expected before')));
+  assert.ok(calls.some(x => x[0] === 'update' && x[1] === 'worker.js' && x[2] === 'after' && x[3] === 'code/demo' && x[4] === 'sha-worker.js'));
+  assert.ok(calls.some(x => x[0] === 'verify' && x[1] === 'OpenRouter · fake'));
+  const finishCall = calls.find(x => x[0] === 'claim' && x[1] === 'repair-finish');
+  assert.ok(finishCall);
+  assert.equal(finishCall[2].edits.length, 2);
+  assert.equal(finishCall[2].edits[1].auto_repair, true);
+});
+
+
+test('CodeClaimDO: automatic repair stops after two model attempts without unlocking merge', async () => {
+  const value = {
+    pending: { id: 'repair-limit', project: 'demo', status: 'verification_failed', verify_request_id: 'req-1', verify_run_id: 'run-1', repair_attempts: 2, edits: [{ path: 'worker.js' }] },
+    created_at: 1700000000000, expires_at: 1700000600000, version: 8, claims: {}, results: {}
+  };
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async put(key, next) { this.value = next; },
+    async setAlarm() {}
+  };
+  const DO = loadCodeClaimDO(async () => ({ ok: true, status: 204 }));
+  const instance = new DO({ storage }, {});
+  const response = await instance.fetch(new Request('https://code-claims/repair-claim', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pending_id: 'repair-limit', request_id: 'req-1', run_id: 'run-1' })
+  }));
+  const result = await response.json();
+  assert.equal(result.ok, true);
+  assert.equal(result.limit_reached, true);
+  assert.equal(storage.value.pending.status, 'verification_failed');
+  assert.match(storage.value.pending.repair_error, /2 次上限/);
+});
+
+
+test('codeConfirm discard refuses success when GitHub cannot delete the temporary branch', () => {
+  const start = workerSource.indexOf('async function codeConfirm(');
+  const end = workerSource.indexOf('async function codeChatEntry', start);
+  const confirm = workerSource.slice(start, end);
+  const discardStart = confirm.indexOf('  if (!yes) {');
+  const discardEnd = confirm.indexOf('  const claimedFrom', discardStart);
+  const discard = confirm.slice(discardStart, discardEnd);
+  assert.match(discard, /if \(!removed\.ok && removed\.status !== 404\)/);
+  assert.match(discard, /ok: false, pending: true, conflict: true/);
+  assert.ok(discard.indexOf('codeDeleteBranch') < discard.indexOf('finish("discarded"'));
+});
+
+
+test('codeVerifySweep rotates across users and polls only one active code verification per cron', async () => {
+  const jobs = {
+    'code:verify:user-a': { pending_id: 'p-a', status: 'completed', pending_status: 'verification_passed' },
+    'code:verify:user-b': { pending_id: 'p-b', status: 'in_progress' },
+    'code:verify:user-c': { pending_id: 'p-c', status: 'queued' }
+  };
+  const writes = [], polled = [];
+  const kv = {
+    async list() { return { keys: Object.keys(jobs).map(name => ({ name })) }; },
+    async get(key, type) { return key === 'code:verify-sweep:last' ? 'code:verify:user-a' : jobs[key] || null; },
+    async put(key, value) { writes.push([key, value]); }
+  };
+  const sandbox = loadCodeVerifySweep({
+    codeVerifyStatus: async (_env, user) => { polled.push(user); return { ok: true, status: 'in_progress', state: 'running' }; }
+  });
+  const result = await sandbox.runCodeVerifySweep({ KV: kv, GH_PAT: 'configured' });
+  assert.equal(result.checked, 1);
+  assert.deepEqual(polled, ['user-b']);
+  assert.equal(writes[0][0], 'code:verify-sweep:last');
+  assert.equal(writes[0][1], 'code:verify:user-b');
+});
+
+test('minute cron includes autonomous code verification polling', () => {
+  assert.match(workerSource, /codeVerifySweep\(e2\)/);
+});
+
+
+test('Cloudflare minute cron is enabled for autonomous code verification polling', () => {
+  assert.match(wranglerSource, /crons\s*=\s*\["\* \* \* \* \*"\]/);
+  assert.match(workerSource, /if \(!fiveMin\) return/);
+});
+
+
+test('codeDeleteBranch uses the GitHub git/refs DELETE endpoint for nested code branches', async () => {
+  const start = workerSource.indexOf('async function codeDeleteBranch(');
+  const end = workerSource.indexOf('async function codeMergeTempBranch(', start);
+  assert.ok(start >= 0 && end > start, 'codeDeleteBranch source must exist');
+  const source = workerSource.slice(start, end);
+  const calls = [];
+  const sandbox = {
+    codeGhApi: async (_env, url, options) => {
+      calls.push({ url, method: options && options.method });
+      return { ok: true, status: 204 };
+    },
+    String, encodeURIComponent
+  };
+  vm.runInNewContext(source + String.fromCharCode(10) + 'globalThis.deleteCodeBranch = codeDeleteBranch;', sandbox);
+  const result = await sandbox.deleteCodeBranch({}, 'tianxin1300/openmanus-gateway', 'code/project-smoke-123');
+  assert.equal(result.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, 'DELETE');
+  assert.equal(calls[0].url, 'https://api.github.com/repos/tianxin1300/openmanus-gateway/git/refs/heads/code/project-smoke-123');
 });
