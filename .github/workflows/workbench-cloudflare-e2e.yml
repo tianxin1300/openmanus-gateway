@@ -131,6 +131,10 @@ jobs:
           workers_dev = true
 
           [[migrations]]
+          tag = "workbench-e2e-v1"
+          new_sqlite_classes = ["CodeClaimDO"]
+
+          [[migrations]]
           tag = "workbench-e2e-cleanup-v2"
           deleted_classes = ["CodeClaimDO"]
           EOF
