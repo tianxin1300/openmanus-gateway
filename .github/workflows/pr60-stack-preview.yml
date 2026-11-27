@@ -192,10 +192,11 @@ jobs:
           PROMPT='PR60 隔离环境的自动修复端到端验收。请只修改 worker.js 和 tests/code-mode-providers.test.cjs。第一，在 worker.js 的 const codePathOk 定义后新增这一行，故意保留这个错误实现：const codeRepairSmokeProbe = (value) => value === "repair-me" ? "broken" : value; 第二，在 tests/code-mode-providers.test.cjs 末尾增加一个 node:test，使用已有的 workerSource、vm、assert，从 workerSource 中提取 codeRepairSmokeProbe 定义并执行，断言传入 "repair-me" 必须返回 "repair-me"。这是有意注入的一次临时故障：本轮生成阶段必须让函数返回 broken、测试保持正确，从而让 Actions 的 npm test 真实失败。不要在生成阶段提前修复这个函数，不要改其他文件。'
           REQUEST="$(jq -nc --arg token "$LOGIN_TOKEN" --arg text "$PROMPT" '{token:$token,text:$text,code_mode:true,code_project:"聚合体"}')"
           echo "Starting real code-mode model task in the isolated preview Worker."
-          CODE_RESULT="$(curl --fail-with-body --silent --show-error --max-time 240 -X POST "$WORKER_URL/api/code" "${AUTH[@]}" -H 'Content-Type: application/json' --data "$REQUEST")"
-          if ! printf '%s' "$CODE_RESULT" | jq -e '.ok == true and .pending == true' >/dev/null; then
-            echo "::error::Code-mode model did not create the expected isolated pending patch."
-            printf '%s' "$CODE_RESULT" | jq -c '{ok,reply,msg}' || true
+          CODE_HTTP="$(curl --silent --show-error --max-time 240 --output /tmp/pr60-code-mode.json --write-out '%{http_code}' -X POST "$WORKER_URL/api/code" "${AUTH[@]}" -H 'Content-Type: application/json' --data "$REQUEST" || true)"
+          CODE_RESULT="$(cat /tmp/pr60-code-mode.json 2>/dev/null || true)"
+          if [ "$CODE_HTTP" != "200" ] || ! printf '%s' "$CODE_RESULT" | jq -e '.ok == true and .pending == true' >/dev/null; then
+            echo "::error::Code-mode model did not create the expected isolated pending patch (HTTP $CODE_HTTP)."
+            printf '%s' "$CODE_RESULT" | jq -c '{ok,reply,msg}' || printf '%s\\n' "$CODE_RESULT" | head -c 1500
             exit 1
           fi
 
