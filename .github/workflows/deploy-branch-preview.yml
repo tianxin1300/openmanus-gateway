@@ -23,7 +23,7 @@ env:
 jobs:
   preview:
     name: verify, build and deploy branch preview
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 18
     steps:
       - name: Validate deployment inputs
