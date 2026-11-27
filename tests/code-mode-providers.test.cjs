@@ -659,8 +659,9 @@ const chatDefinitions = (() => {
 })();
 const codeDefinitions = extract(workerSource, 'const CODE_MODEL_ID =', 'const codeGhHeaders =');
 
-function loadCodeLLM(respond = () => success()) {
+function loadCodeLLM(respond = () => success(), catalogRespond = () => failure()) {
   const calls = [];
+  const catalogCalls = [];
   const timeouts = [];
   const context = vm.createContext({
     getKeys,
@@ -669,15 +670,20 @@ function loadCodeLLM(respond = () => success()) {
       return undefined; // No AbortSignal timers are created.
     },
     async fetch(url, options) {
+      if (String(url).includes('/api/v1/models?')) {
+        const call = { url: String(url), options };
+        catalogCalls.push(call);
+        return catalogRespond(call, catalogCalls.length - 1);
+      }
       const call = { url: String(url), options, body: JSON.parse(options.body) };
       calls.push(call);
       return respond(call, calls.length - 1);
     }
   });
   vm.runInContext(chatDefinitions + '\n' + codeDefinitions + '\n' +
-    'globalThis.subject = { codeLLM, CODE_OR_MODELS, CODE_GROQ_MODELS, EXTRA, toterModels, toterUrl, toterUrl2 };',
+    'globalThis.subject = { codeLLM, CODE_OR_MODELS, CODE_GROQ_MODELS, CODE_OPENROUTER_CATALOG_URL, CODE_OPENROUTER_CATALOG_TIMEOUT_MS, EXTRA, toterModels, toterUrl, toterUrl2 };',
     context, { filename: 'worker-code-mode.vm.js', timeout: 1000 });
-  return { context, subject: context.subject, calls, timeouts };
+  return { context, subject: context.subject, calls, catalogCalls, timeouts };
 }
 
 function success(content = '  mocked code reply  ') {
@@ -707,6 +713,40 @@ function assertOpenRouterCalls(calls) {
     assert.match(call.options.headers.Authorization, /^Bearer or-key/);
   }
 }
+
+test('codeLLM: discovers only free text-to-text chat models and keeps custom models first', async () => {
+  const catalog = [
+    { id: 'vendor/free-a:free', architecture: { input_modalities: ['text'], output_modalities: ['text'] }, pricing: { prompt: '0', completion: '0' }, endpoints: ['/api/v1/chat/completions'] },
+    { id: 'vendor/free-vision:free', architecture: { input_modalities: ['image'], output_modalities: ['text'] }, pricing: { prompt: '0', completion: '0' } },
+    { id: 'vendor/free-image:free', architecture: { input_modalities: ['text'], output_modalities: ['image'] }, pricing: { prompt: '0', completion: '0' } },
+    { id: 'vendor/paid', architecture: { input_modalities: ['text'], output_modalities: ['text'] }, pricing: { prompt: '0.1', completion: '0.2' } },
+    { id: 'vendor/mislabelled:free', architecture: { input_modalities: ['text'], output_modalities: ['text'] }, pricing: { prompt: '0.1', completion: '0' } },
+    { id: 'vendor/free-b:free', architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] }, pricing: { prompt: 0, completion: 0 } }
+  ];
+  const { subject, calls, catalogCalls } = loadCodeLLM(
+    (call, index) => index === 0 ? failure(404) : success('dynamic reply'),
+    () => ({ ok: true, status: 200, async json() { return { data: catalog }; } })
+  );
+  const result = await subject.codeLLM({ ...toterEnv, OPENROUTER_KEYS: 'or-key', CODE_MODELS: 'custom/first' }, messages);
+  assert.equal(catalogCalls.length, 1);
+  assert.equal(catalogCalls[0].url, subject.CODE_OPENROUTER_CATALOG_URL);
+  assert.equal(catalogCalls[0].options.method, 'GET');
+  assert.equal(catalogCalls[0].options.headers.Authorization, 'Bearer or-key');
+  assert.deepEqual(calls.map(call => call.body.model), [
+    'custom/first', 'vendor/free-a:free', 'vendor/free-b:free',
+    ...Array.from(subject.CODE_OR_MODELS)
+  ]);
+  assert.equal(result.text, 'dynamic reply');
+  assert.equal(result.from, 'OpenRouter · vendor/free-a:free');
+});
+
+test('codeLLM: catalog failure falls back to the fixed free model list', async () => {
+  const { subject, calls, catalogCalls, timeouts } = loadCodeLLM(() => failure());
+  await subject.codeLLM({ ...toterEnv, OPENROUTER_KEYS: 'or-key' }, messages);
+  assert.equal(catalogCalls.length, 1);
+  assert.deepEqual(calls.map(call => call.body.model), Array.from(subject.CODE_OR_MODELS));
+  assert.ok(timeouts.includes(8000), 'catalog discovery has its own bounded timeout');
+});
 
 test('codeLLM: only Toter keys produce no fetch calls and no usable reply', async () => {
   const { subject, calls, timeouts } = loadCodeLLM();
