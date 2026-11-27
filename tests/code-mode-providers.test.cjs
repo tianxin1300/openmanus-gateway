@@ -819,6 +819,58 @@ test('codeLLM: CODE_MODELS keeps custom-first order and removes duplicates', asy
   assert.equal(result.text, '');
 });
 
+test('codeLLM: rate-limited model is skipped and the next OpenRouter model succeeds', async () => {
+  const { subject, calls } = loadCodeLLM((call, index) =>
+    index === 0 ? failure(429) : success('after rate limit'));
+  const result = await subject.codeLLM({
+    ...toterEnv, OPENROUTER_KEYS: 'or-key',
+    CODE_MODELS: 'custom/rate-limited,custom/healthy'
+  }, messages);
+  assert.deepEqual(calls.map(call => call.body.model), [
+    'custom/rate-limited', 'custom/healthy'
+  ]);
+  assert.equal(result.text, 'after rate limit');
+  assert.equal(result.from, 'OpenRouter · custom/healthy');
+  assert.ok(result.tried.some(entry => entry.includes('custom/rate-limited HTTP 429')));
+});
+
+test('codeLLM: timed-out model is aborted and the next OpenRouter model succeeds', async () => {
+  const { subject, calls, timeouts } = loadCodeLLM((call, index) => {
+    if (index === 0) {
+      const error = new Error('mock timeout');
+      error.name = 'TimeoutError';
+      throw error;
+    }
+    return success('after timeout');
+  });
+  const result = await subject.codeLLM({
+    ...toterEnv, OPENROUTER_KEYS: 'or-key',
+    CODE_MODELS: 'custom/slow,custom/healthy'
+  }, messages);
+  assert.deepEqual(calls.map(call => call.body.model), [
+    'custom/slow', 'custom/healthy'
+  ]);
+  assert.ok(timeouts.includes(60000), 'model request retains the 60-second timeout');
+  assert.equal(result.text, 'after timeout');
+  assert.equal(result.from, 'OpenRouter · custom/healthy');
+  assert.ok(result.tried.some(entry => entry.includes('custom/slow 超时')));
+});
+
+test('codeLLM: HTTP 404 skips the unavailable model and tries the next model', async () => {
+  const { subject, calls } = loadCodeLLM((call, index) =>
+    index === 0 ? failure(404) : success('after missing model'));
+  const result = await subject.codeLLM({
+    ...toterEnv, OPENROUTER_KEYS: 'or-key',
+    CODE_MODELS: 'custom/not-found,custom/healthy'
+  }, messages);
+  assert.deepEqual(calls.map(call => call.body.model), [
+    'custom/not-found', 'custom/healthy'
+  ]);
+  assert.equal(result.text, 'after missing model');
+  assert.equal(result.from, 'OpenRouter · custom/healthy');
+  assert.ok(result.tried.some(entry => entry.includes('custom/not-found HTTP 404')));
+});
+
 test('codeLLM: first usable custom model succeeds without attempting later models', async () => {
   const { subject, calls } = loadCodeLLM((call, index) => index === 0 ? failure(404) : success('custom reply'));
   const result = await subject.codeLLM({
