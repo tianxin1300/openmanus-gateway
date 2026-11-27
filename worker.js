@@ -599,7 +599,7 @@ async function codeWorkbenchBranchDiff(env, user, repo) {
   const files = Array.isArray(diff.data && diff.data.files) ? diff.data.files : [];
   return { ok: true, branch: current.branch, baseBranch: current.baseBranch, files: files.map((f) => ({ path: f.filename, status: f.status, additions: f.additions, deletions: f.deletions, patch: f.patch || "" })) };
 }
-async function codeWorkbenchBranchRejectFile(env, user, body = {}) {
+async function codeWorkbenchBranchRejectFileUnlocked(env, user, body = {}) {
   const repo = String(body.repo || ""), path = String(body.path || "");
   if (!codeRepoOk(env, repo) || !codePathOk(path)) return { ok: false, msg: "仓库或文件路径不合法" };
   const current = await codeWorkbenchBranchCurrent(env, user, repo);
@@ -631,6 +631,10 @@ async function codeWorkbenchBranchRejectFile(env, user, body = {}) {
   }
   return { ok: true, rejected: true, path, previous_path: String(body.previous_path || "") };
 }
+async function codeWorkbenchBranchRejectFile(env, user, body = {}) {
+  const repo = String(body.repo || "");
+  return codeWorkbenchWithLock(env, user, repo, "review", () => codeWorkbenchBranchRejectFileUnlocked(env, user, body));
+}
 async function codeWorkbenchBranchPreview(env, user, repo) {
   const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
   const current = await codeWorkbenchBranchCurrent(env, user, repo);
@@ -648,7 +652,7 @@ async function codeWorkbenchBranchPreview(env, user, repo) {
   await env.KV.put(codeWorkbenchBranchKey(user, repo), JSON.stringify(current), { expirationTtl: 2592000 });
   return { ok: true, preview_url: current.preview_url, request_id: requestId, branch: current.branch, state: "dispatched" };
 }
-async function codeWorkbenchBranchDiscard(env, user, body = {}) {
+async function codeWorkbenchBranchDiscardUnlocked(env, user, body = {}) {
   const repo = String(body.repo || "");
   if (!codeRepoOk(env, repo) || !env.KV) return { ok: false, msg: "项目仓库或 KV 配置不可用" };
   const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
@@ -659,6 +663,10 @@ async function codeWorkbenchBranchDiscard(env, user, body = {}) {
   if (!deleted.ok && deleted.status !== 404) return { ok: false, msg: "GitHub 删除临时分支失败，记录保留：" + deleted.msg };
   await env.KV.delete(key);
   return { ok: true, discarded: true, branch: record.branch, main_untouched: true };
+}
+async function codeWorkbenchBranchDiscard(env, user, body = {}) {
+  const repo = String(body.repo || "");
+  return codeWorkbenchWithLock(env, user, repo, "discard", () => codeWorkbenchBranchDiscardUnlocked(env, user, body));
 }
 async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
   const repo = String(body.repo || "");
@@ -686,7 +694,7 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
     for (const path of files.filter((p) => accepted.has(p))) { const guard = codePushGuard(env, user, repo, path); if (guard) return { ok: false, msg: "文件 " + path + " 不允许合并：" + guard }; }
     for (const change of fileChanges.filter((f) => !accepted.has(f.filename))) {
       const path = change.filename;
-      const rejected = await codeWorkbenchBranchRejectFile(env, user, { repo, path, previous_path: change.previous_filename || "", branch: record.branch });
+      const rejected = await codeWorkbenchBranchRejectFileUnlocked(env, user, { repo, path, previous_path: change.previous_filename || "", branch: record.branch });
       if (!rejected.ok) return { ok: false, msg: "拒绝文件 " + path + " 失败：" + rejected.msg };
     }
     compared = await codeGhApi(env, compareUrl);
