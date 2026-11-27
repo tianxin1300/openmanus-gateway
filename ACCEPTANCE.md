@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 81 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，按当前源码预计 Node TAP 展开为 83 项。`workbench-acceptance.test.cjs` 有 43 个静态测试声明，因此按源码预计 `npm test` 共 126 项；最终数量以本次 TAP 输出为准。Playwright UI 文件另有 9 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
+> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 81 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，按当前源码预计 Node TAP 展开为 83 项。`workbench-acceptance.test.cjs` 有 43 个静态测试声明，因此按源码预计 `npm test` 共 126 项；最终数量以本次 TAP 输出为准。Playwright UI 文件另有 10 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
 
 ## 1. 唯一执行入口与判定规则
 
@@ -259,7 +259,7 @@ npm test
 
 ### WORKBENCH-08 — 多文件审核及重命名/删除边界
 
-**自动化测试：** `ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rejects rename/delete side effects`；`ACCEPTANCE WORKBENCH-RENAME-DIFF-01`；Playwright `rejecting a renamed file sends the previous filename so the source path can be restored`
+**自动化测试：** `ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rejects rename/delete side effects`；`ACCEPTANCE WORKBENCH-RENAME-DIFF-01`；Playwright `rejecting a renamed file sends the previous filename so the source path can be restored`；`failed renamed-file rejection keeps the row retryable after restoring its source path`
 
 **测试覆盖：**
 - 一次包含修改、新增、删除、重命名的多文件变更。
@@ -268,6 +268,7 @@ npm test
 - 拒绝删除时恢复基线文件；拒绝新增时删除新增文件。
 - 审核人写入审核事件。
 - Diff API 必须把 GitHub 的 `previous_filename` 映射为 `previous_path`，前端拒绝重命名时必须把旧路径传回 Worker；Node 与 Playwright 分别验证数据映射和实际按钮请求。
+- 重命名拒绝出现部分失败（旧路径已恢复、目标路径删除失败）时，改动行必须保留、拒绝按钮恢复可用；重试仍传递 `previous_path`，成功后才移除改动行。
 
 **通过条件：** 最终合并差异只包含接受的文件；被拒绝文件的旧路径、新路径及删除/新增副作用均不能漏进合并。
 
@@ -402,7 +403,7 @@ npm test
 
 **计数说明：** 上述分组对应文件内 43 个 `test(...)` 用例。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
 
-### 14.2 Playwright UI E2E（9 个场景 × 2 个浏览器项目）
+### 14.2 Playwright UI E2E（10 个场景 × 2 个浏览器项目）
 
 文件：`tests/workbench-ui.spec.cjs`
 
@@ -410,6 +411,7 @@ npm test
 |---|---|---|
 | 文件审核：拒绝一个文件、接受另一个文件，只推送接受路径 | 独立执行 | 独立执行 |
 | 文件重命名审核：拒绝时提交 previous_path，确保旧路径可恢复 | 独立执行 | 独立执行 |
+| 重命名拒绝部分失败：旧路径恢复后目标删除失败，保留行并可重试 | 独立执行 | 独立执行 |
 | 丢弃保持 main 不变；历史回滚创建新的活动分支 | 独立执行 | 独立执行 |
 | 终端/运行日志标签页互斥切换；检查移动视口尺寸变化后的布局变量 | 独立执行 | 独立执行 |
 | 文件拒绝接口首次失败后，改动仍保留并允许重试 | 独立执行 | 独立执行 |
@@ -422,7 +424,7 @@ npm test
 - `npx playwright test --project=chromium-iphone`
 - `npx playwright test --project=webkit-iphone`
 
-这 2 个场景使用 Playwright API fixtures 模拟后端响应，验证前端交互与请求载荷；它们不是对真实 GitHub 仓库执行分支创建、合并或回滚的生产端到端测试。浏览器项目成功只代表该项目下的 UI 用例通过。
+这些场景使用 Playwright API fixtures 模拟后端响应，验证前端交互与请求载荷；它们不是对真实 GitHub 仓库执行分支创建、合并或回滚的生产端到端测试。浏览器项目成功只代表该项目下的 UI 用例通过。
 
 ### 14.3 当前自动化覆盖边界
 
