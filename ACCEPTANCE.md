@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件只定义可由仓库代码自动执行的 10 项验收。所有项目均由 `npm test` 执行；不包含人工设备操作或人工证据收集步骤。
+> 本文件定义原有 10 项交付状态/界面自动验收，以及新增 5 项开发工作台行为验收。所有项目均由 npm test 执行；不包含人工设备操作或人工证据收集步骤。
 
 ## 1. 唯一执行入口与判定规则
 
@@ -10,7 +10,7 @@
 npm test
 ```
 
-该命令运行 `node --test tests/code-mode-providers.test.cjs`。测试进程退出码为 0 且 10 项专属测试全部通过，10 项自动验收才全部通过；任一专属测试失败、跳过、未执行或测试进程异常退出，对应项即未通过。禁止使用“基本通过”等中间结论。
+该命令运行 node --test tests/*.test.cjs，包括原有 code-mode-providers.test.cjs 与新增 workbench-acceptance.test.cjs。原有 10 项和新增 5 项分别判定；任一专属测试失败、跳过、未执行或测试进程异常退出，对应项即未通过。禁止使用“基本通过”等中间结论。
 
 - **通过**：该项对应的专属 Node.js 自动化测试本次执行成功。
 - **未通过**：该项测试失败、被跳过、未执行，或测试无法完成。
@@ -169,3 +169,57 @@ npm test
 
 - **代码自动验收：** 10 项专属测试全部通过 = 通过；任一失败/跳过/未执行 = 未通过。
 - **最终交付：** 代码自动验收通过后，仍需按项目流程完成部署。
+
+## 6. 开发工作台行为验收（新增 5 项）
+
+新增测试文件：tests/workbench-acceptance.test.cjs。这 5 项调用实际 Worker 函数，并以隔离的 GitHub API/KV 模拟器检查分支指针、请求参数、提交树和最终文件差异；不会写入真实 GitHub 仓库或真实 main。它们是自动化行为测试，不等同于真实 GitHub 账号/权限/网络条件下的端到端验收。
+
+### WORKBENCH-01 — 临时分支隔离
+
+自动化测试：ACCEPTANCE BRANCH-01: temp branch creation and edit leave main unchanged
+
+测试覆盖：临时分支从 main 当前 SHA 创建；对临时分支提交变更后，main ref SHA 保持不变；临时分支 ref 指向新提交，main 仍指向原提交。
+
+通过条件：对应测试通过，且 main SHA 未变化。
+
+### WORKBENCH-02 — 主分支直接写入拦截
+
+自动化测试：ACCEPTANCE MAIN-01: direct main write is rejected by the workbench write guard
+
+测试覆盖：在没有活动临时分支、目标仍为 main 时调用开发台写入函数；写入必须在触发 GitHub 写工具前被拒绝。
+
+通过条件：对应测试通过，并确认抛出“已阻止直接写入 main”。
+
+### WORKBENCH-03 — 失败重试与局部回滚
+
+自动化测试：ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restores only listed paths
+
+测试覆盖：失败的 Actions run 重试必须调用同一个 run ID 的 rerun-failed-jobs，不能创建新的 run；重试计数增加，记录仍关联原 run ID；回滚创建以当前 SHA 为 parent 的新 commit，不 force 移动历史；回滚 tree 只包含历史记录列出的文件路径，其他当前文件继续由 current tree 保留。
+
+通过条件：对应测试通过，且同一 run ID 被重试、回滚只覆盖指定路径。
+
+### WORKBENCH-04 — 文件级审核
+
+自动化测试：ACCEPTANCE REVIEW-01: rejected file is absent from the final merge diff
+
+测试覆盖：模拟两个文件均有改动，只接受其中一个；合并前重新读取 compare 文件清单；被拒绝文件恢复为基线内容，不进入最终合并文件集合。
+
+通过条件：对应测试通过，最终合并差异不包含被拒绝文件，main 中该文件内容保持基线值。
+
+### WORKBENCH-05 — 并发修改冲突保护
+
+自动化测试：ACCEPTANCE CONFLICT-01: concurrent same-file edit blocks merge and preserves main
+
+测试覆盖：临时分支创建后，main 的基线 SHA 前进，代表另一方已提交变更；合并必须检测旧基线并返回 conflict；不得调用成功合并路径，不得静默覆盖 main 内容。
+
+通过条件：对应测试通过，冲突被拒绝且 main 文件内容保持并发提交版本。
+
+### 新增行为验收结果
+
+| 编号 | 自动化测试 | 通过条件 |
+|---|---|---|
+| WORKBENCH-01 | 临时分支隔离 | 临时分支变化，main SHA 不变 |
+| WORKBENCH-02 | 主分支直接写入拦截 | main 写入在调用 GitHub 前被拒绝 |
+| WORKBENCH-03 | 失败重试与局部回滚 | 重试复用原 run；回滚仅恢复清单内路径 |
+| WORKBENCH-04 | 文件级审核 | 拒绝文件不进入最终合并差异 |
+| WORKBENCH-05 | 并发修改冲突保护 | 旧基线触发冲突，main 不被覆盖 |
