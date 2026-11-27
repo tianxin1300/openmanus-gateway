@@ -1885,3 +1885,27 @@ test('codeMergeVerifiedPending refuses a changed branch SHA before calling merge
   assert.equal(finished[0], 'verification_failed');
   assert.equal(result.ok, false);
 });
+
+
+test('CodeClaimDO preserves verification_passed as the origin of the final merge claim', async () => {
+  const value = {
+    pending: { id: 'verified-pending', project: 'demo', status: 'verification_passed', verify_head_sha: 'abc1234', edits: [{ path: 'a.js' }] },
+    created_at: 1700000000000, expires_at: 1700000600000, version: 7, claims: {}, results: {}
+  };
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async put(key, next) { this.value = next; },
+    async setAlarm() {}
+  };
+  const DO = loadCodeClaimDO(async () => ({ ok: true, status: 204 }));
+  const instance = new DO({ storage }, {});
+  const response = await instance.fetch(new Request('https://code-claims/claim', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pending_id: 'verified-pending', version: 7, project: 'demo', operation_id: 'merge-op', yes: true })
+  }));
+  const result = await response.json();
+  assert.equal(result.ok, true);
+  assert.equal(storage.value.pending.claimed_from_status, 'verification_passed');
+  assert.equal(storage.value.pending.status, 'applying');
+});
