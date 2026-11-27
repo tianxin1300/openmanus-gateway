@@ -936,6 +936,27 @@ test('codeLLM: timeout skips the remaining keys for that model and advances to t
   assert.ok(result.tried.some(entry => entry.includes('custom/slow 超时')));
 });
 
+test('codeLLM: AbortError timeout also skips remaining keys for that model', async () => {
+  const { subject, calls } = loadCodeLLM((call, index) => {
+    if (index === 0) {
+      const error = new Error('aborted by timeout signal');
+      error.name = 'AbortError';
+      throw error;
+    }
+    return success('after abort timeout');
+  });
+  const result = await subject.codeLLM({
+    ...toterEnv, OPENROUTER_KEYS: 'or-key-a,or-key-b',
+    CODE_MODELS: 'custom/slow,custom/healthy'
+  }, messages);
+  assert.deepEqual(calls.map(call => [call.body.model, call.options.headers.Authorization]), [
+    ['custom/slow', 'Bearer or-key-a'],
+    ['custom/healthy', 'Bearer or-key-a']
+  ]);
+  assert.equal(result.text, 'after abort timeout');
+  assert.ok(result.tried.some(entry => entry.includes('custom/slow 超时')));
+});
+
 test('codeLLM: HTTP 404 skips the unavailable model and tries the next model', async () => {
   const { subject, calls } = loadCodeLLM((call, index) =>
     index === 0 ? failure(404) : success('after missing model'));
