@@ -9555,7 +9555,7 @@ export class CodeClaimDO {
     const expiresAt = value.expires_at || (createdAt ? createdAt + CODE_PENDING_TTL_MS : 0);
     if (p && p.status === "verification_pending" && p.verify_expires_at > Date.now()) { await this.storage.setAlarm(Math.min(p.verify_expires_at, Date.now() + 60000)); return; }
     if (p && p.status === "repairing" && p.repair_expires_at > Date.now()) { await this.storage.setAlarm(Math.min(p.repair_expires_at, Date.now() + 60000)); return; }
-    if (p && p.status === "repairing") { p.status = "verification_failed"; p.repair_error = "模型自动修复超过 4 分钟，已停止本轮修复"; p.created_at = Date.now(); value.created_at = Date.now(); value.expires_at = Date.now() + CODE_PENDING_TTL_MS; value.version = Number(value.version || 0) + 1; p.version = value.version; await this.storage.put("claim", value); await this.storage.setAlarm(value.expires_at); return; }
+    if (p && p.status === "repairing") { p.status = "verification_failed"; p.repair_error = "模型自动修复超过 8 分钟，已停止本轮修复"; p.created_at = Date.now(); value.created_at = Date.now(); value.expires_at = Date.now() + CODE_PENDING_TTL_MS; value.version = Number(value.version || 0) + 1; p.version = value.version; await this.storage.put("claim", value); await this.storage.setAlarm(value.expires_at); return; }
     if (expiresAt && expiresAt > Date.now()) { await this.storage.setAlarm(expiresAt); return; }
     if (p && ["applying", "discarding", "repairing"].includes(p.status)) {
       await this.storage.setAlarm(Date.now() + 60000);
