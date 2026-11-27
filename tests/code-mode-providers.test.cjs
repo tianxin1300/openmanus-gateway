@@ -71,6 +71,32 @@ function loadPendingVerificationHelpers(stubs = {}) {
   return sandbox;
 }
 
+
+function loadCodeRepairHelper(stubs = {}) {
+  const start = workerSource.indexOf('async function codeRepairPendingFromVerification');
+  const end = workerSource.indexOf('async function codeVerifyStatus', start);
+  assert.ok(start >= 0 && end > start, 'automatic repair helper must exist');
+  const source = workerSource.slice(start, end);
+  const sandbox = Object.assign({
+    codeClaimCall: async () => ({ ok: true, pending: { id: 'repair-p', repo: 'owner/repo', branch: 'code/demo', edits: [{ path: 'worker.js' }] } }),
+    codeFileTree: async () => ({ ok: true, files: ['worker.js'] }),
+    codePathOk: () => true,
+    codePathProtected: () => false,
+    codePushGuard: () => '',
+    codeGetFile: async () => ({ ok: true, exists: true, sha: 'old-sha', text: 'const before = 1;\\n' }),
+    codeCut: value => String(value),
+    codeVerifyRedact: value => String(value),
+    codeLLM: async () => ({ text: 'patch', from: 'OpenRouter · fake' }),
+    codeParseEdits: () => [{ path: 'worker.js', old: 'const before = 1;', new: 'const after = 2;' }],
+    codeApply: () => ({ errs: [], done: [{ path: 'worker.js' }], out: { 'worker.js': 'const after = 2;\\n' } }),
+    codeUpdateFile: async () => ({ ok: true }),
+    codeQueuePendingVerification: async () => ({ ok: true, pending: true, verification_pending: true }),
+    Date, String, Array, Set, Object, Math, Promise
+  }, stubs);
+  vm.runInNewContext(source + '\\n' + 'globalThis.runCodeRepair = codeRepairPendingFromVerification;', sandbox);
+  return sandbox;
+}
+
 function loadCodeClaimDO(deleteBranch) {
   const start = workerSource.indexOf('export class CodeClaimDO');
   const end = workerSource.indexOf('export class CodeRunnerDO', start);
@@ -1979,4 +2005,41 @@ test('automatic repair uses real Actions logs, source patches and a fresh verifi
   assert.match(status, /ctx\.waitUntil\(repair\)/);
   assert.match(frontendStudioSource, /自动修复中/);
   assert.match(frontendStudioSource, /function pollVerification\(\)/);
+});
+
+
+test('automatic repair reads failed logs, applies model SEARCH/REPLACE and queues fresh verification', async () => {
+  const calls = [];
+  const sandbox = loadCodeRepairHelper({
+    codeClaimCall: async (_env, _user, action, body) => {
+      calls.push(['claim', action, body]);
+      if (action === 'repair-claim') return { ok: true, pending: { id: 'repair-p', repo: 'owner/repo', branch: 'code/demo', edits: [{ path: 'worker.js' }] } };
+      return { ok: true, pending: { status: 'verification_pending' } };
+    },
+    codeFileTree: async () => ({ ok: true, files: ['worker.js', 'tests/a.test.js'] }),
+    codeGetFile: async (_env, _repo, path) => ({ ok: true, exists: true, sha: 'sha-' + path, text: 'source for ' + path }),
+    codeLLM: async (_env, messages) => {
+      calls.push(['model', messages[1].content]);
+      return { text: 'model patch', from: 'OpenRouter · fake' };
+    },
+    codeParseEdits: () => [{ path: 'worker.js', old: 'before', new: 'after' }],
+    codeApply: () => ({ errs: [], done: [{ path: 'worker.js' }], out: { 'worker.js': 'after' } }),
+    codeUpdateFile: async (_env, _repo, path, content, message, branch, sha) => {
+      calls.push(['update', path, content, branch, sha]);
+      return { ok: true };
+    },
+    codeQueuePendingVerification: async (_env, _user, pend, finish, edits) => {
+      calls.push(['verify', pend.repair_model, edits.length]);
+      return await finish('verification_pending', { ok: true, reply: 'queued' }, edits, { verify_request_id: 'req-2', verify_expected_sha: 'sha-2' });
+    }
+  });
+  const result = await sandbox.runCodeRepair({}, 'owner', {
+    pending_id: 'repair-p', request_id: 'req-1', run_id: 'run-1', expected_sha: 'sha-1',
+    failed_step: 'npm test', error_lines: ['worker.js:1 expected before']
+  });
+  assert.equal(result.ok, true);
+  assert.ok(calls.some(x => x[0] === 'model' && x[1].includes('worker.js:1 expected before')));
+  assert.ok(calls.some(x => x[0] === 'update' && x[1] === 'worker.js' && x[2] === 'after' && x[3] === 'code/demo' && x[4] === 'sha-worker.js'));
+  assert.ok(calls.some(x => x[0] === 'verify' && x[1] === 'OpenRouter · fake'));
+  assert.ok(calls.some(x => x[0] === 'claim' && x[1] === 'repair-finish'));
 });
