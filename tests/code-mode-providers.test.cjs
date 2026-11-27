@@ -459,7 +459,7 @@ test('P0-02/03: expiry and force-clear lock pending before deleting the GitHub b
   assert.match(claimDO, /action === "discard-release"/);
   assert.match(claimDO, /p\.status === "applying"[\s\S]*不能自动丢弃/);
   assert.match(claimDO, /p\.status !== "discarding"/);
-  assert.match(claimDO, /\["applying", "discarding"\]/);
+  assert.match(claimDO, /\["applying", "discarding", "repairing"\]/);
   assert.match(claimDO, /async alarm\(\)/);
   assert.match(claimDO, /this\.storage\.setAlarm\(now \+ CODE_PENDING_TTL_MS\)/);
   assert.match(claimDO, /GitHub 临时分支删除失败/);
