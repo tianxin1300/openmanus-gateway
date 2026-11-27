@@ -1762,6 +1762,7 @@ test('CodeClaimDO: verification accepts only its dispatched run and records SHA 
   assert.equal(storage.value.pending.status, 'verification_passed');
   assert.equal(storage.value.pending.verify_head_sha, 'abc1234');
   assert.equal(storage.value.version, 5);
+  assert.equal(storage.value.pending.version, 5);
 });
 
 test('CodeClaimDO: verification_pending extends expiry and cannot be claimed or discarded', async () => {
@@ -1791,4 +1792,30 @@ test('CodeClaimDO: verification_pending extends expiry and cannot be claimed or 
   }));
   assert.equal(discard.status, 409);
   assert.equal(storage.value.pending.status, 'verification_pending');
+});
+
+
+test('codeConfirm cannot merge before verification and both apply paths queue the same verification gate', () => {
+  const start = workerSource.indexOf('async function codeConfirm(');
+  const end = workerSource.indexOf('async function codeChatEntry', start);
+  const confirm = workerSource.slice(start, end);
+  assert.doesNotMatch(confirm, /codeMergeTempBranch\(/, 'codeConfirm must not call the merge API directly');
+  assert.match(confirm, /claimedFrom === "verification_passed"\) return await codeMergeVerifiedPending/);
+  assert.match(confirm, /claimedFrom === "verification_failed"\) return await codeQueuePendingVerification/);
+  assert.match(confirm, /if \(!paths\.length\) return await codeQueuePendingVerification/);
+  assert.match(confirm, /return await codeQueuePendingVerification\(env, user, pend, finish, pend\.edits\)/);
+  const merge = workerSource.slice(workerSource.indexOf('async function codeMergeVerifiedPending'), workerSource.indexOf('async function codeConfirm'));
+  assert.ok(merge.indexOf('currentSha !== String(pend.verify_head_sha || "")') < merge.indexOf('codeMergeTempBranch('));
+  assert.match(merge, /拒绝合并/);
+});
+
+test('codeVerifyStatus binds completed Actions run to the pending id, request id and expected SHA', () => {
+  const start = workerSource.indexOf('async function codeVerifyStatus(');
+  const end = workerSource.indexOf('async function codeGetFile', start);
+  const status = workerSource.slice(start, end);
+  assert.match(status, /old\.pending_id && old\.run_id && old\.status === "completed"/);
+  assert.match(status, /request_id: old\.request_id/);
+  assert.match(status, /expected_sha: old\.expected_sha/);
+  assert.match(status, /actual_sha: String\(old\.head_sha \|\| ""\)/);
+  assert.match(status, /codeClaimCall\(env, user, "verification"/);
 });
