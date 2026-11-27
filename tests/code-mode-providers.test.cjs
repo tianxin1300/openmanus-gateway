@@ -184,6 +184,7 @@ test('rollback creates a new commit and never force-moves the base branch', () =
   assert.match(rollback, /method: "POST"/);
   assert.match(rollback, /parents: \[currentSha\]/);
   assert.match(rollback, /force: false/);
+  assert.match(rollback, /codePushGuard\(env, user, repo, "frontend\/index\.html"\)/);
   assert.doesNotMatch(rollback, /force: true/);
   assert.doesNotMatch(rollback, /sha: item\.previous_sha, force/);
 });
@@ -265,6 +266,11 @@ test('workbench branch APIs persist project isolation, reject files on branch, a
   assert.match(workerSource, /path === "\/api\/code\/branch\/create"/);
   assert.match(workerSource, /path === "\/api\/code\/branch\/merge"/);
   assert.match(workerSource, /path === "\/api\/code\/branch\/discard"/);
+});
+
+test('project temp branches use readable repo names and decimal timestamps', () => {
+  assert.match(workerSource, /return "code\/" \+ tag \+ "-" \+ Date\.now\(\) \+ "-" \+ rand\(8\)/);
+  assert.match(workerSource, /codeCreateTempBranch\(env, proj\.repo, proj\.repo\.split\("\/"\)\.pop\(\), branch\)/);
 });
 
 test('workbench change review exposes per-file patches and guards branch mutations', () => {
