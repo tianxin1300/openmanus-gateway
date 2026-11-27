@@ -625,7 +625,7 @@ test('ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01: create and merge refuse to run w
     codeWorkbenchBranchMergeUnlocked: async () => { throw new Error('must not execute'); }
   });
   const saveWrapper = sourceOf('async function codeWorkbenchBranchSaveFileUnlocked(', 'async function codeWorkbenchBranchPreview(');
-  const save = runFunction(helper + '\\n' + saveWrapper, 'codeWorkbenchBranchSaveFile', {
+  const save = runFunction(helper + '\n' + saveWrapper, 'codeWorkbenchBranchSaveFile', {
     codeWorkbenchBranchSaveFileUnlocked: async () => { throw new Error('must not execute'); }
   });
   const noBinding = {};
