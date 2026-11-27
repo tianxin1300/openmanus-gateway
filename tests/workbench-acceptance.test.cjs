@@ -65,7 +65,7 @@ test('ACCEPTANCE REVIEW-01: rejected file is absent from the final merge diff', 
   const record = { project: 'acceptance', repo: 'tianxin1300/openmanus-gateway', branch: 'code/acceptance-001', baseBranch: 'main', baseCommit: 'base-sha' };
   const history = [];
   let mergedFiles;
-  const merge = runFunction(sourceOf('async function codeWorkbenchBranchMerge(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMerge', {
+  const merge = runFunction(sourceOf('async function codeWorkbenchBranchMergeUnlocked(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMerge', {
     codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'branch-key',
     codeGhApi: async (_env, url) => {
       if (url.includes('/compare/')) return { ok: true, data: { files: Object.keys(branch).filter(k => branch[k] !== main[k]).map(filename => ({ filename })) } };
@@ -92,7 +92,7 @@ test('ACCEPTANCE REVIEW-01: rejected file is absent from the final merge diff', 
 test('ACCEPTANCE CONFLICT-01: concurrent same-file edit blocks merge and preserves main', async () => {
   const before = { 'shared.txt': 'person-B-version' }, main = { ...before };
   const record = { project: 'acceptance', repo: 'tianxin1300/openmanus-gateway', branch: 'code/acceptance-conflict', baseBranch: 'main', baseCommit: 'old-base-sha' };
-  const merge = runFunction(sourceOf('async function codeWorkbenchBranchMerge(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMerge', {
+  const merge = runFunction(sourceOf('async function codeWorkbenchBranchMergeUnlocked(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMerge', {
     codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
     codeGhApi: async (_env, url) => {
       if (url.includes('/compare/')) return { ok: true, data: { files: [{ filename: 'shared.txt' }] } };
@@ -184,7 +184,7 @@ test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, review, o
     put: async () => {}, delete: async () => {}
   }};
   let writes = 0;
-  const create = runFunction(sourceOf('async function codeWorkbenchBranchCreate(', 'async function codeWorkbenchBranchDiff('), 'codeWorkbenchBranchCreate', {
+  const create = runFunction(sourceOf('async function codeWorkbenchBranchCreateUnlocked(', 'async function codeWorkbenchBranchDiff('), 'codeWorkbenchBranchCreate', {
     codeRepoOk: () => true, codePushGuard: guard, codeVerifyRef: x => x,
     codeWorkbenchBranchKey: () => 'key', codeCreateTempBranch: async () => { writes++; return { ok: true, branch: 'code/new', base: 'main', sha: 'base' }; },
     codeGitRefUrl: () => 'https://api.github.com/ref',
@@ -196,7 +196,7 @@ test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, review, o
     codeWorkbenchBranchKey: () => 'key', codeGetFile: async () => { writes++; return { ok: true, exists: true, text: 'x', sha: 'blob' }; },
     codeUpdateFile: async () => { writes++; return { ok: true }; }
   });
-  const merge = runFunction(sourceOf('async function codeWorkbenchBranchMerge(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMerge', {
+  const merge = runFunction(sourceOf('async function codeWorkbenchBranchMergeUnlocked(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMerge', {
     codeRepoOk: () => true, codePushGuard: guard, codeWorkbenchBranchKey: () => 'key',
     codeGhApi: async () => { writes++; return { ok: true, data: {} }; },
     codeMergeTempBranch: async () => { writes++; return { ok: true, data: { sha: 'merged' } }; }
@@ -207,7 +207,7 @@ test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, review, o
   assert.equal(writes, 0, 'unauthorized calls must not reach GitHub writes');
 
   const createdKV = { value: null, async put(_k, v) { this.value = JSON.parse(v); }, async get() { return null; } };
-  const authorizedCreate = runFunction(sourceOf('async function codeWorkbenchBranchCreate(', 'async function codeWorkbenchBranchDiff('), 'codeWorkbenchBranchCreate', {
+  const authorizedCreate = runFunction(sourceOf('async function codeWorkbenchBranchCreateUnlocked(', 'async function codeWorkbenchBranchDiff('), 'codeWorkbenchBranchCreate', {
     codeRepoOk: () => true, codePushGuard: () => '', codeVerifyRef: x => x,
     codeWorkbenchBranchKey: () => 'key', codeCreateTempBranch: async () => ({ ok: true, branch: 'code/authorized', base: 'main', sha: 'base' }),
     codeTempPreview: () => '', codeGitRefUrl: () => '', codeGhApi: async () => ({ ok: true }),
@@ -218,7 +218,7 @@ test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, review, o
   assert.equal(createdKV.value.created_by, 'owner', 'branch creation audit records the authenticated actor');
 
   const history = [];
-  const authorizedMerge = runFunction(sourceOf('async function codeWorkbenchBranchMerge(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMerge', {
+  const authorizedMerge = runFunction(sourceOf('async function codeWorkbenchBranchMergeUnlocked(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMerge', {
     codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
     codeGhApi: async (_env, url) => {
       if (url.includes('/compare/')) return { ok: true, data: { files: [{ filename: 'a.js' }] } };
@@ -244,7 +244,7 @@ test('ACCEPTANCE IDEMPOTENCY-01: repeated create reuses one branch and repeated 
     async put(_k, value) { record = JSON.parse(value); },
     async delete() { record = null; }
   };
-  const create = runFunction(sourceOf('async function codeWorkbenchBranchCreate(', 'async function codeWorkbenchBranchDiff('), 'codeWorkbenchBranchCreate', {
+  const create = runFunction(sourceOf('async function codeWorkbenchBranchCreateUnlocked(', 'async function codeWorkbenchBranchDiff('), 'codeWorkbenchBranchCreate', {
     codeRepoOk: () => true, codePushGuard: () => '', codeVerifyRef: x => x,
     codeWorkbenchBranchKey: () => 'key', codeTempBranch: () => 'code/p-idempotent',
     codeCreateTempBranch: async () => { branchCreates++; return { ok: true, branch: 'code/p-idempotent', base: 'main', sha: 'base' }; },
@@ -259,7 +259,7 @@ test('ACCEPTANCE IDEMPOTENCY-01: repeated create reuses one branch and repeated 
   assert.equal(second.existing, true);
   assert.equal(branchCreates, 1, 'duplicate create must reuse the active branch');
 
-  const merge = runFunction(sourceOf('async function codeWorkbenchBranchMerge(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMerge', {
+  const merge = runFunction(sourceOf('async function codeWorkbenchBranchMergeUnlocked(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMerge', {
     codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
     codeGhApi: async (_env, url) => {
       if (url.includes('/compare/')) return { ok: true, data: { files: [{ filename: 'a.js' }] } };
@@ -326,7 +326,7 @@ test('ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rej
     { filename: 'deleted.js', status: 'removed' }
   ];
   let compareCount = 0, mergeFiles = [], rejected = [];
-  const merge = runFunction(sourceOf('async function codeWorkbenchBranchMerge(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMerge', {
+  const merge = runFunction(sourceOf('async function codeWorkbenchBranchMergeUnlocked(', 'async function codeMemoryAppend('), 'codeWorkbenchBranchMerge', {
     codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
     codeGhApi: async (_env, url) => {
       if (url.includes('/compare/')) return { ok: true, data: { files: compareCount++ === 0 ? changes : [{ filename: 'keep.js' }, { filename: 'add.js' }] } };
@@ -371,7 +371,7 @@ test('ACCEPTANCE CLEANUP-01: failed deletion retains recoverable state; successf
   assert.equal(deletes, 2);
 
   // A fresh task can create a new isolated branch after cancellation.
-  const create = runFunction(sourceOf('async function codeWorkbenchBranchCreate(', 'async function codeWorkbenchBranchDiff('), 'codeWorkbenchBranchCreate', {
+  const create = runFunction(sourceOf('async function codeWorkbenchBranchCreateUnlocked(', 'async function codeWorkbenchBranchDiff('), 'codeWorkbenchBranchCreate', {
     codeRepoOk: () => true, codePushGuard: () => '', codeVerifyRef: x => x,
     codeWorkbenchBranchKey: () => 'key', codeCreateTempBranch: async () => ({ ok: true, branch: 'code/next-task', base: 'main', sha: 'base2' }),
     codeTempPreview: () => '', codeGitRefUrl: () => '', codeGhApi: async () => ({ ok: true })
