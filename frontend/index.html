@@ -4225,6 +4225,79 @@ function splitParts(md, lim = EXP_PART_CP) {
 
 #fp-out{max-height:34vh}#fp-info{max-height:15vh}#fp-info,#fp-out{margin-top:9px}
 .fp-chip{flex:1;min-width:0;color:#8a9a8c;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fp-chip.on{color:#2f6b3c;font-weight:700}
+
+/* Mobile-first density pass: keep the conversation and composer dominant. */
+@media(max-width:700px){
+  #head{min-height:54px!important;padding:6px 8px!important;gap:6px!important;flex-wrap:nowrap!important}
+  #menu{width:34px!important;height:34px!important;flex:0 0 34px!important}
+  .head-title{flex:0 1 auto!important;min-width:0!important;gap:5px!important}
+  .title-mark{width:22px!important;height:22px!important;flex:0 0 22px!important}
+  #head h3{max-width:112px;font-size:12px!important;letter-spacing:0!important}
+  #head .sp{display:none!important}
+  .head-actions{flex:1 1 0!important;min-width:0!important;max-width:100%!important;display:flex!important;flex-wrap:nowrap!important;overflow-x:auto!important;overflow-y:hidden!important;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;gap:4px!important;padding:0 1px!important;scroll-snap-type:x proximity}
+  .head-actions::-webkit-scrollbar{display:none}
+  .header-action{flex:0 0 34px!important;width:34px!important;min-width:34px!important;height:34px!important;padding:0!important;gap:0!important;border-radius:10px!important;scroll-snap-align:start}
+  .header-action .action-label{display:none!important}
+  .header-action .action-icon{width:26px!important;height:26px!important;border-radius:8px!important;font-size:14px!important}
+  #head .more-button{width:34px!important;min-width:34px!important;height:34px!important;flex:0 0 34px!important;margin:0!important;border-radius:10px!important}
+  #more-menu{right:8px!important;top:calc(100% + 5px)!important;width:min(250px,calc(100vw - 16px))!important}
+  #status{max-width:calc(100% - 24px)!important;margin:6px auto 0!important;padding:4px 8px!important;font-size:10px!important}
+  #msgs{min-height:0;padding:10px 10px 14px!important;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+  .row{gap:6px!important;margin:0 auto 10px!important}
+  .row:before{width:26px!important;height:26px!important;flex-basis:26px!important;border-radius:8px!important}
+  .bub{max-width:calc(100% - 32px)!important;padding:10px 11px!important;border-radius:13px!important;font-size:13px!important;line-height:1.62!important}
+  .user .bub{max-width:90%!important}
+  .bub h1{font-size:18px!important;margin:11px 0 6px!important}
+  .bub h2{font-size:16px!important;margin:10px 0 6px!important}
+  .bub h3{font-size:14px!important;margin:9px 0 5px!important}
+  .bub ul,.bub ol{padding-left:20px!important;margin:5px 0 8px!important}
+  .bub pre{max-height:42vh;padding:10px!important;font-size:11px!important;line-height:1.55!important}
+  .bub table{display:block;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tools{flex-wrap:nowrap!important;overflow-x:auto!important;gap:5px!important;padding:2px 0 4px;scrollbar-width:none}
+  .tools::-webkit-scrollbar{display:none}
+  .tools button{flex:0 0 auto;min-height:32px;padding:5px 9px!important;font-size:11px!important}
+  .art-card{max-width:100%!important;margin:6px 0!important;padding:9px 10px!important;border-radius:11px!important}
+  .suggestions{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:7px!important;margin:14px 0 0!important}
+  .suggestions .suggestion:not(.map-assist){min-height:0!important;padding:9px 10px!important;border-radius:11px!important;box-shadow:none!important}
+  .suggestions .suggestion:not(.map-assist) .suggestion-icon{width:24px!important;height:24px!important;margin:0 6px 5px 0!important;border-radius:7px!important;font-size:12px!important}
+  .suggestions .suggestion:not(.map-assist) .suggestion-title{font-size:12px!important;line-height:1.35}
+  .suggestions .suggestion:not(.map-assist) .suggestion-copy{display:none!important}
+  .suggestions .map-assist,.suggestions .cat-box,.suggestions .map-panel{grid-column:1/-1!important}
+  .cat-tabs{overflow-x:auto!important;flex-wrap:nowrap!important;gap:6px!important;padding:1px 0 5px;scrollbar-width:none}
+  .cat-tabs::-webkit-scrollbar{display:none}
+  .cat-tab{flex:0 0 auto;padding:6px 12px!important;font-size:12px!important}
+  .cat-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:7px!important}
+  .cat-grid .suggestion{padding:9px!important}
+  .cat-grid .suggestion-copy{display:none!important}
+  .map-chips{flex-wrap:nowrap!important;overflow-x:auto!important;scrollbar-width:none}
+  .map-chips::-webkit-scrollbar{display:none}
+  .map-chips button{flex:0 0 auto!important;min-width:0!important;padding:7px 10px!important;font-size:12px!important}
+  #comp{padding:6px 8px calc(7px + env(safe-area-inset-bottom))!important}
+  #box{gap:4px!important;padding:5px!important;border-radius:14px!important}
+  #clip{width:34px!important;height:34px!important;flex:0 0 34px!important;border-radius:10px!important}
+  .composer-field{min-width:0!important}
+  .composer-field textarea{min-height:36px!important;max-height:112px!important;padding:7px 2px 2px!important;font-size:16px!important;line-height:1.45!important}
+  .composer-mic{width:34px!important;height:34px!important;flex:0 0 34px!important}
+  #send{width:36px!important;min-width:36px!important;height:36px!important;flex-basis:36px!important}
+  #loc-toggle{max-width:34px!important;min-width:34px!important;height:34px!important;padding:0!important;overflow:hidden!important}
+  #loc-toggle span{display:none!important}
+  #att{gap:5px!important;margin-bottom:5px!important;max-height:62px;overflow:auto}
+  #att .chip{max-width:100%;font-size:10px!important}
+  #tr-tray,#fp-tray{margin-top:5px!important;padding:8px!important;border-radius:11px!important}
+  .tr-out{max-height:28vh!important}
+  #tobottom{right:12px!important;bottom:112px!important;width:34px!important;height:34px!important}
+}
+@media(max-width:390px){
+  #head h3{max-width:84px!important;font-size:11px!important}
+  .title-mark{display:none!important}
+  .head-actions{gap:3px!important}
+  .header-action{flex-basis:32px!important;width:32px!important;min-width:32px!important}
+  #head .more-button{width:32px!important;min-width:32px!important;flex-basis:32px!important}
+  #msgs{padding-left:8px!important;padding-right:8px!important}
+  .suggestions{gap:6px!important}
+}
+@media(prefers-reduced-motion:reduce){.head-actions{scroll-behavior:auto!important}}
+
 </style>
 <script>
 /* v31：折叠输入框 + 语音输入（点一下开始/结束；长按说话，松开结束）；看图/联网搜索两个开关收进「＋」面板 */

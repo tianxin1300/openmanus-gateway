@@ -1593,3 +1593,16 @@ test('homepage studio exposes a real simultaneous-deploy event button with persi
   assert.match(workerSource, /if \(path === "\/api\/code\/both" && request\.method === "POST"\)/);
   assert.match(workerSource, /if \(path === "\/api\/code\/both" && request\.method === "GET"\)/);
 });
+
+
+test('homepage mobile layout keeps the header toolbar swipeable and compresses chat cards and composer', () => {
+  assert.match(frontendSource, /\.head-actions\{[^}]*overflow-x:auto!important/s);
+  assert.match(frontendSource, /\.header-action \.action-label\{display:none!important\}/);
+  assert.match(frontendSource, /#more-menu\{right:8px!important/);
+  assert.match(frontendSource, /\.suggestions\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)!important/);
+  assert.match(frontendSource, /\.suggestion-copy\{display:none!important\}/);
+  assert.match(frontendSource, /\.bub\{max-width:calc\(100% - 32px\)!important;padding:10px 11px!important/);
+  assert.match(frontendSource, /\.composer-field textarea\{min-height:36px!important;max-height:112px!important/);
+  assert.match(frontendSource, /\.cat-tabs\{overflow-x:auto!important/);
+  assert.match(frontendSource, /\.tools\{flex-wrap:nowrap!important;overflow-x:auto!important/);
+});
