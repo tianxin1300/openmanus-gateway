@@ -148,3 +148,5 @@ jobs:
             core.info('PASS: disposable branches and test commit were created and deleted; main SHA remained unchanged.');
             if (prPolicyBlocked) core.warning('PR create/close E2E remains unverified until the repository Actions setting is enabled.');
             else core.info('PASS: disposable PR was created, verified open/unmerged, and closed.');
+
+# Re-trigger GitHub API lifecycle verification after repository Actions PR policy was enabled.
