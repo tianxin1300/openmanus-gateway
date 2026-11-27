@@ -2024,6 +2024,30 @@ test('CodeClaimDO: automatic repair is single-flight, bounded and re-verifies af
   assert.ok(events.length > 0);
 });
 
+test('CodeClaimDO alarm releases a stalled model repair without deleting its branch record', async () => {
+  const value = {
+    pending: { id: 'repair-timeout', status: 'repairing', repair_expires_at: 1699999999000, repair_attempts: 1, edits: [{ path: 'worker.js' }] },
+    created_at: 1699999000000, expires_at: 1700000000000, version: 3, claims: {}, results: {}
+  };
+  const alarms = [];
+  let deleted = false;
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async put(key, next) { this.value = next; },
+    async setAlarm(at) { alarms.push(at); },
+    async delete() { deleted = true; }
+  };
+  const DO = loadCodeClaimDO(async () => ({ ok: true }));
+  const instance = new DO({ storage }, {});
+  await instance.alarm();
+  assert.equal(storage.value.pending.status, 'verification_failed');
+  assert.match(storage.value.pending.repair_error, /超过 8 分钟/);
+  assert.ok(storage.value.expires_at > 1700000000000);
+  assert.ok(alarms.includes(storage.value.expires_at));
+  assert.equal(deleted, false, 'stalled repair must keep the temporary branch and pending record');
+});
+
 test('automatic repair uses real Actions logs, source patches and a fresh verification dispatch', () => {
   const start = workerSource.indexOf('async function codeRepairPendingFromVerification');
   const end = workerSource.indexOf('async function codeVerifyStatus', start);
