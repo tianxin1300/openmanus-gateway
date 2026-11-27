@@ -2002,7 +2002,8 @@ test('automatic repair uses real Actions logs, source patches and a fresh verifi
   const statusEnd = workerSource.indexOf('async function codeGetFile', statusStart);
   const status = workerSource.slice(statusStart, statusEnd);
   assert.match(status, /old\.pending_status === "verification_failed"/);
-  assert.match(status, /ctx\.waitUntil\(repair\)/);
+  assert.match(status, /await codeRepairPendingFromVerification\(env, user, old\)/);
+  assert.match(status, /if \(env\.KV\) await env\.KV\.put\(codeVerifyKey\(user\), JSON\.stringify\(old\)/);
   assert.match(frontendStudioSource, /自动修复中/);
   assert.match(frontendStudioSource, /function pollVerification\(\)/);
 });
