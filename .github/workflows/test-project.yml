@@ -192,7 +192,9 @@ jobs:
             const worker = fs.readFileSync('worker.js', 'utf8');
             const start = worker.indexOf('function codeGitRefUrl(');
             const end = worker.indexOf('const codeHistoryKey =', start);
-            if (start < 0 || end <= start) throw new Error('Could not isolate Worker Git helper source');
+            const mergeStart = worker.indexOf('async function codeWorkbenchBranchMergeUnlocked(');
+            const mergeEnd = worker.indexOf('async function codeMemoryAppend(', mergeStart);
+            if (start < 0 || end <= start || mergeStart < 0 || mergeEnd <= mergeStart) throw new Error('Could not isolate Worker merge source');
             const ghApi = async (_env, url, options = {}) => {
               try {
                 if (injectRace && options.method === 'PATCH' && url.endsWith(`/git/refs/heads/${casBaseBranch}`)) {
@@ -222,15 +224,26 @@ jobs:
                 return { ok: false, status: error.status || 0, msg: error.message, data: error.response && error.response.data };
               }
             };
+            let history = [];
             const sandbox = {
               URL, Date, Math, JSON, crypto: require('node:crypto').webcrypto,
               rand: () => runKey.slice(-8),
               codeVerifyRef: value => /^[A-Za-z0-9._/-]{1,120}$/.test(String(value)) ? String(value) : null,
+              codeRepoOk: () => true,
+              codePushGuard: () => '',
+              codeWorkbenchBranchKey: () => 'e2e-workbench-record',
+              codeHistoryLoad: async () => history,
+              codeHistorySave: async (_env, _user, rows) => { history = rows; },
+              codePathOk: path => typeof path === 'string' && !!path && !path.startsWith('/') && !path.split('/').some(part => !part || part === '.' || part === '..'),
               codeGhApi: ghApi,
               codeGitRefUrl: (r, ref) => `https://api.github.com/repos/${r}/git/ref/${String(ref).split('/').map(encodeURIComponent).join('/')}`,
               codeGitRefWriteUrl: (r, ref) => `https://api.github.com/repos/${r}/git/refs/${String(ref).split('/').map(encodeURIComponent).join('/')}`
             };
-            vm.runInNewContext(worker.slice(start, end) + '\nglobalThis.__merge = codeMergeTempBranch;', sandbox);
+            vm.runInNewContext(
+              worker.slice(start, end) + '\\n' + worker.slice(mergeStart, mergeEnd) +
+              '\\nglobalThis.__merge = codeMergeTempBranch; globalThis.__workbenchMerge = codeWorkbenchBranchMergeUnlocked;',
+              sandbox
+            );
             try {
               await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${baseBranch}`, sha: baseSha });
               baseCreated = true;
@@ -247,14 +260,24 @@ jobs:
                 tree: tree.data.sha, parents: [baseSha]
               });
               await github.rest.git.updateRef({ owner, repo, ref: `heads/${headBranch}`, sha: headCommit.data.sha, force: false });
-              result = await sandbox.__merge(
-                {}, `${owner}/${repo}`, headBranch, baseBranch,
-                `real Worker merge E2E ${runKey}`, baseSha, headCommit.data.sha
+              let workbenchRecord = { project: 'e2e', repo: `${owner}/${repo}`, branch: headBranch, baseBranch, baseCommit: baseSha, status: 'active' };
+              const workbenchEnv = { KV: {
+                get: async () => workbenchRecord,
+                delete: async () => { workbenchRecord = null; },
+                put: async (_key, value) => { workbenchRecord = JSON.parse(value); }
+              } };
+              result = await sandbox.__workbenchMerge(
+                workbenchEnv, 'github-actions-e2e',
+                { repo: `${owner}/${repo}`, branch: headBranch, summary: `real Worker workbench merge E2E ${runKey}` }
               );
-              if (!result.ok) throw new Error(`Worker merge helper failed against real GitHub API: ${result.msg}`);
+              if (!result.ok || !result.branch_deleted) throw new Error(`Full Worker workbench merge failed against real GitHub API: ${result.msg}`);
+              if (workbenchRecord !== null) throw new Error('Successful workbench merge did not clear its branch record');
+              if (!history.length || history[0].actor !== 'github-actions-e2e' || history[0].commit_sha !== result.commit_sha) {
+                throw new Error('Workbench merge history did not record the authenticated actor and resulting commit');
+              }
               const target = await github.rest.git.getRef({ owner, repo, ref: `heads/${baseBranch}` });
-              if (target.data.object.sha !== result.data.sha) throw new Error('Target ref does not point to the Worker merge commit');
-              const mergedCommit = await github.rest.git.getCommit({ owner, repo, commit_sha: result.data.sha });
+              if (target.data.object.sha !== result.commit_sha) throw new Error('Target ref does not point to the Worker workbench merge commit');
+              const mergedCommit = await github.rest.git.getCommit({ owner, repo, commit_sha: result.commit_sha });
               const parents = mergedCommit.data.parents.map(parent => parent.sha);
               if (parents.length !== 2 || parents[0] !== baseSha || parents[1] !== headCommit.data.sha) {
                 throw new Error(`Unexpected merge commit parents: ${parents.join(',')}`);
@@ -277,14 +300,21 @@ jobs:
                 tree: casTree.data.sha, parents: [baseSha]
               });
               await github.rest.git.updateRef({ owner, repo, ref: `heads/${casHeadBranch}`, sha: casHeadCommit.data.sha, force: false });
+              let casRecord = { project: 'e2e-cas', repo: `${owner}/${repo}`, branch: casHeadBranch, baseBranch: casBaseBranch, baseCommit: baseSha, status: 'active' };
+              const casEnv = { KV: {
+                get: async () => casRecord,
+                delete: async () => { casRecord = null; },
+                put: async (_key, value) => { casRecord = JSON.parse(value); }
+              } };
               injectRace = true;
-              const casResult = await sandbox.__merge(
-                {}, `${owner}/${repo}`, casHeadBranch, casBaseBranch,
-                `real Worker CAS E2E ${runKey}`, baseSha, casHeadCommit.data.sha
+              const casResult = await sandbox.__workbenchMerge(
+                casEnv, 'github-actions-e2e',
+                { repo: `${owner}/${repo}`, branch: casHeadBranch, summary: `real Worker workbench CAS E2E ${runKey}` }
               );
-              if (casResult.ok || !casResult.cas_rejected || !casResult.conflict) {
-                throw new Error(`Worker failed to reject concurrent base advance: ${JSON.stringify(casResult)}`);
+              if (casResult.ok || !casResult.conflict) {
+                throw new Error(`Full Worker workbench merge failed to surface concurrent base conflict: ${JSON.stringify(casResult)}`);
               }
+              if (casRecord === null || history.length !== 1) throw new Error('CAS conflict must preserve the temp record and avoid adding merge history');
               const casTarget = await github.rest.git.getRef({ owner, repo, ref: `heads/${casBaseBranch}` });
               if (casTarget.data.object.sha !== raceCommitSha) throw new Error('CAS failure overwrote the competing base commit');
               core.info(`PASS: exact Worker merge helper rejected non-fast-forward CAS and preserved competing commit ${raceCommitSha}.`);
@@ -294,7 +324,7 @@ jobs:
               for (const [branch, created] of [[headBranch, headCreated], [baseBranch, baseCreated], [casHeadBranch, casHeadCreated], [casBaseBranch, casBaseCreated]]) {
                 if (!created) continue;
                 try { await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` }); }
-                catch (error) { failure = failure || error; core.error(`Failed to clean ${branch}: ${error.message}`); }
+                catch (error) { if (error.status !== 404) { failure = failure || error; core.error(`Failed to clean ${branch}: ${error.message}`); } }
               }
               try {
                 const mainAfter = (await github.rest.git.getRef({ owner, repo, ref: 'heads/main' })).data.object.sha;
