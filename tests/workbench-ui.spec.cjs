@@ -19,6 +19,7 @@ function fixtures() {
     branchStatus: "active",
     discardFailure: false,
     discardAuditFailuresRemaining: 0,
+    discardRecovery: false,
     discardCalls: 0,
     history: [],
     rejected: [],
@@ -48,8 +49,8 @@ async function installApiFixtures(page, state) {
     });
 
     if (path.endsWith("/branch/current")) {
-      return json(state.active
-        ? { ok: true, active: true, repo: REPO, branch: BRANCH, baseBranch: "main", baseCommit: "base-sha", project: "openmanus-gateway", status: state.branchStatus }
+      return json(state.active || state.discardRecovery
+        ? { ok: true, active: true, repo: REPO, branch: BRANCH, baseBranch: "main", baseCommit: "base-sha", project: "openmanus-gateway", status: state.discardRecovery ? "discard_history_failed" : state.branchStatus, discard_recovery: state.discardRecovery, branch_deleted: state.discardRecovery }
         : { ok: true, active: false });
     }
     if (path.endsWith("/branch/create") && method === "POST") {
@@ -119,9 +120,11 @@ async function installApiFixtures(page, state) {
       if (state.discardAuditFailuresRemaining > 0) {
         state.discardAuditFailuresRemaining--;
         state.active = false;
-        return json({ ok: false, discarded: true, branch_deleted: true, audit_saved: false, msg: "临时分支已删除，但操作者审计记录写入失败" }, 400);
+        state.discardRecovery = true;
+        return json({ ok: false, discarded: true, branch_deleted: true, audit_saved: false, recovery_record_saved: true, msg: "临时分支已删除，但操作者审计记录写入失败" }, 400);
       }
       state.active = false;
+      state.discardRecovery = false;
       state.history.unshift({ id: "workbench-discard-" + BRANCH, kind: "workbench_discard", action: "discard", actor: "playwright-user", repo: REPO, branch: BRANCH, at: "2026-11-27T14:00:00Z" });
       return json({ ok: true, main_untouched: true, audit_saved: true, reply: "临时分支已删除，main 未改变。" });
     }
@@ -390,6 +393,12 @@ test("discard audit failure keeps a retry path after the branch is already delet
   await expect.poll(() => state.discardCalls).toBe(1);
   await expect(page.getByText("临时分支已删除，审计/状态清理待完成")).toBeVisible();
   await expect(page.locator("#wb-branch")).toContainText("code/");
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await openWorkbench(page);
+  await expect(page.locator("#wb-branch")).toContainText("审计待补写");
+  await expect(page.locator("#wb-save")).toBeDisabled();
+  await expect(page.locator("#wb-push")).toBeDisabled();
 
   await page.locator("#wb-discard").click();
   await expect.poll(() => state.discardCalls).toBe(2);
