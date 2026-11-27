@@ -40,6 +40,34 @@ function makeRejectHarness(overrides = {}) {
   return { reject, env, stats };
 }
 
+function makeMergeHarness(options = {}) {
+  const state = {
+    record: { project: 'p', repo: 'owner/repo', branch: 'code/p', baseBranch: 'main', baseCommit: 'base-sha', status: 'active' },
+    history: [], mergeCalls: 0, deleteCalls: 0, kvDeleteCalls: 0
+  };
+  const merge = runFunction(sourceOf('async function codeWorkbenchBranchMergeUnlocked(', 'async function codeWorkbenchBranchMerge('), 'codeWorkbenchBranchMergeUnlocked', {
+    codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'branch-key',
+    codeGhApi: async (_env, url) => {
+      if (url.includes('/compare/')) return { ok: true, data: { files: [{ filename: 'app.js' }] } };
+      if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: 'base-sha' } } };
+      throw new Error('unexpected merge API ' + url);
+    },
+    codeGitRefUrl: (_repo, ref) => 'https://api.github.com/repos/owner/repo/git/ref/' + ref,
+    codeMergeTempBranch: async () => { state.mergeCalls++; return { ok: true, data: { sha: 'merged-sha' } }; },
+    codeHistoryLoad: async () => state.history,
+    codeHistorySave: async (_env, _user, rows) => { state.history = rows; },
+    codeDeleteBranch: async () => { state.deleteCalls++; return { ok: true }; },
+    ...options.globals
+  });
+  const env = { KV: {
+    get: async () => state.record,
+    put: async (_key, value) => { state.record = JSON.parse(value); },
+    delete: async () => { state.kvDeleteCalls++; state.record = null; }
+  } };
+  if (options.kvDelete) env.KV.delete = options.kvDelete;
+  return { merge, env, state };
+}
+
 test('ACCEPTANCE BRANCH-01: temp branch creation and edit leave main unchanged', async () => {
   const refs = { main: 'main-commit-001' };
   const create = runFunction(sourceOf('async function codeCreateTempBranch(', 'async function codeMergeTempBranch('), 'codeCreateTempBranch', {
@@ -664,4 +692,69 @@ test('ACCEPTANCE REVIEW-WRITE-02: failed deletion of a rejected added file is no
   const result = await h.reject(h.env, 'reviewer', { repo: 'owner/repo', path: 'new.js' });
   assert.equal(result.ok, false);
   assert.equal(h.stats.audits, 0);
+});
+
+
+test('ACCEPTANCE MERGE-HISTORY-RECOVERY-01: history failure is retried without merging twice', async () => {
+  let saveCalls = 0, deleteCalls = 0;
+  const h = makeMergeHarness({
+    globals: {
+      codeHistorySave: async (_env, _user, rows) => { saveCalls++; if (saveCalls === 1) throw new Error('history KV unavailable'); },
+      codeDeleteBranch: async () => { deleteCalls++; return { ok: true }; }
+    }
+  });
+  const first = await h.merge(h.env, 'owner', { repo: 'owner/repo', branch: 'code/p' });
+  assert.equal(first.ok, false);
+  assert.equal(first.merged, true);
+  assert.equal(h.state.record.status, 'merged_history_failed');
+  assert.equal(deleteCalls, 0, 'branch is retained until history is safely saved');
+  assert.equal(h.state.mergeCalls, 1);
+  const second = await h.merge(h.env, 'owner', { repo: 'owner/repo', branch: 'code/p' });
+  assert.equal(second.ok, true);
+  assert.equal(second.cleanup_retry, true);
+  assert.equal(h.state.mergeCalls, 1, 'retry must not call GitHub merge again');
+  assert.equal(deleteCalls, 1);
+});
+
+test('ACCEPTANCE MERGE-CLEANUP-01: branch deletion failure is retried without a second merge', async () => {
+  let deleteCalls = 0;
+  const h = makeMergeHarness({
+    globals: {
+      codeDeleteBranch: async () => { deleteCalls++; return deleteCalls === 1
+        ? { ok: false, status: 500, msg: 'GitHub unavailable' }
+        : { ok: true }; }
+    }
+  });
+  const first = await h.merge(h.env, 'owner', { repo: 'owner/repo', branch: 'code/p' });
+  assert.equal(first.ok, false);
+  assert.equal(first.merged, true);
+  assert.equal(h.state.record.status, 'merged_cleanup_failed');
+  const second = await h.merge(h.env, 'owner', { repo: 'owner/repo', branch: 'code/p' });
+  assert.equal(second.ok, true);
+  assert.equal(second.cleanup_retry, true);
+  assert.equal(h.state.mergeCalls, 1);
+  assert.equal(deleteCalls, 2);
+});
+
+test('ACCEPTANCE MERGE-RECORD-CLEANUP-01: KV record deletion failure does not repeat the merge', async () => {
+  let deleteCalls = 0, kvDeleteCalls = 0;
+  const h = makeMergeHarness({
+    globals: { codeDeleteBranch: async () => { deleteCalls++; return { ok: true }; } },
+    kvDelete: async () => {
+      kvDeleteCalls++;
+      if (kvDeleteCalls === 1) throw new Error('KV delete unavailable');
+      h.state.record = null;
+    }
+  });
+  const first = await h.merge(h.env, 'owner', { repo: 'owner/repo', branch: 'code/p' });
+  assert.equal(first.ok, false);
+  assert.equal(first.merged, true);
+  assert.equal(first.record_cleanup_failed, true);
+  assert.equal(h.state.record.status, 'merged_record_cleanup_failed');
+  const second = await h.merge(h.env, 'owner', { repo: 'owner/repo', branch: 'code/p' });
+  assert.equal(second.ok, true);
+  assert.equal(second.cleanup_retry, true);
+  assert.equal(h.state.mergeCalls, 1);
+  assert.equal(deleteCalls, 2, 'retry treats an already deleted branch as a safe cleanup target');
+  assert.equal(kvDeleteCalls, 2);
 });
