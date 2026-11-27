@@ -488,9 +488,14 @@ function codeVerifyPreview(env, runId) {
   if (!/^https?:\/\//i.test(raw)) return "";
   return raw.replaceAll("{run_id}", encodeURIComponent(String(runId || "")));
 }
+const codeWorkbenchLocalLockControllers = new Map();
 async function codeGhApi(env, api, options = {}) {
   if (!env.GH_PAT) return { ok: false, status: 503, msg: "GH_PAT 没有配置" };
-  const r = await fetch(api, { ...options, headers: { ...codeGhHeaders(env), ...(options.headers || {}) }, signal: T(20000) });
+  const repoMatch = String(api).match(/\\/repos\\/([^/]+\\/[^/?]+)/);
+  const lockController = repoMatch && codeWorkbenchLocalLockControllers.get("workbench:" + repoMatch[1].toLowerCase());
+  const timeoutSignal = T(20000);
+  const signal = lockController ? AbortSignal.any([timeoutSignal, lockController.signal]) : timeoutSignal;
+  const r = await fetch(api, { ...options, headers: { ...codeGhHeaders(env), ...(options.headers || {}) }, signal });
   const text = await r.text().catch(() => ""), data = (() => { try { return JSON.parse(text); } catch { return null; } })();
   if (!r.ok) return { ok: false, status: r.status, msg: String((data && (data.message || data.error)) || text || ("GitHub HTTP " + r.status)).slice(0, 500), data };
   return { ok: true, status: r.status, data, text };
@@ -611,20 +616,30 @@ async function codeWorkbenchWithLock(env, user, repo, operation, run) {
   const lockBody = { lock_id: lockId, token, operation: String(operation) };
   const acquired = await codeWorkbenchLockCall(env, repo, "branch-lock", lockBody);
   if (!acquired || !acquired.ok) return { ok: false, busy: !!(acquired && acquired.busy), msg: acquired && acquired.msg || "工作台操作锁获取失败" };
-  let renewalFailed = false;
+  const controller = new AbortController();
+  codeWorkbenchLocalLockControllers.set(lockId, controller);
+  let renewalFailed = false, releaseFailed = false, result, runError = null, heartbeatPromise = Promise.resolve();
   const heartbeat = setInterval(() => {
-    codeWorkbenchLockCall(env, repo, "branch-renew", lockBody).then((result) => {
-      if (!result || !result.ok) renewalFailed = true;
-    }).catch(() => { renewalFailed = true; });
+    heartbeatPromise = codeWorkbenchLockCall(env, repo, "branch-renew", lockBody).then((renewed) => {
+      if (!renewed || !renewed.ok) { renewalFailed = true; controller.abort(); }
+    }).catch(() => { renewalFailed = true; controller.abort(); });
   }, 60000);
   try {
-    const result = await run();
-    if (renewalFailed) return { ok: false, lock_renewal_failed: true, operation_result: result, msg: "工作台操作期间锁续期失败；请核对 GitHub 实际结果后再重试，避免重复提交。" };
-    return result;
+    try { result = await run(); }
+    catch (error) { runError = error; }
   } finally {
     clearInterval(heartbeat);
-    await codeWorkbenchLockCall(env, repo, "branch-unlock", { lock_id: lockId, token }).catch(() => null);
+    await heartbeatPromise.catch(() => null);
+    try {
+      const released = await codeWorkbenchLockCall(env, repo, "branch-unlock", { lock_id: lockId, token });
+      if (!released || !released.ok) releaseFailed = true;
+    } catch (_) { releaseFailed = true; }
+    if (codeWorkbenchLocalLockControllers.get(lockId) === controller) codeWorkbenchLocalLockControllers.delete(lockId);
   }
+  if (renewalFailed) return { ok: false, lock_renewal_failed: true, operation_aborted: controller.signal.aborted, operation_result: result || null, msg: "工作台锁续期失败，已中止后续 GitHub 请求；请核对 GitHub 实际结果后再重试，避免重复提交。" };
+  if (runError) throw runError;
+  if (releaseFailed) return { ok: false, lock_release_failed: true, operation_result: result || null, msg: "工作台操作已执行，但锁释放未确认；请稍后核对状态再重试。" };
+  return result;
 }
 async function codeWorkbenchBranchCurrent(env, user, repo) {
   if (!env.KV || !codeRepoOk(env, repo)) return { ok: false, msg: "项目仓库或 KV 配置不可用" };
@@ -1300,7 +1315,9 @@ async function codeUpdateFile(env, repo, path, text, message, branch, sha) {   /
   const bytes = new TextEncoder().encode(text); let s = "";
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   const body = { message, content: btoa(s), branch }; if (sha) body.sha = sha;
-  const r = await fetch(codeGhUrl(repo, path), { method: "PUT", headers: { ...codeGhHeaders(env), "Content-Type": "application/json" }, body: JSON.stringify(body), signal: T(20000) });
+  const url = codeGhUrl(repo, path), repoMatch = String(url).match(/\\/repos\\/([^/]+\\/[^/?]+)/), lockController = repoMatch && codeWorkbenchLocalLockControllers.get("workbench:" + repoMatch[1].toLowerCase());
+  const timeoutSignal = T(20000), signal = lockController ? AbortSignal.any([timeoutSignal, lockController.signal]) : timeoutSignal;
+  const r = await fetch(url, { method: "PUT", headers: { ...codeGhHeaders(env), "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) return { ok: false, msg: "GitHub 返回 " + r.status + "：" + String(j.message || "").slice(0, 120) };
   return { ok: true, url: (j.commit && j.commit.html_url) || "" };
