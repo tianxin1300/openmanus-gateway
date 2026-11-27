@@ -5923,7 +5923,7 @@ const bestPlace = (list, q) => {
 .wb-change-actions button,.wb-version-row button{min-height:25px;padding:3px 7px!important;font-size:10px!important;border-radius:5px!important}
 .wb-change-actions .on{background:#285b42!important;border-color:#4b9b70!important;color:#e8fff0!important}
 .wb-change-actions .reject{background:#57333b!important;border-color:#87515c!important;color:#ffe8eb!important}
-#wb-editor{flex:1 1 0;min-width:0}
+#wb-editor{flex:1 1 0;min-width:0;width:auto!important}
 #wb-project{height:30px;max-width:112px;padding:0 6px;border:1px solid #3b4659;border-radius:7px;background:#252e3d;color:#e7edf7;font-size:11px}
 #wb-branch{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9fc3f4;font:10px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 #wb-bar #wb-push{background:#426fbd!important;color:#fff!important}
@@ -6293,7 +6293,7 @@ async function loadWorkbenchVersions() {
     if (!rows.length) { host.textContent = "暂无已合并版本"; return; }
     rows.forEach(row => {
       const item = document.createElement("div"); item.className = "wb-version-row";
-      const title = document.createElement("div"); title.className = "wb-change-path"; title.textContent = String(row.commit_sha).slice(0, 12); item.appendChild(title);
+      const title = document.createElement("div"); title.className = "wb-change-path"; title.textContent = String(row.commit_sha); item.appendChild(title);
       const meta = document.createElement("div"); meta.className = "wb-change-meta"; meta.textContent = (row.at || "时间未知") + " · " + (row.summary || "代码提交"); item.appendChild(meta);
       const files = document.createElement("div"); files.className = "wb-change-meta"; files.textContent = (row.files || []).join(", "); item.appendChild(files);
       const rollback = document.createElement("button"); rollback.type = "button"; rollback.textContent = "回滚"; rollback.disabled = !!activeBranchRecord;
@@ -6368,7 +6368,7 @@ async function switchWorkbenchProject(repoName) {
   if (dirty && !confirm("切换项目会丢弃当前文件未保存的修改，继续？")) { g("wb-project").value = REPO.repo; return; }
   const project = WORKBENCH_PROJECTS[repoName];
   REPO.owner = project.owner; REPO.repo = project.repo; REPO.branch = "main";
-  activeBranchRecord = null; FILE = "frontend/index.html"; curSha = null; dirty = false;
+  activeBranchRecord = null; Object.keys(workbenchDecisions).forEach(key => delete workbenchDecisions[key]); FILE = "frontend/index.html"; curSha = null; dirty = false;
   if (g("wb-file")) g("wb-file").textContent = FILE;
   updateWorkbenchBranchUI();
   try {
@@ -6537,11 +6537,11 @@ async function loadFile() {
     const htmlFile = /\.html?$/i.test(FILE);
     const c = htmlFile ? cleanHtml(r.text, r.sha) : { text: r.text, sha: r.sha };
     const text = String(c.text == null ? "" : c.text);
-    if (!text.length || (htmlFile && text.length < 1000)) throw new Error("文件内容为空或不完整（" + text.length + " 字符）");
+    if (!text.length || (htmlFile && !/<html|<!doctype/i.test(text))) throw new Error("文件内容为空或 HTML 结构不完整（" + text.length + " 字符）");
     curSha = c.sha;
     if (ed.setLanguage) ed.setLanguage(workbenchLanguage(FILE));
     ed.set(text); clearTimeout(prevTimer); dirty = false;
-    say("已从临时分支 " + REPO.branch + " 读取 " + FILE + "（" + Math.round(text.length / 1024) + " KB）");
+    say("已从 GitHub 分支 " + REPO.branch + " 读取 " + FILE + "（" + Math.round(text.length / 1024) + " KB）");
     renderWorkbenchTree(); renderPreview(); return true;
   } catch (error) {
     curSha = null; say("读取失败：" + (error.message || String(error)) + "。没有回退读取 main 或线上页面。", true); return false;
@@ -6552,7 +6552,7 @@ async function save() {
   if (!ed || saving) return;
   if (!activeBranchRecord || REPO.branch !== activeBranchRecord.branch || !/^code\//.test(REPO.branch)) { say("没有活动临时分支，已阻止写入 main。请先创建临时分支。", true); return; }
   const val = ed.get(), htmlFile = /\.html?$/i.test(FILE);
-  if (!val.length || (htmlFile && (val.length < 1000 || !/<html/i.test(val)))) { say("文件内容为空或 HTML 不完整，已拒绝保存", true); return; }
+  if (!val.length || (htmlFile && !/<html|<!doctype/i.test(val))) { say("文件内容为空或 HTML 结构不完整，已拒绝保存", true); return; }
   if (!curSha) { say("没有拿到当前临时分支的文件 SHA，为避免覆盖，请先重新读取文件。", true); return; }
   if (!confirm("保存到临时分支 " + REPO.branch + "：" + FILE + "？\n这一步不会修改 main。大小约 " + Math.round(val.length / 1024) + " KB")) return;
   saving = true; g("wb-save").disabled = true; say("正在保存到临时分支 …");
