@@ -13,7 +13,7 @@ function sourceOf(start, end) {
   return worker.slice(a, b);
 }
 function runFunction(source, name, globals) {
-  const sandbox = { ...globals, URL, Date, Math, JSON, Set, Map, Promise, console, setInterval: globals.setInterval || setInterval, clearInterval: globals.clearInterval || clearInterval, crypto: globals.crypto || require('node:crypto').webcrypto, codeGitRefWriteUrl: globals.codeGitRefWriteUrl || ((repo, ref) => 'https://api.github.com/repos/' + repo + '/git/refs/' + String(ref).split('/').map(encodeURIComponent).join('/')), codeWorkbenchWithLock: globals.codeWorkbenchWithLock || (async (_env, _user, _repo, _operation, run) => run()) };
+  const sandbox = { ...globals, URL, Date, Math, JSON, Set, Map, Promise, AbortController, AbortSignal, console, codeWorkbenchLocalLockControllers: globals.codeWorkbenchLocalLockControllers || new Map(), setInterval: globals.setInterval || setInterval, clearInterval: globals.clearInterval || clearInterval, crypto: globals.crypto || require('node:crypto').webcrypto, codeGitRefWriteUrl: globals.codeGitRefWriteUrl || ((repo, ref) => 'https://api.github.com/repos/' + repo + '/git/refs/' + String(ref).split('/').map(encodeURIComponent).join('/')), codeWorkbenchWithLock: globals.codeWorkbenchWithLock || (async (_env, _user, _repo, _operation, run) => run()) };
   vm.runInNewContext(source + '\nglobalThis.__tested = ' + name + ';', sandbox);
   return sandbox.__tested;
 }
@@ -1173,22 +1173,40 @@ test('ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-01: long-running workbench operation r
   assert.equal(cleared, true);
 });
 
-test('ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-FAIL-01: failed lease renewal is reported as uncertain instead of success', async () => {
+test('ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-FAIL-01: failed lease renewal aborts subsequent GitHub requests and reports uncertainty', async () => {
   const helper = sourceOf('async function codeWorkbenchWithLock(', 'async function codeWorkbenchBranchCurrent(');
+  const localLocks = new Map();
+  let apiCalls = 0, aborted = false;
+  const api = runFunction(sourceOf('async function codeGhApi(', 'function codeGitRefUrl('), 'codeGhApi', {
+    codeWorkbenchLocalLockControllers: localLocks,
+    codeGhHeaders: () => ({}),
+    T: ms => AbortSignal.timeout(ms),
+    fetch: async () => { apiCalls++; return { ok: true, status: 200, text: async () => "{}" }; }
+  });
   const wrapped = runFunction(helper, 'codeWorkbenchWithLock', {
+    codeWorkbenchLocalLockControllers: localLocks,
     codeWorkbenchLockCall: async (_env, _repo, action) => action === 'branch-renew'
       ? { ok: false, stale: true, msg: 'lease expired' } : { ok: true },
     setInterval: fn => { globalThis.__renewTick = fn; return 88; },
     clearInterval: () => { delete globalThis.__renewTick; }
   });
   const result = await wrapped({ CODE_CLAIMS: {} }, 'owner', 'owner/repo', 'merge', async () => {
+    const controller = localLocks.get('workbench:owner/repo');
     globalThis.__renewTick();
     await new Promise(resolve => setTimeout(resolve, 0));
+    aborted = controller.signal.aborted;
+    const blocked = await api({}, 'https://api.github.com/repos/owner/repo/contents/a.js');
+    assert.equal(blocked.ok, false);
+    assert.equal(blocked.status, 409);
     return { ok: true, merged: true };
   });
   assert.equal(result.ok, false);
   assert.equal(result.lock_renewal_failed, true);
+  assert.equal(result.operation_aborted, true);
   assert.equal(result.operation_result.merged, true);
+  assert.equal(aborted, true);
+  assert.equal(apiCalls, 0, 'no subsequent GitHub request may be issued after the lease is lost');
+  assert.equal(localLocks.size, 0, 'the local abort controller is removed after release');
   assert.match(result.msg, /核对 GitHub 实际结果/);
 });
 
