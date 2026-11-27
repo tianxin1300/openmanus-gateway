@@ -798,7 +798,7 @@ const GATEWAY = (() => {
     const localPreview = candidate.protocol === "https:" && candidate.hostname === expectedHost && candidate.pathname === "/" && !candidate.username && !candidate.password;
     const branchPreview = location.hostname.endsWith(".pages.dev") &&
       candidate.protocol === "https:" &&
-      /^openmanus-gateway-pr60-preview\\.[a-z0-9-]+\\.workers\\.dev$/.test(candidate.hostname) &&
+      /^openmanus-gateway-pr60-preview\.[a-z0-9-]+\.workers\.dev$/.test(candidate.hostname) &&
       candidate.pathname === "/" && !candidate.username && !candidate.password;
     if (localPreview || branchPreview) return candidate.origin;
   } catch (_) {}
@@ -1567,8 +1567,8 @@ function hlCode(code, ext) {
   if (!code || code.length > 150000) { frag.appendChild(document.createTextNode(code)); return frag; }
   const markup = /^(html|htm|xml|svg|vue)$/.test(ext), hash = /^(py|sh|rb|yml|yaml|toml|ini|conf)$/.test(ext);
   const re = markup ? /(<!--[\s\S]*?-->|\/\*[\s\S]*?\*\/)|("[^"\n]*")|(<\/?[A-Za-z][\w:-]*|\/?>)|(\b\d+(?:\.\d+)?\b)/g
-    : hash ? /(#[^\n]*)|("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')|(\b\d+(?:\.\d+)?\b)|(\b[A-Za-z_]\w*\b)/g
-    : /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|--[^\n]*)|("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`)|(\b\d+(?:\.\d+)?\b)|(\b[A-Za-z_]\w*\b)/g;
+    : hash ? /(#[^\n]*)|("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\.|[^"\\\n])*"|'(?:\.|[^'\\\n])*')|(\b\d+(?:\.\d+)?\b)|(\b[A-Za-z_]\w*\b)/g
+    : /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|--[^\n]*)|("(?:\.|[^"\\\n])*"|'(?:\.|[^'\\\n])*'|`(?:\.|[^`\\])*`)|(\b\d+(?:\.\d+)?\b)|(\b[A-Za-z_]\w*\b)/g;
   const cls = markup ? ["c", "s", "t", "n"] : ["c", "s", "n", "w"];
   const noDash = ext !== "sql" && ext !== "lua" && !markup && !hash;   // “--” 只在 SQL / Lua 里是注释
   let last = 0, m;
@@ -1597,7 +1597,7 @@ function autoLinkRe() {
   if (autoRe && key === autoReKey) return { re: autoRe, map: autoMap };
   const map = new Map(); Object.keys(AUTO_SITES).forEach(k => map.set(k.toLowerCase(), AUTO_SITES[k])); [...AUTO_PLACES, ...picked].forEach(k => { if (!map.has(k.toLowerCase())) map.set(k.toLowerCase(), "https://map.baidu.com/search/" + encodeURIComponent(k)); });
   const esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), names = [...map.keys()].sort((a, b) => b.length - a.length).map(esc).join("|");
-  autoRe = new RegExp("(https?:\\/\\/[^\\s<>\"'，。；、）)】》]+)|((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+(?:" + AUTO_TLD + ")(?![a-z0-9-])(?:[\\/?#][^\\s<>\"'，。；、）)】》]*)?)|(" + names + ")", "gi");
+  autoRe = new RegExp("(https?:\\/\\/[^\\s<>\"'，。；、）)】》]+)|((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:" + AUTO_TLD + ")(?![a-z0-9-])(?:[\\/?#][^\\s<>\"'，。；、）)】》]*)?)|(" + names + ")", "gi");
   autoReKey = key; autoMap = map; return { re: autoRe, map };
 }
 function autoShort(u) { const t = String(u).replace(/^https?:\/\//i, "").replace(/\/$/, ""); return t.length > 34 ? t.slice(0, 32) + "…" : t; }
