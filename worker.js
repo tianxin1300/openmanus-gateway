@@ -538,7 +538,13 @@ async function codeWorkbenchBranchCurrent(env, user, repo) {
   const record = await env.KV.get(key, "json").catch(() => null);
   if (!record || !record.branch) return { ok: true, active: false, repo };
   const ref = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + record.branch));
-  if (!ref.ok) { await env.KV.delete(key); return { ok: true, active: false, repo }; }
+  if (!ref.ok) {
+    if (ref.status === 404) {
+      await env.KV.delete(key);
+      return { ok: true, active: false, repo, stale_branch_record: true };
+    }
+    return { ok: false, active: false, repo, msg: "GitHub 临时分支状态检查失败，已保留本地分支记录：" + (ref.msg || ("HTTP " + ref.status)) };
+  }
   return { ok: true, active: true, ...record };
 }
 async function codeWorkbenchBranchCreate(env, user, body = {}) {
@@ -551,6 +557,7 @@ async function codeWorkbenchBranchCreate(env, user, body = {}) {
   if (old && old.branch) {
     const ref = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + old.branch));
     if (ref.ok) return { ok: true, active: true, existing: true, ...old };
+    if (ref.status !== 404) return { ok: false, msg: "检查已有临时分支失败，原记录已保留：" + (ref.msg || ("HTTP " + ref.status)) };
     await env.KV.delete(key);
   }
   const made = await codeCreateTempBranch(env, repo, project, base);
