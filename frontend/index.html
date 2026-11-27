@@ -795,7 +795,12 @@ const GATEWAY = (() => {
   try {
     const candidate = new URL(new URLSearchParams(location.search).get("gateway") || "");
     const expectedHost = location.hostname.replace(/^3000(?=--|-)/, "8787");
-    if (candidate.protocol === "https:" && candidate.hostname === expectedHost && candidate.pathname === "/" && !candidate.username && !candidate.password) return candidate.origin;
+    const localPreview = candidate.protocol === "https:" && candidate.hostname === expectedHost && candidate.pathname === "/" && !candidate.username && !candidate.password;
+    const branchPreview = location.hostname.endsWith(".pages.dev") &&
+      candidate.protocol === "https:" &&
+      /^openmanus-gateway-pr60-preview\\.[a-z0-9-]+\\.workers\\.dev$/.test(candidate.hostname) &&
+      candidate.pathname === "/" && !candidate.username && !candidate.password;
+    if (localPreview || branchPreview) return candidate.origin;
   } catch (_) {}
   return production;
 })();
