@@ -493,6 +493,7 @@ async function codeGhApi(env, api, options = {}) {
   if (!env.GH_PAT) return { ok: false, status: 503, msg: "GH_PAT 没有配置" };
   const repoMatch = String(api).match(/\/repos\/([^/]+\/[^/?]+)/);
   const lockController = repoMatch && codeWorkbenchLocalLockControllers.get("workbench:" + repoMatch[1].toLowerCase());
+  if (lockController && lockController.signal.aborted) return { ok: false, status: 409, msg: "工作台锁已失效，已阻止后续 GitHub 请求" };
   const timeoutSignal = T(20000);
   const signal = lockController ? AbortSignal.any([timeoutSignal, lockController.signal]) : timeoutSignal;
   const r = await fetch(api, { ...options, headers: { ...codeGhHeaders(env), ...(options.headers || {}) }, signal });
@@ -1316,6 +1317,7 @@ async function codeUpdateFile(env, repo, path, text, message, branch, sha) {   /
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   const body = { message, content: btoa(s), branch }; if (sha) body.sha = sha;
   const url = codeGhUrl(repo, path), repoMatch = String(url).match(/\/repos\/([^/]+\/[^/?]+)/), lockController = repoMatch && codeWorkbenchLocalLockControllers.get("workbench:" + repoMatch[1].toLowerCase());
+  if (lockController && lockController.signal.aborted) return { ok: false, msg: "工作台锁已失效，已阻止后续文件写入" };
   const timeoutSignal = T(20000), signal = lockController ? AbortSignal.any([timeoutSignal, lockController.signal]) : timeoutSignal;
   const r = await fetch(url, { method: "PUT", headers: { ...codeGhHeaders(env), "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
   const j = await r.json().catch(() => ({}));
