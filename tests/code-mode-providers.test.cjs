@@ -1579,3 +1579,17 @@ test('terminal command input auto-grows, wraps long commands, shrinks after clea
   assert.match(frontendSource, /event\.key === "Enter" && !event\.shiftKey/);
   assert.match(frontendSource, /resizeTerminalCommandInput\(\);[\s\S]*?命令已回显/);
 });
+
+
+test('homepage studio exposes a real simultaneous-deploy event button with persisted backend status', () => {
+  assert.match(frontendStudioSource, /id = "om-both-start"/);
+  assert.match(frontendStudioSource, /bothBtn\.addEventListener\("click", startBoth\)/);
+  assert.match(frontendStudioSource, /api\("\/api\/code\/both", \{ method: "POST"/);
+  assert.match(frontendStudioSource, /body: JSON\.stringify\(\{ ref: "main" \}\)/);
+  assert.match(frontendStudioSource, /api\("\/api\/code\/both", \{ method: "GET"/);
+  assert.match(frontendStudioSource, /j\.request_id/);
+  assert.match(frontendStudioSource, /j\.state === "success" \|\| j\.state === "failure"/);
+  assert.match(frontendStudioSource, /setInterval\(function \(\) \{ refreshBothStatus\(true\); \}, 5000\)/);
+  assert.match(workerSource, /if \(path === "\/api\/code\/both" && request\.method === "POST"\)/);
+  assert.match(workerSource, /if \(path === "\/api\/code\/both" && request\.method === "GET"\)/);
+});
