@@ -1606,3 +1606,17 @@ test('homepage mobile layout keeps the header toolbar swipeable and compresses c
   assert.match(frontendSource, /\.cat-tabs\{overflow-x:auto!important/);
   assert.match(frontendSource, /\.tools\{flex-wrap:nowrap!important;overflow-x:auto!important/);
 });
+
+
+test('workbench history loads on tab open and exposes full both Runner state', () => {
+  const script = /<script\\b(?=[^>]*\\bid=["']wb-devbench["'])[^>]*>([\\s\\S]*?)<\\/script\\s*>/i.exec(frontendSource)[1];
+  assert.match(frontendSource, /id="wb-run-detail-content"/);
+  assert.match(script, /g\\("wb-runlogs-tab"\\)\\.addEventListener\\("click", \\(\\) => \\{ setTerminalPanel\\("logs"\\); loadRunHistory\\(\\); \\}\\)/);
+  assert.match(script, /x\\.kind==="both"\\?"同时启动"/);
+  assert.match(script, /runnerStateLabel\\(record\\.state\\)/);
+  assert.match(script, /record\\.watch_updated_at/);
+  assert.match(script, /run\\.watch_error/);
+  assert.match(script, /String\\(x\\.run_id\\|\\|x\\.request_id\\|\\|""\\)/);
+  assert.match(script, /renderBothRunnerDetail/);
+  assert.match(script, /历史记录加载失败/);
+});
