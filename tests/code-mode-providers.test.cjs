@@ -15,6 +15,16 @@ const { pathToFileURL } = require('node:url');
 const root = path.resolve(__dirname, '..');
 const workerSource = fs.readFileSync(path.join(root, 'worker.js'), 'utf8');
 const frontendSource = fs.readFileSync(path.join(root, 'frontend/index.html'), 'utf8');
+
+test('PR60: codeRepairSmokeProbe must preserve repair-me', () => {
+  const start = workerSource.indexOf('const codeRepairSmokeProbe =');
+  assert.ok(start >= 0, 'codeRepairSmokeProbe definition must exist');
+  const end = workerSource.indexOf('\n', start);
+  const source = workerSource.slice(start, end);
+  const sandbox = {};
+  vm.runInNewContext(source + '\nglobalThis.testProbe = codeRepairSmokeProbe;', sandbox);
+  assert.equal(sandbox.testProbe('repair-me'), 'repair-me');
+});
 const studioSource = fs.readFileSync(path.join(root, 'studio.js'), 'utf8');
 const frontendStudioSource = fs.readFileSync(path.join(root, 'frontend/studio.js'), 'utf8');
 const blockedProviders = ['肖恩AI', 'Toter', 'Toter2'];
