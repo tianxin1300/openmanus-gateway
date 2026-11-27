@@ -175,6 +175,19 @@ test('project isolation: code edits use a temporary branch before merging to the
   assert.doesNotMatch(workerSource, /codeUpdateFile\(env, pend\.repo, path, applied\.out\[path\], [\s\S]{0,160}branch = String\(env\.CODE_PUSH_BRANCH/);
 });
 
+test('rollback creates a new commit and never force-moves the base branch', () => {
+  const start = workerSource.indexOf('async function codeRollback(');
+  const end = workerSource.indexOf('const CODE_DEPLOY_WORKFLOW', start);
+  assert.ok(start >= 0 && end > start);
+  const rollback = workerSource.slice(start, end);
+  assert.match(rollback, /\/git\/commits\//);
+  assert.match(rollback, /method: "POST"/);
+  assert.match(rollback, /parents: \[currentSha\]/);
+  assert.match(rollback, /force: false/);
+  assert.doesNotMatch(rollback, /force: true/);
+  assert.doesNotMatch(rollback, /sha: item\.previous_sha, force/);
+});
+
 test('web workbench: exposes the local preview control', () => {
   const previewButtons = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-local-preview")[^>]*>/g)];
   assert.equal(previewButtons.length, 1);
