@@ -221,6 +221,7 @@ test('ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restore
   assert.equal(createdCommit.tree, 'restored-tree');
   assert.equal(createdCommit.parents[0], 'current-commit');
   assert.equal(movedRef, 'rollback-commit');
+  assert.equal(rolled.actor, 'owner', 'rollback history records the authenticated actor');
 });
   
 test('ACCEPTANCE WORKBENCH-SAVE-CAS-01: editor saves share the repository lock and reject stale file SHA', async () => {
@@ -243,7 +244,8 @@ test('ACCEPTANCE WORKBENCH-SAVE-CAS-01: editor saves share the repository lock a
       return { ok: true, url: 'https://github.com/owner/repo/commit/save' };
     }
   });
-  const env = {};
+  const auditRecord = { branch: 'code/save-test' };
+  const env = { KV: { get: async () => auditRecord, put: async (_key, value) => Object.assign(auditRecord, JSON.parse(value)) } };
   const stale = await save(env, 'owner', { repo: 'owner/repo', branch: 'code/save-test', path: 'app.js', content: 'stale', sha: 'c'.repeat(40) });
   assert.equal(stale.ok, false);
   assert.equal(stale.conflict, true);
@@ -253,6 +255,8 @@ test('ACCEPTANCE WORKBENCH-SAVE-CAS-01: editor saves share the repository lock a
   assert.equal(saved.ok, true);
   assert.equal(saved.sha, 'b'.repeat(40));
   assert.equal(writes, 1);
+  assert.equal(auditRecord.last_saved_by, 'owner');
+  assert.equal(auditRecord.save_events[0].actor, 'owner');
   assert.deepEqual(lockOperations, ['save', 'save']);
 
   const put = sourceOfFrontend(frontend, 'async function mcpPut(', 'const WORKBENCH_PROJECTS =');
@@ -494,6 +498,7 @@ test('ACCEPTANCE CLEANUP-01: failed deletion retains recoverable state; successf
   const repo = 'tianxin1300/openmanus-gateway';
   let record = { repo, branch: 'code/cleanup', project: 'cleanup', status: 'active' };
   let deleteFails = true, deletes = 0;
+  const history = [];
   const kv = {
     async get() { return record; },
     async delete() { record = null; },
@@ -501,7 +506,9 @@ test('ACCEPTANCE CLEANUP-01: failed deletion retains recoverable state; successf
   };
   const discard = runFunction(sourceOf('async function codeWorkbenchBranchDiscardUnlocked(', 'async function codeWorkbenchBranchMergeUnlocked('), 'codeWorkbenchBranchDiscard', {
     codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
-    codeDeleteBranch: async () => { deletes++; return deleteFails ? { ok: false, status: 500, msg: 'simulated failure' } : { ok: true }; }
+    codeDeleteBranch: async () => { deletes++; return deleteFails ? { ok: false, status: 500, msg: 'simulated failure' } : { ok: true }; },
+    codeHistoryLoad: async () => history,
+    codeHistorySave: async (_env, _user, rows) => { history.splice(0, history.length, ...rows); }
   });
   const env = { KV: kv };
   const failed = await discard(env, 'owner', { repo, branch: record.branch });
@@ -512,6 +519,8 @@ test('ACCEPTANCE CLEANUP-01: failed deletion retains recoverable state; successf
   assert.equal(cancelled.ok, true);
   assert.equal(record, null, 'successful cancellation clears review state');
   assert.equal(deletes, 2);
+  assert.equal(history[0].kind, 'workbench_discard');
+  assert.equal(history[0].actor, 'owner');
 
   // A fresh task can create a new isolated branch after cancellation.
   const create = runFunction(sourceOf('async function codeWorkbenchBranchCreateUnlocked(', 'async function codeWorkbenchBranchDiff('), 'codeWorkbenchBranchCreate', {
