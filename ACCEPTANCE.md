@@ -347,12 +347,13 @@ npm test
 
 ### WORKBENCH-14 — Durable Object 仓库锁必须原子获取并支持续期
 
-**自动化测试：** `ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`WORKBENCH-LOCK-RENEW-01`。
+**自动化测试：** `ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`WORKBENCH-LOCK-RENEW-01`、`WORKBENCH-LOCK-HEARTBEAT-01`、`WORKBENCH-LOCK-HEARTBEAT-FAIL-01`。
 
 **测试覆盖：**
 - 两个并发请求同时获取同一仓库锁，事务竞争后只能有一个成功。
 - 锁持有者可续期；错误 token 不得续期或延长其他操作的租约。
 - 工作台长操作每 60 秒续租，结束时清除心跳并释放锁。
+- 续租失败时不误报成功，而是返回不确定状态与 GitHub 核验提示。
 
 **通过条件：** 锁获取/续期/释放全部在 Durable Object storage transaction 中完成；不能再用分离的 get/put 作为互斥依据。
 
