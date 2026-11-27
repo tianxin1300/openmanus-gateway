@@ -55,6 +55,7 @@ jobs:
           KV_NAMESPACE_ID="$(printf '%s' "$KV_RESPONSE" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("success"), d.get("errors"); print(d["result"]["id"])')"
           WORKER_TEST_TOKEN="$(openssl rand -hex 32)"
           WORKBENCH_E2E_SECRET="$(openssl rand -hex 32)"
+          export WORKER_TEST_TOKEN
           echo "WORKER_NAME=$WORKER_NAME" >> "$GITHUB_ENV"
           echo "KV_NAMESPACE_ID=$KV_NAMESPACE_ID" >> "$GITHUB_ENV"
           echo "WORKER_TEST_TOKEN=$WORKER_TEST_TOKEN" >> "$GITHUB_ENV"
