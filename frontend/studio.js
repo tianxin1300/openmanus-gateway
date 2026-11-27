@@ -360,7 +360,7 @@
     refreshPending(true);
   }
 
-  function init() { mountToggle(); bothButton = document.getElementById("om-both-start"); bothStatusNode = document.getElementById("om-both-status"); refreshBothStatus(true); if (state.on) setTimeout(check, 800); }
+  function init() { mountToggle(); if (typeof document.getElementById === "function") { bothButton = document.getElementById("om-both-start"); bothStatusNode = document.getElementById("om-both-status"); if (bothStatusNode) refreshBothStatus(true); } if (state.on) setTimeout(check, 800); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 
   window.omStudio = { state: state, check: check, hide: hide, enable: function () { if (!state.on && box) box.click(); }, disable: function () { if (state.on && box) box.click(); } };
