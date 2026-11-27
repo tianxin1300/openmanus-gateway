@@ -12,10 +12,10 @@ This workflow is an external-cron-triggered queue worker for GitHub Issues.
 ## Required GitHub Actions secrets
 Configure these repository secrets before enabling the external cron:
 
-- `OPENMANUS_API_URL`: base URL of the deployed OpenManus Gateway Worker, without a trailing slash.
+- `OPENMANUS_API_URL`: origin of the same Worker environment where the automation token was generated (for the current preview, `https://openmanus-gateway-pr60-preview.tianxinyuan881.workers.dev`; use the production Worker origin only after the production token endpoint is deployed).
 - `OPENMANUS_USER_TOKEN`: an account token accepted by the existing OpenManus login/authentication layer. Do not put this token in the issue body, workflow YAML, or Cron-job URL.
 
-The workflow calls the existing `POST /v1/chat/completions` route with `code_mode: true`. The model selection and provider keys therefore remain in the gateway's existing code-mode backend (the current code-mode model list and its configured provider keys); no second model list or provider API key is introduced in GitHub Actions.
+The workflow calls `POST /v1/chat/completions` with `provider: "OpenRouter"` and `model: "claude-sonnet-4-5"` to enter the existing read-only code-assist route. It deliberately omits `code_mode: true`: that flag forces the project-edit pipeline, which can create a pending change preview and is not appropriate for this analysis-only agent. The selected Worker environment must have at least one provider key configured for the code-assist backend (`OPENROUTER_KEYS`, `GROQ_KEYS`/`GROQ_API_KEY`, or `NVIDIA_KEYS`). Provider keys stay on the Worker and are not sent from the GitHub workflow.
 
 ## External Cron-job setup
 Create a job in your Cron-job service:
