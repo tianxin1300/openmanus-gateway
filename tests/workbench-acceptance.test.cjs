@@ -1633,7 +1633,7 @@ test('ACCEPTANCE WORKBENCH-PROJECT-01: cancelling a dirty project switch preserv
 
 test('ACCEPTANCE WORKBENCH-PROJECT-02: switching projects clears old branch state and loads the new project branch', async () => {
   const h = makeProjectSwitchHarness({ dirty: true, confirmResult: true });
-  await h.sandbox.__switchProject('jiuyibanlv');
+  await h.sandbox.__switchProject('tianxin1300/jiuyibanlv');
   assert.deepEqual({ ...h.sandbox.REPO }, { owner: 'tianxin1300', repo: 'jiuyibanlv', branch: 'code/new-project' });
   assert.deepEqual({ ...h.sandbox.activeBranchRecord }, { repo: 'tianxin1300/jiuyibanlv', branch: 'code/new-project' });
   assert.deepEqual({ ...h.decisions }, {});
