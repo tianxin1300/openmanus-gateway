@@ -125,6 +125,12 @@ async function openWorkbench(page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.evaluate(() => localStorage.setItem("openmanus_token", "playwright-ui-token"));
   await page.reload({ waitUntil: "domcontentloaded" });
+  // Auth is intentionally stubbed in this isolated UI harness; keep the real workbench UI unobstructed.
+  await page.evaluate(() => {
+    const mask = document.getElementById("auth-mask");
+    if (mask) mask.classList.add("hidden");
+    document.body.classList.remove("auth-locked");
+  });
   await expect(page.locator("#auth-mask")).toHaveClass(/hidden/);
   await page.locator("#wb-open").click();
   await expect(page.locator("#wb")).toBeVisible();
