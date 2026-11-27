@@ -290,7 +290,7 @@ test('ACCEPTANCE WORKBENCH-RENAME-DIFF-01: branch diff preserves the previous fi
 
 
 
-test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, save, review, merge, or roll back; authorized actions are attributed', async () => {
+test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, save, review, merge, discard, preview, or roll back; authorized actions are attributed', async () => {
   const repo = 'tianxin1300/openmanus-gateway';
   const guard = runFunction(sourceOf('function codePushGuard(', 'function codeParse('), 'codePushGuard', {
     codeRepoOk: () => true, codePathOk: () => true, codePathProtected: () => false
@@ -328,11 +328,22 @@ test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, save, rev
     codeRepoOk: () => true, codeVerifyRef: x => x, codePushGuard: guard,
     codeGhApi: async () => { writes++; return { ok: true, data: {} }; }
   });
+  const discard = runFunction(sourceOf('async function codeWorkbenchBranchDiscardUnlocked(', 'async function codeWorkbenchBranchDiscard('), 'codeWorkbenchBranchDiscardUnlocked', {
+    codeRepoOk: () => true, codePushGuard: guard,
+    codeWorkbenchBranchKey: () => 'key', codeDeleteBranch: async () => { writes++; return { ok: true }; }
+  });
+  const preview = runFunction(sourceOf('async function codeWorkbenchBranchPreview(', 'async function codeWorkbenchBranchDiscardUnlocked('), 'codeWorkbenchBranchPreview', {
+    codePushGuard: guard,
+    codeWorkbenchBranchCurrent: async () => ({ ok: true, active: true, branch: 'code/owned' }),
+    codeGhApi: async () => { writes++; return { ok: true }; }
+  });
   assert.equal((await create(env, 'intruder', { repo, project: 'p' })).ok, false);
   assert.equal((await reject(env, 'automation-bot', { repo, path: 'a.js' })).ok, false);
   assert.equal((await merge(env, 'intruder', { repo, branch: 'code/owned' })).ok, false);
   assert.equal((await save(env, 'intruder', { repo, branch: 'code/owned', path: 'a.js', content: 'x', sha: 'a'.repeat(40) })).ok, false);
   assert.equal((await rollback(env, 'intruder', { id: 'history' })).ok, false);
+  assert.equal((await discard(env, 'intruder', { repo, branch: 'code/owned' })).ok, false);
+  assert.equal((await preview(env, 'intruder', repo)).ok, false);
   assert.equal(writes, 0, 'unauthorized calls must not reach GitHub writes');
 
   const createdKV = { value: null, async put(_k, v) { this.value = JSON.parse(v); }, async get() { return null; } };
