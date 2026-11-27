@@ -44,18 +44,13 @@ jobs:
           npm test
           npm run build
 
-      - name: Create isolated preview KV namespace
+      - name: Select dedicated isolated preview KV namespace
         id: preview-kv
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        shell: bash
+          PREVIEW_KV_ID: cd314c640091484d9fe3ed2e7799736a
         run: |
-          set -euo pipefail
-          npx --yes wrangler@4 kv namespace create "openmanus-gateway-pr60-preview" 2>&1 | tee /tmp/preview-kv.log
-          KV_ID="$(python3 -c 'import re; s=open("/tmp/preview-kv.log").read(); m=re.search(r"""id\s*=\s*["']([0-9a-fA-F]+)["']""", s); print(m.group(1) if m else "")')"
-          test -n "$KV_ID"
-          echo "kv_id=$KV_ID" >> "$GITHUB_OUTPUT"
+          test -n "$PREVIEW_KV_ID"
+          echo "kv_id=$PREVIEW_KV_ID" >> "$GITHUB_OUTPUT"
 
       - name: Build isolated Worker preview config
         env:
