@@ -471,3 +471,146 @@ npm test
 **通过条件：** 取消切换不污染当前项目状态；确认切换不沿用旧项目分支、SHA 或审核决策，且后续读取全部针对新项目。
 
 **边界：** 测试在 VM 中执行真实前端切换函数并替换 API/DOM 依赖；不代表真实第二仓库的 GitHub 授权、网络访问或生产分支创建已完成验证。
+
+
+## 17. 第一阶段扩展验收（P1-001～P1-087）
+
+**目标：** 在现有实际 `npm test` 基线 133 项上新增 87 项，目标约 220 项。每项必须给出输入、操作、预期结果和失败判据。新增测试只修改验收测试与本文件，不修改 `worker.js`、前端业务代码、工作流或部署配置。
+
+**测试类型边界：** P1-001～P1-078 调用从当前 `worker.js` 提取的真实函数，但 GitHub API、KV、Durable Object 均使用隔离模拟依赖；P1-079～P1-087 是对当前工作台前端源码入口/请求契约的静态存在性检查。它们属于 Node 自动化测试，不是实际 GitHub 分支/PR 操作，也不是真实 Durable Object 部署验收。真实 GitHub 与真实 DO 仍需单独环境验证，不计入本阶段模拟测试通过数。
+
+### 权限边界与操作者审计（10）
+
+| 编号 | 输入 | 操作 | 预期结果 | 失败判据 |
+|---|---|---|---|---|
+| P1-001 | 缺少 GH_PAT；调用 codePushGuard | 推送授权检查 | 拒绝并提示未配置令牌 | 未拒绝或提示可继续写入 |
+| P1-002 | CODE_OWNER 为空；调用 codePushGuard | 推送授权检查 | 拒绝并提示未配置所有者 | 空所有者仍可推送 |
+| P1-003 | 操作者为 intruder；目标 owner/repo | 检查操作者权限 | 拒绝非授权身份 | 越权身份获得空拒绝原因 |
+| P1-004 | 目标仓库 other/repo 不在白名单 | 检查仓库白名单 | 拒绝仓库 | 非白名单仓库通过 |
+| P1-005 | 绝对路径 /etc/passwd | 检查路径 | 拒绝非法路径 | 绝对路径通过 |
+| P1-006 | 路径 src/../secret | 检查路径穿越 | 拒绝路径 | 路径穿越通过 |
+| P1-007 | 路径 .git/config | 敏感路径检查 | 拒绝修改 Git 元数据 | 敏感文件通过 |
+| P1-008 | 路径 config/.env.local | 敏感路径检查 | 拒绝环境文件 | 环境文件通过 |
+| P1-009 | 路径 private_.key | 敏感路径检查 | 拒绝密钥文件 | 密钥文件通过 |
+| P1-010 | 路径 deploy_token_prod | 敏感路径检查 | 拒绝令牌文件 | 令牌文件通过 |
+
+### 幂等性与并发重复（12）
+
+| 编号 | 输入 | 操作 | 预期结果 | 失败判据 |
+|---|---|---|---|---|
+| P1-011 | owner/repo 与 Owner/Repo | 检查仓库锁标识 | 大小写变体映射同一锁 ID | 同仓库绕过互斥 |
+| P1-012 | CODE_REPOS=Owner/Repo，查询 owner/repo | 检查白名单 | 仓库白名单大小写不敏感 | 大小写导致合法仓库被拒 |
+| P1-013 | CODE_CLAIMS 缺失 | 执行锁包装器 | 拒绝执行回调 | 无锁执行写操作 |
+| P1-014 | DO claim 返回 busy=true | 执行锁包装器 | 返回 busy 且回调不运行 | 锁竞争仍执行写操作 |
+| P1-015 | DO claim 成功，业务回调返回成功 | 执行锁包装器 | 回调一次并释放锁 | 锁未释放或重复执行回调 |
+| P1-016 | 业务回调抛出 operation-failed | 执行锁包装器 | 释放锁后传播原异常 | 异常吞掉或锁泄漏 |
+| P1-017 | DO unlock 失败 | 执行锁包装器 | 返回 lock_release_failed | 释放未确认仍报告成功 |
+| P1-018 | 请求仓库 OWNER/REPO | 生成锁 ID | 规范化为 workbench:owner/repo | 大小写不同产生不同锁 |
+| P1-019 | CODE_CLAIMS 未绑定 | 调用 codeWorkbenchLockCall | 返回 configured=false | 未配置 DO 被当作成功 |
+| P1-020 | DO 响应 JSON 解析抛错 | 调用 codeWorkbenchLockCall | 返回无效响应失败对象 | 无效响应被当作获锁 |
+| P1-021 | save/review/discard 作用于同仓库 | 逐项获取锁 | 三次都使用同一仓库锁 ID | 不同写操作使用不同锁域 |
+| P1-022 | 业务回调返回 {ok:false,reason:stale} | 执行锁包装器 | 原样返回失败结果 | 业务失败被包装成成功 |
+
+### 多文件审核（10）
+
+| 编号 | 输入 | 操作 | 预期结果 | 失败判据 |
+|---|---|---|---|---|
+| P1-023 | src/app.js | 校验普通文件路径 | 通过 | 合法路径被拒 |
+| P1-024 | frontend/studio.js | 校验嵌套路径 | 通过 | 嵌套路径被拒 |
+| P1-025 | src/my-file.test.js | 校验连字符文件名 | 通过 | 连字符路径被拒 |
+| P1-026 | src/my_file.js | 校验下划线文件名 | 通过 | 下划线路径被拒 |
+| P1-027 | v2/2026/file.js | 校验多级目录 | 通过 | 正常多级目录被拒 |
+| P1-028 | 空字符串 | 校验路径 | 拒绝 | 空路径通过 |
+| P1-029 | /src/a.js | 校验前导斜杠 | 拒绝 | 绝对路径通过 |
+| P1-030 | src//a.js | 校验重复分隔符 | 拒绝 | 空路径段通过 |
+| P1-031 | src/./a.js | 校验当前目录段 | 拒绝 | 点路径段通过 |
+| P1-032 | src/../a.js | 校验父目录段 | 拒绝 | 路径穿越通过 |
+
+### 失败清理（12）
+
+| 编号 | 输入 | 操作 | 预期结果 | 失败判据 |
+|---|---|---|---|---|
+| P1-033 | KV 中无活动分支记录 | 执行丢弃 | 幂等返回 already_absent，不删分支 | 误删其他分支 |
+| P1-034 | 请求分支与 KV 分支不同 | 执行丢弃 | 拒绝且不调用 GitHub 删除 | 可删除其他活动分支 |
+| P1-035 | GitHub 删除返回 503 | 执行丢弃 | 保留 KV，不写审计成功 | 删除失败仍清理记录 |
+| P1-036 | 分支删除成功但审计写入抛错 | 执行丢弃 | 保存 discard_history_failed 恢复状态 | 审计失败后无恢复记录 |
+| P1-037 | 审计成功但 KV delete 抛错 | 执行丢弃 | 保存 discard_record_cleanup_failed | 状态清理失败仍报告完成 |
+| P1-038 | KV 无分支记录 | 读取当前分支 | 返回 active=false | 空记录误报活动分支 |
+| P1-039 | GitHub ref 返回 404 | 读取当前分支 | 清理陈旧 KV 并标记 stale_branch_record | 404 后保留失效活动记录 |
+| P1-040 | GitHub ref 返回 503 | 读取当前分支 | 返回失败并保留 KV | 网络错误导致恢复记录被删 |
+| P1-041 | discard_history_failed 记录且 GitHub 404 | 读取当前分支 | 保留 discard_recovery 活动恢复入口 | 恢复入口丢失 |
+| P1-042 | 尝试删除 main | 调用 codeDeleteBranch | 拒绝且不请求 GitHub | main 可被删除 |
+| P1-043 | 删除 code/task-1 | 调用 codeDeleteBranch | DELETE 请求指向 git/refs/heads/code/task-1 | 使用错误的 refs API 路径 |
+| P1-044 | 删除 code/../main | 调用 codeDeleteBranch | 拒绝且不请求 GitHub | 路径穿越删除被允许 |
+
+### 分支隔离（8）
+
+| 编号 | 输入 | 操作 | 预期结果 | 失败判据 |
+|---|---|---|---|---|
+| P1-045 | 读取 main ref 返回 404 | 创建临时分支 | 失败且不创建 ref | 无基线仍创建分支 |
+| P1-046 | main 返回 SHA a…a | 创建 code/p-1 | 新分支 ref 指向该 SHA | 分支指向错误 commit |
+| P1-047 | base=main;delete | 创建临时分支 | 在 GitHub 请求前拒绝 | 注入 ref 被请求 |
+| P1-048 | 创建 ref 返回 422 | 创建临时分支 | 返回创建失败 | 创建失败仍报告成功 |
+| P1-049 | 项目名 My Project | 生成临时分支名 | 规范化为 code/my-project-* | 分支名不安全 |
+| P1-050 | 项目名 ../bad project | 生成临时分支名 | 去除路径穿越并规范化 | 生成可穿越分支名 |
+| P1-051 | 项目名为空 | 生成临时分支名 | 使用 project 默认名 | 生成空项目分支名 |
+| P1-052 | 项目名 UPPER_CASE | 生成临时分支名 | 规范化为小写且保留安全字符 | 大小写或字符清理错误 |
+
+### 冲突保护（10）
+
+| 编号 | 输入 | 操作 | 预期结果 | 失败判据 |
+|---|---|---|---|---|
+| P1-053 | 当前 base SHA 与审核 base 不同 | 执行 codeMergeTempBranch | 409 conflict，停止写入 | base 漂移仍合并 |
+| P1-054 | 当前 head SHA 与审核 head 不同 | 执行 codeMergeTempBranch | 409 conflict，停止写入 | head 漂移仍合并 |
+| P1-055 | expectedBaseSha 为空 | 执行合并 | 拒绝且不请求 GitHub | 空 SHA 进入合并 |
+| P1-056 | expectedBaseSha 仅 3 位 | 执行合并 | 拒绝且不请求 GitHub | 短 SHA 进入合并 |
+| P1-057 | expectedHeadSha 为空 | 执行合并 | 拒绝且不请求 GitHub | 空 head SHA 进入合并 |
+| P1-058 | base ref 校验失败 | 执行合并 | 拒绝且不请求 GitHub | 非法 base ref 进入合并 |
+| P1-059 | 合并源分支为 main | 执行合并 | 拒绝且不请求 GitHub | main 被当作临时源分支 |
+| P1-060 | 检查最终 ref 更新实现 | 静态契约核验 | 必须 force=false 且绑定 expectedBaseSha | 允许 force push 覆盖基线 |
+| P1-061 | 隔离 merge preview 返回 HTTP 409 | 核对合并冲突映射 | 返回 conflict=true | 冲突被误报成功 |
+| P1-062 | scratch 临时分支删除失败 | 核对清理保护 | 返回 scratch_cleanup_failed，目标分支不更新 | 临时引用泄漏后仍更新目标 |
+
+### 历史与回滚（8）
+
+| 编号 | 输入 | 操作 | 预期结果 | 失败判据 |
+|---|---|---|---|---|
+| P1-063 | 历史列表为空 | 执行回滚 | 拒绝无历史回滚 | 空历史触发写操作 |
+| P1-064 | 历史记录无 previous_sha | 执行回滚 | 拒绝 | 缺失版本指针仍回滚 |
+| P1-065 | 历史仓库不在白名单 | 执行回滚 | 拒绝 | 非白名单仓库回滚 |
+| P1-066 | codePushGuard 返回 denied | 执行回滚 | 拒绝 | 无权限身份可回滚 |
+| P1-067 | 历史记录 files=[] | 执行回滚 | 拒绝整仓回滚，仅允许有文件清单的局部回滚 | 缺失文件清单导致整仓回滚 |
+| P1-068 | Git tree 返回 truncated=true | 执行回滚 | 拒绝创建回滚 commit | 不完整文件树仍提交 |
+| P1-069 | 历史回滚创建新 commit | 核对 commit parents | 新 commit 以当前 SHA 为 parent | 回滚重写历史指针 |
+| P1-070 | 历史文件路径包含非法项 | 构建回滚文件树 | 路径先经过 codePathOk 过滤 | 非法路径进入回滚树 |
+
+### 预览与环境隔离（8）
+
+| 编号 | 输入 | 操作 | 预期结果 | 失败判据 |
+|---|---|---|---|---|
+| P1-071 | CODE_PREVIEW_URL=https://preview.example/run/{run_id} | 生成预览 URL | run_id 空格编码为 %20 | URL 参数未编码 |
+| P1-072 | PREVIEW_URL=http://preview.example/{run_id} | 生成预览 URL | 使用合法配置并编码 run_id | 配置回退或编码错误 |
+| P1-073 | 预览仓库为 other/repo | 请求预览 | 拒绝未配置仓库 | 其他仓库触发 Pages 工作流 |
+| P1-074 | GitHub workflow dispatch 返回 500 | 请求预览 | 返回失败 | 部署启动失败被报成功 |
+| P1-075 | 预览发起用户为 user | 保存预览记录 | 记录 preview_started_by 和 actor | 预览操作无操作者审计 |
+| P1-076 | 预览事件超过 100 条 | 追加预览审计 | 仅保留最近 100 条 | 审计事件无上限增长 |
+| P1-077 | 目标仓库为 openmanus-gateway | 生成分支预览 URL | 只生成 branch- 前缀隔离 URL | 错误生成生产预览 URL |
+| P1-078 | 活动分支为 code/project-1 | dispatch 预览 | workflow ref 使用 current.branch | 预览错误引用 main |
+
+### 文件树、搜索、逐文件审核与提交一致性（9）
+
+| 编号 | 输入 | 操作 | 预期结果 | 失败判据 |
+|---|---|---|---|---|
+| P1-079 | 加载活动项目文件树 | 调用 loadWorkbenchTree | 存在活动仓库/分支读取入口 | 文件树读取入口缺失 |
+| P1-080 | 渲染文件树节点 | 调用 renderWorkbenchTree | 存在路径渲染入口 | 文件树渲染入口缺失 |
+| P1-081 | 选中一个文件路径 | 调用 openWorkbenchFile | 按所选路径打开文件 | 逐文件打开入口缺失 |
+| P1-082 | 输入搜索 query | 执行文件搜索 | 存在 searchQuery 过滤入口 | 搜索入口缺失 |
+| P1-083 | 分支有文件差异 | 加载工作台树/差异 | 差异数据用于审核列表 | 审核列表未使用差异 |
+| P1-084 | 重命名文件 old.js → new.js | 拒绝重命名 | 请求载荷携带 previous_path=old.js | 拒绝时旧路径无法恢复 |
+| P1-085 | 当前活动分支 code/task | 执行合并 | 请求绑定 branch 身份 | 合并请求未绑定活动分支 |
+| P1-086 | 用户明确点击丢弃 | 执行 discardWorkbenchBranch | 存在明确丢弃操作入口 | 丢弃入口缺失 |
+| P1-087 | 从项目 A 切换到项目 B | 执行 switchWorkbenchProject | 清理旧活动分支上下文 | 旧项目分支状态泄漏 |
+
+**通过判定：** 87 个新增 `node:test` 用例全部执行并通过；`npm test` 总数以 Actions TAP 实际输出为准；`npm run build` 必须通过。若测试失败，保留真实失败日志，先修复测试夹具/断言，不通过弱化预期或删除用例来变绿。模拟测试结果不得标记为真实 GitHub/DO 验收通过。
+
+**本阶段安全边界：** 独立分支 `code/workbench-acceptance-phase1-20261128`；只允许改 `ACCEPTANCE.md` 与 `tests/workbench-acceptance-phase1.test.cjs`。PR #32、PR #60 不修改；不合并、不部署生产。
