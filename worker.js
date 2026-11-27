@@ -5462,7 +5462,6 @@ const WORKER_DEFAULT = {
       try { const r = await agCronReminders(e2); if (r.sent || r.msg) console.log("[cron] reminders", JSON.stringify({ sent: r.sent || 0, pending: r.pending || 0, msg: r.msg || "" })); }
       catch (e) { console.error("[cron] reminders failed", e && e.message || e); }
       try { const swept = await codePendingSweep(e2); if (swept.count) console.log("[cron] pending-sweep", JSON.stringify(swept)); } catch (e) { console.error("[cron] pending-sweep failed", e && e.message || e); }   // v108：过期待处理改动兜底清理
-      try { const verified = await codeVerifySweep(e2); if (verified.checked || verified.msg) console.log("[cron] code-verify-sweep", JSON.stringify(verified)); } catch (e) { console.error("[cron] code-verify-sweep failed", String(e && e.message || e).slice(0, 200)); }
       try {      // v99k：早报——北京时间（UTC+8）08 点这一小时内每分钟都会尝试，morning:<北京日期> 防重复；没日程 / 没待办也发；成败都写日志
         const bj = agParts(event && event.scheduledTime || Date.now());
         if (bj.h === 8) {
@@ -5479,6 +5478,10 @@ const WORKER_DEFAULT = {
       try { const n = await runDueTasks(e2); console.log("[cron] tasks done", n); } catch (e) { console.error("[cron] tasks failed", e && e.stack || e); }
       try { const r = await refreshCandy(e2); console.log("[cron] candy done", JSON.stringify({ ok: r.ok, skipped: !!r.skipped })); } catch (e) { console.error("[cron] candy failed", e && e.stack || e); }
       console.log("[cron] finish", new Date().toISOString());
+    })());
+    ctx.waitUntil((async () => {
+      try { const verified = await codeVerifySweep(e2); if (verified.checked || verified.msg) console.log("[cron] code-verify-sweep", JSON.stringify(verified)); }
+      catch (e) { console.error("[cron] code-verify-sweep failed", String(e && e.message || e).slice(0, 200)); }
     })());
   }   // v89：Cron 先真实刷新热榜并记录每一步，再执行其他任务
 };
