@@ -41,7 +41,7 @@ jobs:
         run: npm run build
 
       - name: Dispatch branch preview workflow via GitHub API
-        if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/code/')) }}
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_REF: ${{ github.head_ref }}
@@ -101,7 +101,7 @@ jobs:
         run: npx playwright test --project=webkit-iphone
 
       - name: Upload Playwright reports and screenshots
-        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-')
+        if: ${{ always() && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-')) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/code/'))) }}
         uses: actions/upload-artifact@v4
         with:
           name: workbench-playwright-${{ github.run_id }}-${{ github.run_attempt }}
