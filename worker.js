@@ -498,6 +498,9 @@ async function codeGhApi(env, api, options = {}) {
 function codeGitRefUrl(repo, ref) {
   return "https://api.github.com/repos/" + repo + "/git/ref/" + String(ref).split("/").map(encodeURIComponent).join("/");
 }
+function codeGitRefWriteUrl(repo, ref) {
+  return "https://api.github.com/repos/" + repo + "/git/refs/" + String(ref).split("/").map(encodeURIComponent).join("/");
+}
 function codeTempBranch(project) {
   const tag = String(project || "project").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "project";
   return "code/" + tag + "-" + Date.now() + "-" + rand(8);
@@ -520,7 +523,7 @@ async function codeCreateTempBranch(env, repo, project, base = "main") {
 }
 async function codeDeleteBranch(env, repo, branch) {
   if (!/^code\/[A-Za-z0-9._\/-]+$/.test(String(branch || ""))) return { ok: false, msg: "只允许删除代码模式创建的临时分支" };
-  return await codeGhApi(env, codeGitRefUrl(repo, "heads/" + branch), { method: "DELETE" });
+  return await codeGhApi(env, codeGitRefWriteUrl(repo, "heads/" + branch), { method: "DELETE" });
 }
 async function codeMergeTempBranch(env, repo, branch, base, message, expectedBaseSha, expectedHeadSha) {
   if (!/^code\/[A-Za-z0-9._\/-]+$/.test(String(branch || ""))) return { ok: false, msg: "临时分支名不合法" };
@@ -582,7 +585,7 @@ async function codeMergeTempBranch(env, repo, branch, base, message, expectedBas
   });
   const commitSha = String(created.data && created.data.sha || "");
   if (!created.ok || !commitSha) return { ok: false, msg: "创建固定基线合并提交失败：" + (created.msg || "缺少 commit SHA") };
-  const moved = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + safeBase), {
+  const moved = await codeGhApi(env, codeGitRefWriteUrl(repo, "heads/" + safeBase), {
     method: "PATCH", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sha: commitSha, force: false })
   });
@@ -926,7 +929,7 @@ async function codeRollback(env, user, body) {
   });
   const newSha = String(created.data && created.data.sha || "");
   if (!created.ok || !newSha) return { ok: false, msg: "创建回滚提交失败：" + (created.msg || "GitHub 没有返回 commit SHA") };
-  const moved = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + base), {
+  const moved = await codeGhApi(env, codeGitRefWriteUrl(repo, "heads/" + base), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sha: newSha, force: false })
