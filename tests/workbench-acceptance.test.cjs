@@ -290,7 +290,7 @@ test('ACCEPTANCE WORKBENCH-RENAME-DIFF-01: branch diff preserves the previous fi
 
 
 
-test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, review, or merge; authorized actions are attributed', async () => {
+test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, save, review, merge, or roll back; authorized actions are attributed', async () => {
   const repo = 'tianxin1300/openmanus-gateway';
   const guard = runFunction(sourceOf('function codePushGuard(', 'function codeParse('), 'codePushGuard', {
     codeRepoOk: () => true, codePathOk: () => true, codePathProtected: () => false
