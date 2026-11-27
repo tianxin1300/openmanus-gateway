@@ -800,3 +800,18 @@ test('ACCEPTANCE IDEMPOTENCY-CONCURRENT-CREATE-01: simultaneous duplicate create
   assert.equal(retry.existing, true, 'retry after lock release reuses the already-created branch');
   assert.equal(createCalls, 1, 'no second branch is created');
 });
+
+
+test('ACCEPTANCE WORKBENCH-LOCK-CASE-01: case variants of one repository resolve to the same lock identity', async () => {
+  let resolvedId = '';
+  const stub = { fetch: async () => new Response(JSON.stringify({ ok: true, acquired: true }), { status: 200 }) };
+  const lockCall = runFunction(sourceOf('async function codeWorkbenchLockCall(', 'async function codeWorkbenchWithLock('), 'codeWorkbenchLockCall', {});
+  const result = await lockCall({
+    CODE_CLAIMS: {
+      idFromName(name) { resolvedId = name; return name; },
+      get() { return stub; }
+    }
+  }, 'OWNER/Repo', 'branch-lock', { lock_id: 'workbench:owner/repo', token: 't' });
+  assert.equal(result.ok, true);
+  assert.equal(resolvedId, 'workbench:owner/repo');
+});
