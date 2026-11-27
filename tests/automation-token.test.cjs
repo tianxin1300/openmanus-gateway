@@ -32,7 +32,7 @@ test('自动化令牌管理要求正常登录，并支持查看、轮换和撤�
   assert.ok(start >= 0 && end > start);
   assert.match(route, /userFromReq\(request, env, url\)/);
   assert.match(route, /request\.method === "GET"/);
-  assert.match(route, /request\.method === "POST"/);
+  assert.match(route, /\["GET", "POST", "DELETE"\]/);
   assert.match(route, /request\.method === "DELETE"/);
   assert.match(route, /env\.KV\.delete\("automation_token:" \+ current\.hash\)/);
 });
