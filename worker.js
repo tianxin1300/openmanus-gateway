@@ -532,16 +532,24 @@ const codeHistoryKey = (user) => "code:history:" + String(user || "").slice(0, 1
 async function codeHistoryLoad(env, user) { return env.KV ? (await env.KV.get(codeHistoryKey(user), "json").catch(() => null) || []) : []; }
 async function codeHistorySave(env, user, rows) { if (env.KV) await env.KV.put(codeHistoryKey(user), JSON.stringify(rows.slice(0, 20)), { expirationTtl: 31536000 }); }
 const codeWorkbenchBranchKey = (user, repo) => "code:workbench-branch:" + String(user || "").slice(0, 120) + ":" + String(repo || "").slice(0, 120);
+async function codeWorkbenchLockCall(env, repo, action, body) {
+  if (!env.CODE_CLAIMS) return { ok: false, configured: false, msg: "CODE_CLAIMS Durable Object 未绑定" };
+  const stub = env.CODE_CLAIMS.get(env.CODE_CLAIMS.idFromName("workbench:" + String(repo)));
+  const response = await stub.fetch("https://workbench-lock/" + action, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {})
+  });
+  return response.json().catch(() => ({ ok: false, msg: "Durable Object 返回了无效锁响应" }));
+}
 async function codeWorkbenchWithLock(env, user, repo, operation, run) {
   if (!env.CODE_CLAIMS) return { ok: false, msg: "CODE_CLAIMS Durable Object 未绑定，拒绝无锁执行工作台写操作" };
   const lockId = "workbench:" + String(repo);
   const token = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + "-" + String(Math.random()).slice(2);
-  const acquired = await codeClaimCall(env, user, "branch-lock", { lock_id: lockId, token });
+  const acquired = await codeWorkbenchLockCall(env, repo, "branch-lock", { lock_id: lockId, token, operation: String(operation) });
   if (!acquired || !acquired.ok) return { ok: false, busy: !!(acquired && acquired.busy), msg: acquired && acquired.msg || "工作台操作锁获取失败" };
   try {
     return await run();
   } finally {
-    await codeClaimCall(env, user, "branch-unlock", { lock_id: lockId, token }).catch(() => null);
+    await codeWorkbenchLockCall(env, repo, "branch-unlock", { lock_id: lockId, token }).catch(() => null);
   }
 }
 async function codeWorkbenchBranchCurrent(env, user, repo) {
