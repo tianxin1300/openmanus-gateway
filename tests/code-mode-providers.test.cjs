@@ -214,6 +214,18 @@ test('failed Actions retry re-runs failed jobs on the same run instead of dispat
   assert.match(frontendSource, /retry\.onclick = \(\) => runRemoteVerify\(d\)/);
 });
 
+test('temporary branch preview is built from the staged branch and uses the Pages branch alias', () => {
+  assert.match(workerSource, /staged_on_branch: true/);
+  assert.match(workerSource, /codeUpdateFile\(env, proj\.repo, path, final\.out\[path\]/);
+  assert.match(workerSource, /previewDispatch/);
+  assert.match(workerSource, /claim\.pending\.staged_on_branch/);
+  assert.match(workerSource, /OpenManus: reject/);
+  assert.match(workerSource, /codeTempPreview\(branch, repo\)/);
+  assert.match(workerSource, /\.zhineng\.pages\.dev/);
+  const deployWorkflow = fs.readFileSync(path.join(root, '.github/workflows/deploy-project.yml'), 'utf8');
+  assert.match(deployWorkflow, /--branch "\$DEPLOY_REF"/);
+});
+
 test('web workbench: exposes the local preview control', () => {
   const previewButtons = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-local-preview")[^>]*>/g)];
   assert.equal(previewButtons.length, 1);
