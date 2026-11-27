@@ -505,7 +505,7 @@ function codeTempBranch(project) {
 function codeTempPreview(branch, repo) {
   if (String(repo || "") !== "tianxin1300/openmanus-gateway") return "";
   const slug = String(branch || "").replace(/\//g, "-").replace(/[^A-Za-z0-9-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase();
-  return slug ? "https://" + slug + ".zhineng.pages.dev" : "";
+  return slug ? "https://zhineng-et5.pages.dev/branch-" + slug : "";
 }
 async function codeCreateTempBranch(env, repo, project, base = "main") {
   const safeBase = codeVerifyRef(base);
