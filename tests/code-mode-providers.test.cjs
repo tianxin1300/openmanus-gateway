@@ -1523,6 +1523,108 @@ function renderAcceptanceDeliveryChain(data, health = { run_id: '', state: 'idle
   return node.children.map(child => child.textContent);
 }
 
+test('ACCEPTANCE WORKBENCH-PROJECT-01: cancelling a dirty project switch preserves the current branch and edits', async () => {
+  const start = frontendSource.indexOf("async function switchWorkbenchProject(");
+  const end = frontendSource.indexOf('\ng("wb-file-search")', start);
+  assert.ok(start >= 0 && end > start, "project switch handler exists");
+  const state = {
+    WORKBENCH_PROJECTS: { second: { owner: "owner-b", repo: "second-project" } },
+    REPO: { owner: "owner-a", repo: "first-project", branch: "code/first-active" },
+    activeBranchRecord: { branch: "code/first-active" },
+    dirty: true,
+    workbenchDecisions: { "src/app.js": true },
+    FILE: "src/app.js",
+    curSha: "old-sha",
+    select: { value: "second-project" },
+    confirmCalls: 0,
+    branchCalls: 0
+  };
+  const sandbox = {
+    WORKBENCH_PROJECTS: state.WORKBENCH_PROJECTS,
+    REPO: state.REPO,
+    activeBranchRecord: state.activeBranchRecord,
+    dirty: state.dirty,
+    workbenchDecisions: state.workbenchDecisions,
+    FILE: state.FILE,
+    curSha: state.curSha,
+    g: id => id === "wb-project" ? state.select : null,
+    confirm: () => { state.confirmCalls++; return false; },
+    updateWorkbenchBranchUI: () => { throw new Error("cancelled switch must not update branch UI"); },
+    ensureWorkbenchBranch: async () => { state.branchCalls++; }
+  };
+  vm.runInNewContext(frontendSource.slice(start, end) + '\nglobalThis.testSwitchProject = switchWorkbenchProject;', sandbox);
+  await sandbox.testSwitchProject("second");
+  assert.equal(state.confirmCalls, 1);
+  assert.equal(state.select.value, "first-project");
+  assert.equal(state.REPO.repo, "first-project");
+  assert.equal(state.REPO.branch, "code/first-active");
+  assert.equal(state.activeBranchRecord.branch, "code/first-active");
+  assert.deepEqual(state.workbenchDecisions, { "src/app.js": true });
+  assert.equal(state.branchCalls, 0);
+});
+
+test('ACCEPTANCE WORKBENCH-PROJECT-02: switching projects clears old branch state and loads the new project branch', async () => {
+  const start = frontendSource.indexOf("async function switchWorkbenchProject(");
+  const end = frontendSource.indexOf('\ng("wb-file-search")', start);
+  assert.ok(start >= 0 && end > start, "project switch handler exists");
+  const calls = [];
+  const state = {
+    REPO: { owner: "owner-a", repo: "first-project", branch: "code/first-active" },
+    activeBranchRecord: { branch: "code/first-active" },
+    workbenchDecisions: { "old/file.js": true },
+    FILE: "old/file.js",
+    curSha: "old-sha",
+    dirty: false,
+    select: { value: "second-project" },
+    fileLabel: { textContent: "old/file.js" }
+  };
+  const sandbox = {
+    WORKBENCH_PROJECTS: { second: { owner: "owner-b", repo: "second-project" } },
+    REPO: state.REPO,
+    get activeBranchRecord() { return state.activeBranchRecord; },
+    set activeBranchRecord(value) { state.activeBranchRecord = value; },
+    workbenchDecisions: state.workbenchDecisions,
+    get FILE() { return state.FILE; },
+    set FILE(value) { state.FILE = value; },
+    get curSha() { return state.curSha; },
+    set curSha(value) { state.curSha = value; },
+    get dirty() { return state.dirty; },
+    set dirty(value) { state.dirty = value; },
+    g: id => id === "wb-project" ? state.select : id === "wb-file" ? state.fileLabel : null,
+    confirm: () => true,
+    updateWorkbenchBranchUI: () => calls.push("update-ui"),
+    ensureWorkbenchBranch: async () => {
+      calls.push("create-project-branch:" + state.REPO.repo);
+      state.activeBranchRecord = { branch: "code/second-active" };
+      state.REPO.branch = "code/second-active";
+    },
+    loadFile: async () => calls.push("load-file"),
+    loadWorkbenchTree: async () => calls.push("load-tree"),
+    loadWorkbenchChanges: async () => calls.push("load-diff"),
+    loadWorkbenchVersions: async () => calls.push("load-history"),
+    say: message => calls.push("error:" + message)
+  };
+  vm.runInNewContext(frontendSource.slice(start, end) + '\nglobalThis.testSwitchProject = switchWorkbenchProject;', sandbox);
+  await sandbox.testSwitchProject("second");
+  assert.equal(state.REPO.owner, "owner-b");
+  assert.equal(state.REPO.repo, "second-project");
+  assert.equal(state.REPO.branch, "code/second-active");
+  assert.equal(state.activeBranchRecord.branch, "code/second-active");
+  assert.equal(state.FILE, "frontend/index.html");
+  assert.equal(state.fileLabel.textContent, "frontend/index.html");
+  assert.equal(state.curSha, null);
+  assert.equal(state.dirty, false);
+  assert.deepEqual(state.workbenchDecisions, {});
+  assert.deepEqual(calls, [
+    "update-ui",
+    "create-project-branch:second-project",
+    "load-file",
+    "load-tree",
+    "load-diff",
+    "load-history"
+  ]);
+});
+
 test('ACCEPTANCE AUTO-01: independent preview is built from the current editor source', () => {
   const script = /<script\b(?=[^>]*\bid=["']wb-devbench["'])[^>]*>([\s\S]*?)<\/script\s*>/i.exec(frontendSource);
   assert.ok(script, 'devbench script exists');
