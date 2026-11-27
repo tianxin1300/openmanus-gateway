@@ -27,6 +27,12 @@ jobs:
         with:
           node-version: 22
 
+      - name: Validate runtime E2E scripts
+        run: |
+          node --check tests/workbench-cloudflare-e2e-worker.mjs
+          node --check tests/workbench-cloudflare-e2e-cleanup-worker.mjs
+          node --check tests/workbench-cloudflare-e2e.mjs
+
       - name: Provision isolated Cloudflare Worker and KV
         id: provision
         shell: bash
@@ -92,12 +98,6 @@ jobs:
           echo "WORKER_URL=$WORKER_URL" >> "$GITHUB_ENV"
           echo "Isolated Worker deployed: $WORKER_URL"
 
-      - name: Validate runtime E2E scripts
-        run: |
-          node --check tests/workbench-cloudflare-e2e-worker.mjs
-          node --check tests/workbench-cloudflare-e2e-cleanup-worker.mjs
-          node --check tests/workbench-cloudflare-e2e.mjs
-
       - name: Run real Cloudflare Worker route, KV, and Durable Object E2E
         env:
           WORKER_URL: ${{ env.WORKER_URL }}
@@ -121,6 +121,7 @@ jobs:
             exit 0
           fi
 
+          CLEANUP_FAILED=0
           if [ "${DO_PROVISIONED:-false}" = "true" ]; then
             cat > wrangler.e2e-cleanup.toml <<EOF
           name = "$WORKER_NAME"
@@ -132,12 +133,23 @@ jobs:
           tag = "workbench-e2e-cleanup-v2"
           deleted_classes = ["CodeClaimDO"]
           EOF
-            npx --yes wrangler@4 deploy --config wrangler.e2e-cleanup.toml
+            if ! npx --yes wrangler@4 deploy --config wrangler.e2e-cleanup.toml; then
+              echo "::error::Durable Object namespace cleanup migration failed; preserving the Worker for safe manual cleanup."
+              CLEANUP_FAILED=1
+            fi
           fi
 
-          DELETE_WORKER="$(curl -sS -X DELETE "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME" \
-            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
-          printf '%s' "$DELETE_WORKER" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("success") or any(e.get("code")==10007 for e in d.get("errors", [])), d.get("errors")'
+          if [ "$CLEANUP_FAILED" = "0" ]; then
+            SCRIPT_STATUS="$(curl -sS -o /tmp/e2e-worker-check.json -w '%{http_code}' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+            if [ "$SCRIPT_STATUS" = "200" ]; then
+              curl -fsS -X DELETE "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME" \
+                -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" |
+                python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("success"), d.get("errors")'
+            elif [ "$SCRIPT_STATUS" != "404" ]; then
+              echo "::error::Could not verify temporary Worker before deletion (HTTP $SCRIPT_STATUS)"
+              CLEANUP_FAILED=1
+            fi
+          fi
 
           if [ -n "${KV_NAMESPACE_ID:-}" ]; then
             curl -fsS -X DELETE "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$KV_NAMESPACE_ID" \
@@ -145,4 +157,5 @@ jobs:
               python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("success"), d.get("errors")'
           fi
           rm -f wrangler.e2e.toml wrangler.e2e-cleanup.toml
+          if [ "$CLEANUP_FAILED" != "0" ]; then exit 1; fi
           echo "PASS: isolated Worker, Durable Object classes, and KV namespace cleanup completed."
