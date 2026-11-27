@@ -650,6 +650,7 @@ async function codeWorkbenchBranchCurrent(env, user, repo) {
   const ref = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + record.branch));
   if (!ref.ok) {
     if (ref.status === 404) {
+      if (String(record.status || "").startsWith("discard_")) return { ok: true, active: true, ...record, branch_deleted: true, discard_recovery: true };
       await env.KV.delete(key);
       return { ok: true, active: false, repo, stale_branch_record: true };
     }
@@ -807,10 +808,21 @@ async function codeWorkbenchBranchDiscardUnlocked(env, user, body = {}) {
       await codeHistorySave(env, user, [{ id: auditId, kind: "workbench_discard", action: "discard", actor: String(user), repo, project: record.project, branch: record.branch, at: new Date().toISOString() }, ...history]);
     }
   } catch (auditError) {
-    return { ok: false, discarded: true, branch_deleted: true, audit_saved: false, msg: "临时分支已删除，但操作者审计记录写入失败；状态记录保留，重试可补写审计：" + (auditError && auditError.message || "审计写入失败") };
+    record.status = "discard_history_failed";
+    record.discard_audit_id = auditId;
+    record.updated_at = new Date().toISOString();
+    let recoveryRecordSaved = false;
+    try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); recoveryRecordSaved = true; } catch (_) {}
+    return { ok: false, discarded: true, branch_deleted: true, audit_saved: false, recovery_record_saved: recoveryRecordSaved, msg: "临时分支已删除，但操作者审计记录写入失败；" + (recoveryRecordSaved ? "恢复状态已保留，刷新后仍可重试：" : "恢复状态也未能保存，请勿关闭页面并立即重试：") + (auditError && auditError.message || "审计写入失败") };
   }
   try { await env.KV.delete(key); }
-  catch (recordError) { return { ok: false, discarded: true, branch_deleted: true, audit_saved: true, msg: "临时分支已删除且审计已记录，但状态记录清理失败；重试可完成清理：" + (recordError && recordError.message || "KV 删除失败") }; }
+  catch (recordError) {
+    record.status = "discard_record_cleanup_failed";
+    record.discard_audit_id = auditId;
+    record.updated_at = new Date().toISOString();
+    await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }).catch(() => null);
+    return { ok: false, discarded: true, branch_deleted: true, audit_saved: true, msg: "临时分支已删除且审计已记录，但状态记录清理失败；刷新后仍可重试清理：" + (recordError && recordError.message || "KV 删除失败") };
+  }
   return { ok: true, discarded: true, branch: record.branch, main_untouched: true, audit_saved: true };
 }
 async function codeWorkbenchBranchDiscard(env, user, body = {}) {
@@ -823,6 +835,7 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
   const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
   const key = codeWorkbenchBranchKey(user, repo), record = await env.KV.get(key, "json").catch(() => null);
   if (!record || !record.branch || (body.branch && body.branch !== record.branch)) return { ok: false, msg: "当前项目没有匹配的临时分支" };
+  if (String(record.status || "").startsWith("discard_")) return { ok: false, discard_recovery: true, msg: "临时分支已删除，当前仅允许重试丢弃清理，不能保存或合并" };
   if (["merged_cleanup_failed", "merged_history_failed", "merged_record_cleanup_failed"].includes(record.status)) {
     if (record.status === "merged_history_failed" && record.history_row) {
       try {
