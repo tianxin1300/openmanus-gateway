@@ -22,6 +22,24 @@ function sourceOfFrontend(source, start, end) {
   return source.slice(a, b);
 }
 
+function makeRejectHarness(overrides = {}) {
+  const stats = { reads: 0, writes: 0, audits: 0 };
+  const reject = runFunction(sourceOf('async function codeWorkbenchBranchRejectFileUnlocked(', 'async function codeWorkbenchBranchRejectFile('), 'codeWorkbenchBranchRejectFileUnlocked', {
+    codeRepoOk: () => true,
+    codePathOk: p => typeof p === 'string' && !!p && !p.startsWith('/') && !p.includes('..'),
+    codePushGuard: () => '',
+    codeWorkbenchBranchCurrent: async () => ({ ok: true, active: true, branch: 'code/review', baseCommit: 'base-sha' }),
+    codeWorkbenchBranchKey: () => 'review-key',
+    codeGetFile: async (_env, _repo, _path, ref) => { stats.reads++; return { ok: true, exists: true, text: ref === 'base-sha' ? 'base' : 'edited', sha: 'blob-sha' }; },
+    codeUpdateFile: async () => { stats.writes++; return { ok: true }; },
+    codeGhUrl: (_repo, path) => 'https://api.github.com/contents/' + path,
+    codeGhApi: async () => { stats.writes++; return { ok: true }; },
+    ...overrides
+  });
+  const env = { KV: { get: async () => ({ review_events: [] }), put: async () => { stats.audits++; } } };
+  return { reject, env, stats };
+}
+
 test('ACCEPTANCE BRANCH-01: temp branch creation and edit leave main unchanged', async () => {
   const refs = { main: 'main-commit-001' };
   const create = runFunction(sourceOf('async function codeCreateTempBranch(', 'async function codeMergeTempBranch('), 'codeCreateTempBranch', {
@@ -592,4 +610,58 @@ test('ACCEPTANCE CREATE-CLEANUP-01: KV persistence failure cleans the new branch
   assert.equal(thrown.ok, false);
   assert.equal(thrown.orphaned, true);
   assert.match(thrown.msg, /network dropped/);
+});
+
+
+test('ACCEPTANCE REVIEW-GUARD-01: invalid paths are rejected before file reads or writes', async () => {
+  const h = makeRejectHarness();
+  const result = await h.reject(h.env, 'reviewer', { repo: 'owner/repo', path: '../secret.js' });
+  assert.equal(result.ok, false);
+  assert.equal(h.stats.reads, 0);
+  assert.equal(h.stats.writes, 0);
+});
+
+test('ACCEPTANCE REVIEW-GUARD-02: protected file paths are rejected before GitHub access', async () => {
+  const h = makeRejectHarness({ codePushGuard: () => 'protected path' });
+  const result = await h.reject(h.env, 'reviewer', { repo: 'owner/repo', path: 'worker.js' });
+  assert.equal(result.ok, false);
+  assert.equal(h.stats.reads, 0);
+  assert.equal(h.stats.writes, 0);
+});
+
+test('ACCEPTANCE REVIEW-READ-01: baseline read failure does not mutate the branch', async () => {
+  const h = makeRejectHarness({ codeGetFile: async () => ({ ok: false, msg: 'baseline unavailable' }) });
+  const result = await h.reject(h.env, 'reviewer', { repo: 'owner/repo', path: 'a.js' });
+  assert.equal(result.ok, false);
+  assert.equal(h.stats.writes, 0);
+  assert.equal(h.stats.audits, 0);
+});
+
+test('ACCEPTANCE REVIEW-READ-02: branch read failure does not mutate the branch', async () => {
+  const h = makeRejectHarness({ codeGetFile: async (_e, _r, _p, ref) => ref === 'base-sha'
+    ? { ok: true, exists: true, text: 'base', sha: 'base-blob' }
+    : { ok: false, msg: 'branch unavailable' } });
+  const result = await h.reject(h.env, 'reviewer', { repo: 'owner/repo', path: 'a.js' });
+  assert.equal(result.ok, false);
+  assert.equal(h.stats.writes, 0);
+  assert.equal(h.stats.audits, 0);
+});
+
+test('ACCEPTANCE REVIEW-WRITE-01: failed baseline restoration is not recorded as a completed review', async () => {
+  const h = makeRejectHarness({ codeUpdateFile: async () => ({ ok: false, msg: 'GitHub write failed' }) });
+  const result = await h.reject(h.env, 'reviewer', { repo: 'owner/repo', path: 'a.js' });
+  assert.equal(result.ok, false);
+  assert.equal(h.stats.audits, 0);
+});
+
+test('ACCEPTANCE REVIEW-WRITE-02: failed deletion of a rejected added file is not audited as success', async () => {
+  const h = makeRejectHarness({
+    codeGetFile: async (_e, _r, _p, ref) => ref === 'base-sha'
+      ? { ok: true, exists: false }
+      : { ok: true, exists: true, text: 'new', sha: 'new-blob' },
+    codeGhApi: async () => ({ ok: false, status: 500, msg: 'delete failed' })
+  });
+  const result = await h.reject(h.env, 'reviewer', { repo: 'owner/repo', path: 'new.js' });
+  assert.equal(result.ok, false);
+  assert.equal(h.stats.audits, 0);
 });
