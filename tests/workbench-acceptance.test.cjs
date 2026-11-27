@@ -12,7 +12,7 @@ function sourceOf(start, end) {
   return worker.slice(a, b);
 }
 function runFunction(source, name, globals) {
-  const sandbox = { ...globals, URL, Date, Math, JSON, Set, Map, Promise, console };
+  const sandbox = { ...globals, URL, Date, Math, JSON, Set, Map, Promise, console, crypto: require('node:crypto').webcrypto, codeWorkbenchWithLock: async (_env, _user, _repo, _operation, run) => run() };
   vm.runInNewContext(source + '\nglobalThis.__tested = ' + name + ';', sandbox);
   return sandbox.__tested;
 }
@@ -403,6 +403,21 @@ test('ACCEPTANCE LOCK-CLEANUP-01: failed or cancelled claim releases its operati
     }));
     return response.json();
   };
+  // Durable Object branch-operation locks serialize duplicate create/merge requests.
+  const lockId = 'workbench:tianxin1300/openmanus-gateway:create';
+  const lockOne = await call('branch-lock', { lock_id: lockId, token: 'token-one' });
+  assert.equal(lockOne.acquired, true);
+  const lockTwo = await call('branch-lock', { lock_id: lockId, token: 'token-two' });
+  assert.equal(lockTwo.ok, false);
+  assert.equal(lockTwo.busy, true, 'second operation cannot enter while the first lock is active');
+  const wrongRelease = await call('branch-unlock', { lock_id: lockId, token: 'token-two' });
+  assert.equal(wrongRelease.ok, false, 'a different operation cannot release the active lock');
+  const released = await call('branch-unlock', { lock_id: lockId, token: 'token-one' });
+  assert.equal(released.released, true);
+  const lockAgain = await call('branch-lock', { lock_id: lockId, token: 'token-three' });
+  assert.equal(lockAgain.acquired, true, 'a released lock permits the next operation');
+  assert.equal((await call('branch-unlock', { lock_id: lockId, token: 'token-three' })).released, true);
+
   const pending = { id: 'task-one', project: 'p', repo: 'tianxin1300/openmanus-gateway', branch: 'code/task-one',
     edits: [{ path: 'a.js', old: 'a', new: 'b' }], created_at: Date.now() };
   assert.equal((await call('create', { pending })).ok, true);
@@ -426,4 +441,50 @@ test('ACCEPTANCE LOCK-CLEANUP-01: failed or cancelled claim releases its operati
   const next = { ...pending, id: 'task-two', branch: 'code/task-two' };
   const createdAgain = await call('create', { pending: next });
   assert.equal(createdAgain.ok, true, 'a new task can claim the cleared state');
+});
+
+
+test('ACCEPTANCE WORKBENCH-CONCURRENCY-01: simultaneous branch operations are serialized by the Durable Object lock', async () => {
+  const helper = sourceOf('async function codeWorkbenchWithLock(', 'async function codeWorkbenchBranchCurrent(');
+  const wrapper = sourceOf('async function codeWorkbenchBranchCreate(', 'async function codeWorkbenchBranchDiff(');
+  let held = false, entered = 0, releaseRun;
+  const wait = new Promise(resolve => { releaseRun = resolve; });
+  const codeClaimCall = async (_env, _user, action, body) => {
+    if (action === 'branch-lock') {
+      if (held) return { ok: false, busy: true, msg: 'locked' };
+      held = true; return { ok: true, acquired: true };
+    }
+    if (action === 'branch-unlock') { held = false; return { ok: true, released: true }; }
+    throw new Error('unexpected lock action');
+  };
+  const create = runFunction(helper + '\n' + wrapper, 'codeWorkbenchBranchCreate', {
+    codeClaimCall,
+    codeWorkbenchBranchCreateUnlocked: async () => { entered++; await wait; return { ok: true, branch: 'code/once' }; }
+  });
+  const env = { CODE_CLAIMS: {} };
+  const first = create(env, 'owner', { repo: 'tianxin1300/openmanus-gateway' });
+  await Promise.resolve();
+  const second = await create(env, 'owner', { repo: 'tianxin1300/openmanus-gateway' });
+  assert.equal(second.ok, false);
+  assert.equal(second.busy, true);
+  assert.equal(entered, 1, 'only one concurrent create reaches GitHub branch creation');
+  releaseRun();
+  const result = await first;
+  assert.equal(result.ok, true);
+  assert.equal(held, false, 'lock is released after the operation finishes');
+});
+
+test('ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01: create and merge refuse to run without CODE_CLAIMS', async () => {
+  const helper = sourceOf('async function codeWorkbenchWithLock(', 'async function codeWorkbenchBranchCurrent(');
+  const createWrapper = sourceOf('async function codeWorkbenchBranchCreate(', 'async function codeWorkbenchBranchDiff(');
+  const mergeWrapper = sourceOf('async function codeWorkbenchBranchMerge(', 'async function codeMemoryAppend(');
+  const create = runFunction(helper + '\n' + createWrapper, 'codeWorkbenchBranchCreate', {
+    codeWorkbenchBranchCreateUnlocked: async () => { throw new Error('must not execute'); }
+  });
+  const merge = runFunction(helper + '\n' + mergeWrapper, 'codeWorkbenchBranchMerge', {
+    codeWorkbenchBranchMergeUnlocked: async () => { throw new Error('must not execute'); }
+  });
+  const noBinding = {};
+  assert.equal((await create(noBinding, 'owner', { repo: 'tianxin1300/openmanus-gateway' })).ok, false);
+  assert.equal((await merge(noBinding, 'owner', { repo: 'tianxin1300/openmanus-gateway' })).ok, false);
 });
