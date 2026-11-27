@@ -827,7 +827,12 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
   if (record.baseCommit && previousSha !== record.baseCommit) {
     return { ok: false, conflict: true, base_advanced: true, base_commit: record.baseCommit, current_base_commit: previousSha, msg: record.baseBranch + " 已在创建临时分支后发生变化。为防止旧基线覆盖新修改，已阻止合并；请先同步基线并重新审核改动。" };
   }
-  const merged = await codeMergeTempBranch(env, repo, record.branch, record.baseBranch, String(body.summary || "Workbench: merge " + record.project), previousSha, String(compared.data && compared.data.head_commit && compared.data.head_commit.sha || ""));
+  const branchHead = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + record.branch));
+  const expectedHeadSha = String(branchHead.data && branchHead.data.object && branchHead.data.object.sha || "");
+  if (!branchHead.ok || !/^[0-9a-f]{40}$/i.test(expectedHeadSha)) {
+    return { ok: false, msg: "读取临时分支当前版本失败：" + (branchHead.msg || "缺少有效 head SHA") };
+  }
+  const merged = await codeMergeTempBranch(env, repo, record.branch, record.baseBranch, String(body.summary || "Workbench: merge " + record.project), previousSha, expectedHeadSha);
   if (!merged.ok) return { ok: false, conflict: !!merged.conflict || merged.status === 409, files, msg: "合并失败，临时分支保留：" + merged.msg };
   let commitSha = String(merged.data && merged.data.sha || "");
   if (!commitSha) {
