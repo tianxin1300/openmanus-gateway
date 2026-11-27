@@ -284,7 +284,7 @@ test('workbench branch lookup preserves KV records on transient GitHub errors', 
   assert.match(current, /if \(ref\.status === 404\)\s*\{[\s\S]*?env\.KV\.delete\(key\)/);
   assert.match(current, /GitHub 临时分支状态检查失败，已保留本地分支记录/);
   assert.doesNotMatch(current, /if \(!ref\.ok\)\s*\{\s*await env\.KV\.delete\(key\)/);
-  const create = extract(workerSource, 'async function codeWorkbenchBranchCreate(', 'async function codeWorkbenchBranchDiff(');
+  const create = extract(workerSource, 'async function codeWorkbenchBranchCreateUnlocked(', 'async function codeWorkbenchBranchDiff(');
   assert.match(create, /if \(ref\.status !== 404\) return \{ ok: false, msg:/);
   assert.match(create, /检查已有临时分支失败，原记录已保留/);
 });
