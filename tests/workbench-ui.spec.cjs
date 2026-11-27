@@ -18,6 +18,8 @@ function fixtures() {
     actualGitHubMergeCount: 0,
     branchStatus: "active",
     discardFailure: false,
+    discardAuditFailuresRemaining: 0,
+    discardCalls: 0,
     history: [],
     rejected: [],
     rejectedPayloads: [],
@@ -106,11 +108,17 @@ async function installApiFixtures(page, state) {
     }
     if (path.endsWith("/branch/discard") && method === "POST") {
       state.discardPayload = body;
+      state.discardCalls++;
       if (state.discardFailure) {
         return json({ ok: false, msg: "simulated branch deletion failure" }, 503);
       }
+      if (state.discardAuditFailuresRemaining > 0) {
+        state.discardAuditFailuresRemaining--;
+        state.active = false;
+        return json({ ok: false, discarded: true, branch_deleted: true, audit_saved: false, msg: "临时分支已删除，但操作者审计记录写入失败" }, 400);
+      }
       state.active = false;
-      return json({ ok: true, main_untouched: true, reply: "临时分支已删除，main 未改变。" });
+      return json({ ok: true, main_untouched: true, audit_saved: true, reply: "临时分支已删除，main 未改变。" });
     }
     if (path.endsWith("/rollback") && method === "POST") {
       state.rollbackPayload = body;
@@ -325,6 +333,22 @@ test("merge conflict keeps the temporary branch and accepted diff available", as
   await expect(page.locator("#wb-branch")).toContainText("code/");
   await expect(page.locator("#wb-push")).toBeEnabled();
   await expect(page.locator(".wb-change-row").filter({ hasText: "README.md" })).toBeVisible();
+});
+
+test("discard audit failure keeps a retry path after the branch is already deleted", async ({ page }) => {
+  const state = fixtures();
+  state.discardAuditFailuresRemaining = 1;
+  await installApiFixtures(page, state);
+  await openWorkbench(page);
+
+  await page.locator("#wb-discard").click();
+  await expect.poll(() => state.discardCalls).toBe(1);
+  await expect(page.getByText("临时分支已删除，审计/状态清理待完成")).toBeVisible();
+  await expect(page.locator("#wb-branch")).toContainText("code/");
+
+  await page.locator("#wb-discard").click();
+  await expect.poll(() => state.discardCalls).toBe(2);
+  await expect(page.locator("#wb-branch")).toContainText("无活动临时分支");
 });
 
 test("failed discard keeps the active branch and permits another attempt", async ({ page }) => {
