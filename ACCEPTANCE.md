@@ -244,10 +244,11 @@ npm test
 
 ### WORKBENCH-07 — 重复执行与幂等性
 
-**自动化测试：** `ACCEPTANCE IDEMPOTENCY-01: repeated create reuses one branch and repeated merge cannot create a second commit`
+**自动化测试：** `ACCEPTANCE IDEMPOTENCY-01: repeated create reuses one branch and repeated merge cannot create a second commit`；`ACCEPTANCE IDEMPOTENCY-CONCURRENT-CREATE-01`
 
 **测试覆盖：**
 - 同一用户/项目连续创建两次，第二次复用已有活动分支，不再创建新分支。
+- 同一项目并发创建两次，第二个请求被锁拦截；首个创建完成后重试，复用同一分支。
 - 同一临时分支合并成功后再次提交相同合并请求，不能再次创建提交或重复写入历史。
 
 **通过条件：** 分支创建调用一次、合并调用一次、历史只增加一条。
