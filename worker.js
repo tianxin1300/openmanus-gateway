@@ -825,7 +825,66 @@ function codeVerifyErrorLines(text) {
   const indexes = selected.size ? [...selected].sort((a, b) => a - b) : lines.map((_, i) => i);
   return indexes.slice(-60).map((i) => codeVerifyRedact(lines[i]).slice(0, 1000));
 }
-async function codeVerifyStatus(env, user) {
+async function codeRepairPendingFromVerification(env, user, job) {
+  const claimed = await codeClaimCall(env, user, "repair-claim", {
+    pending_id: String(job.pending_id || ""), request_id: String(job.request_id || ""),
+    run_id: String(job.run_id || "")
+  });
+  if (!claimed.ok || !claimed.pending) return claimed;
+  const pend = claimed.pending;
+  const finish = async (status, result, edits, verification) => {
+    const saved = await codeClaimCall(env, user, "repair-finish", {
+      pending_id: pend.id, ok: status === "verification_pending", verification,
+      error: result && (result.reply || result.msg) || "自动修复未完成"
+    });
+    return saved.ok ? { ...result, pending: true, status: saved.pending && saved.pending.status } : { ok: false, pending: true, reply: (result.reply || result.msg || "自动修复失败") + "；状态保存失败：" + (saved.msg || "请刷新确认") };
+  };
+  try {
+    const tree = await codeFileTree(env, pend.repo, pend.branch);
+    if (!tree.ok) return await finish("verification_failed", { ok: false, reply: "自动修复无法读取临时分支文件树：" + tree.msg }, pend.edits);
+    const paths = [...new Set([
+      ...(pend.edits || []).map((e) => String(e.path || "")),
+      ...tree.files.filter((path) => (job.error_lines || []).some((line) => String(line).includes(path)))
+    ])].filter((path) => path && codePathOk(path) && !codePathProtected(path)).slice(0, 8);
+    if (!paths.length) return await finish("verification_failed", { ok: false, reply: "自动修复未找到可安全读取的失败相关文件。" }, pend.edits);
+    const files = {}, shas = {};
+    for (const path of paths) {
+      const bad = codePushGuard(env, user, pend.repo, path);
+      if (bad) return await finish("verification_failed", { ok: false, reply: "自动修复被权限保护拦截：" + path + "：" + bad }, pend.edits);
+      const file = await codeGetFile(env, pend.repo, path, pend.branch);
+      if (!file.ok || !file.exists) return await finish("verification_failed", { ok: false, reply: "自动修复读取 " + path + " 失败：" + (file.msg || "文件不存在") }, pend.edits);
+      files[path] = file.text; shas[path] = file.sha;
+    }
+    const source = Object.keys(files).map((path) => "### " + path + "\n\n" + codeCut(files[path], 18000)).join("\n\n");
+    const logs = (job.error_lines || []).slice(0, 60).map((line) => codeVerifyRedact(line)).join("\n");
+    const system = "你是 OpenManus 仓库的自动测试修复代理。你必须依据真实 GitHub Actions 失败日志和下面给出的临时分支源码修复根因。只允许修改提供的文件；不能删除、跳过或弱化测试，不能用假数据绕过测试，不能修改密钥或受保护文件。输出必须只包含一个或多个精确修改块，格式：\n<<<<<<< SEARCH 文件路径\n原文中唯一且连续的片段\n=======\n替换后的完整片段\n>>>>>>> REPLACE\nSEARCH 必须逐字匹配当前源码。不要输出整文件，不要声称已经运行测试；修复后系统会重新运行 Actions 验证。若日志和源码不足以安全修复，只回复一行 ASK: 加上最关键的缺失信息。";
+    const prompt = "验证任务：" + String(job.request_id || "") + "\n失败步骤：" + String(job.failed_step || "未知") + "\n待验证 commit：" + String(job.expected_sha || "") + "\nActions 真实失败日志：\n" + logs + "\n\n临时分支源码：\n" + source + "\n\n请只修复这些失败直接相关的问题，保留所有既有功能和测试。";
+    const model = await codeLLM(env, [{ role: "system", content: system }, { role: "user", content: prompt }], 150000);
+    if (!model.text) return await finish("verification_failed", { ok: false, reply: "自动修复模型调用失败：" + (model.tried || []).join("；") }, pend.edits);
+    if (/^\s*ASK\s*[:：]/i.test(model.text)) return await finish("verification_failed", { ok: false, reply: "自动修复需要更多上下文：" + codeCut(model.text, 500) }, pend.edits);
+    const edits = codeParseEdits(model.text);
+    if (!edits.length) return await finish("verification_failed", { ok: false, reply: "模型已响应，但没有返回可应用的 SEARCH/REPLACE 修复块。" }, pend.edits);
+    for (const edit of edits) {
+      const path = String(edit.path || "").replace(/^\.?\//, "");
+      if (!Object.prototype.hasOwnProperty.call(files, path)) return await finish("verification_failed", { ok: false, reply: "模型尝试修改未提供的文件，已拒绝：" + path }, pend.edits);
+      const bad = codePushGuard(env, user, pend.repo, path);
+      if (bad) return await finish("verification_failed", { ok: false, reply: "模型修复触发权限保护，已拒绝：" + bad }, pend.edits);
+    }
+    const applied = codeApply(files, edits);
+    if (applied.errs.length || !applied.done.length) return await finish("verification_failed", { ok: false, reply: "模型修复块无法安全应用：" + applied.errs.map((e) => e.msg).join("；") }, pend.edits);
+    const changed = [...new Set(applied.done.map((e) => e.path))];
+    for (const path of changed) {
+      const update = await codeUpdateFile(env, pend.repo, path, applied.out[path], "AI: repair failed verification", pend.branch, shas[path]);
+      if (!update.ok) return await finish("verification_failed", { ok: false, reply: "自动修复写入 " + path + " 失败：" + update.msg }, pend.edits);
+    }
+    pend.repair_model = model.from || "unknown";
+    return await codeQueuePendingVerification(env, user, pend, finish, pend.edits);
+  } catch (e) {
+    return await finish("verification_failed", { ok: false, reply: "自动修复过程异常：" + String(e && e.message || e).slice(0, 300) }, pend.edits);
+  }
+}
+
+async function codeVerifyStatus(env, user, ctx) {
   const old = env.KV ? await env.KV.get(codeVerifyKey(user), "json") : null;
   if (!old) return { ok: false, msg: "没有找到验证任务，请先点击运行 / 验证" };
   const repo = old.repo || codeVerifyRepo(env), base = "https://api.github.com/repos/" + repo;
@@ -856,7 +915,14 @@ async function codeVerifyStatus(env, user) {
   if (old.pending_id && old.run_id && old.status === "completed") {
     const verification = await codeClaimCall(env, user, "verification", { pending_id: old.pending_id, request_id: old.request_id, run_id: String(old.run_id), run_url: old.run_url, expected_sha: old.expected_sha, actual_sha: String(old.head_sha || ""), conclusion: old.conclusion || "failure", error_lines: old.error_lines || [], failed_step: old.failed_step || "" });
     if (!verification.ok && !verification.conflict) old.verification_error = verification.msg || "无法更新待处理验证状态";
-    if (verification.ok) old.pending_status = verification.pending && verification.pending.status || "";
+    if (verification.ok) {
+      old.pending_status = verification.pending && verification.pending.status || "";
+      if (old.pending_status === "verification_failed") {
+        const repair = codeRepairPendingFromVerification(env, user, old).catch((e) => console.error("[code] automatic repair failed", String(e && e.message || e).slice(0, 200)));
+        if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(repair); else await repair;
+        old.auto_repair_started = true;
+      }
+    }
   }
   if (env.KV) await env.KV.put(codeVerifyKey(user), JSON.stringify(old), { expirationTtl: 86400 });
   await codePersistRun(env, user, old);
@@ -9057,7 +9123,7 @@ async function handle(request, env, ctx) {
     if (path === "/api/code/verify" && request.method === "GET") {
       const user = await userFromReq(request, env, url, "");
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
-      const r = await codeVerifyStatus(env, user);
+      const r = await codeVerifyStatus(env, user, ctx);
       return json(r, r.ok ? 200 : 404);
     }
     if (path === "/api/code/deploy" && request.method === "POST") {
