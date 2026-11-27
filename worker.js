@@ -594,7 +594,7 @@ async function codeWorkbenchBranchPreview(env, user, repo) {
   if (!current.ok || !current.active) return { ok: false, msg: "当前项目没有活动临时分支" };
   if (repo !== "tianxin1300/openmanus-gateway") return { ok: false, msg: "该项目仓库尚未配置 Cloudflare Pages 预览工作流" };
   const requestId = "workbench-preview-" + Date.now().toString(36);
-  const dispatched = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/actions/workflows/deploy-project.yml/dispatches", {
+  const dispatched = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/actions/workflows/deploy-branch-preview.yml/dispatches", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ref: current.branch, inputs: { request_id: requestId, ref: current.branch } })
   });
@@ -1342,7 +1342,7 @@ async function codeProject(env, user, proj, req, history, ui) {
   }
   const previewRequestId = "preview-" + pendingId.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 100);
   const previewDispatch = proj.repo === "tianxin1300/openmanus-gateway"
-    ? await codeGhApi(env, "https://api.github.com/repos/" + proj.repo + "/actions/workflows/deploy-project.yml/dispatches", {
+    ? await codeGhApi(env, "https://api.github.com/repos/" + proj.repo + "/actions/workflows/deploy-branch-preview.yml/dispatches", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ref: temp.branch, inputs: { request_id: previewRequestId, ref: temp.branch } })
       })
