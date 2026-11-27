@@ -404,7 +404,7 @@ test('ACCEPTANCE LOCK-CLEANUP-01: failed or cancelled claim releases its operati
     return response.json();
   };
   // Durable Object branch-operation locks serialize duplicate create/merge requests.
-  const lockId = 'workbench:tianxin1300/openmanus-gateway:create';
+  const lockId = 'workbench:tianxin1300/openmanus-gateway';
   const lockOne = await call('branch-lock', { lock_id: lockId, token: 'token-one' });
   assert.equal(lockOne.acquired, true);
   const lockTwo = await call('branch-lock', { lock_id: lockId, token: 'token-two' });
@@ -447,6 +447,7 @@ test('ACCEPTANCE LOCK-CLEANUP-01: failed or cancelled claim releases its operati
 test('ACCEPTANCE WORKBENCH-CONCURRENCY-01: simultaneous branch operations are serialized by the Durable Object lock', async () => {
   const helper = sourceOf('async function codeWorkbenchWithLock(', 'async function codeWorkbenchBranchCurrent(');
   const wrapper = sourceOf('async function codeWorkbenchBranchCreate(', 'async function codeWorkbenchBranchDiff(');
+  const mergeWrapper = sourceOf('async function codeWorkbenchBranchMerge(', 'async function codeMemoryAppend(');
   let held = false, entered = 0, releaseRun;
   const wait = new Promise(resolve => { releaseRun = resolve; });
   const codeClaimCall = async (_env, _user, action, body) => {
@@ -461,13 +462,17 @@ test('ACCEPTANCE WORKBENCH-CONCURRENCY-01: simultaneous branch operations are se
     codeClaimCall,
     codeWorkbenchBranchCreateUnlocked: async () => { entered++; await wait; return { ok: true, branch: 'code/once' }; }
   });
+  const merge = runFunction(helper + '\n' + mergeWrapper, 'codeWorkbenchBranchMerge', {
+    codeClaimCall,
+    codeWorkbenchBranchMergeUnlocked: async () => { entered++; return { ok: true }; }
+  });
   const env = { CODE_CLAIMS: {} };
   const first = create(env, 'owner', { repo: 'tianxin1300/openmanus-gateway' });
   await Promise.resolve();
-  const second = await create(env, 'owner', { repo: 'tianxin1300/openmanus-gateway' });
+  const second = await merge(env, 'owner', { repo: 'tianxin1300/openmanus-gateway' });
   assert.equal(second.ok, false);
   assert.equal(second.busy, true);
-  assert.equal(entered, 1, 'only one concurrent create reaches GitHub branch creation');
+  assert.equal(entered, 1, 'a concurrent merge cannot enter while create owns the shared project lock');
   releaseRun();
   const result = await first;
   assert.equal(result.ok, true);
