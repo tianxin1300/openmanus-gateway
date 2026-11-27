@@ -6503,16 +6503,18 @@ function renderVerifyResult(d) {
   const links = document.createElement("div");
   const actions = verifyLink("打开 Actions 运行记录", d.actions_url || d.run_url); if (actions) links.appendChild(actions);
   const preview = verifyLink("打开项目预览", d.preview_url); if (preview) links.appendChild(preview);
-  if (state === "failure") { const retry = document.createElement("button"); retry.type = "button"; retry.textContent = "失败重试"; retry.className = "sec"; retry.style.cssText = "margin-top:8px"; retry.onclick = runRemoteVerify; links.appendChild(retry); }
+  if (state === "failure" && /^\d+$/.test(String(d.run_id || ""))) { const retry = document.createElement("button"); retry.type = "button"; retry.textContent = "重试失败任务"; retry.className = "sec"; retry.style.cssText = "margin-top:8px"; retry.onclick = () => runRemoteVerify(d); links.appendChild(retry); }
   if (state === "success" && !d.preview_url) { const tip = document.createElement("div"); tip.textContent = "验证已通过，但当前没有配置预览地址；可在下方运行日志中打开 Pages / Worker Actions Run。"; tip.style.cssText = "margin-top:10px;color:#7a887d;font-size:12px"; links.appendChild(tip); }
   res.appendChild(links); showTab("run"); syncLocalTaskPreview(); if (!d.fromHistory) loadRunHistory();
 }
-async function runRemoteVerify() {
+async function runRemoteVerify(retryRecord) {
   const ciBtn = g("wb-ci");
   if (!authToken) { toast("请先登录"); return; }
   if (verifyTimer) { clearTimeout(verifyTimer); verifyTimer = null; }
   if (verifyAbort) { verifyAbort.abort(); verifyAbort = null; }
   if (ciBtn) { ciBtn.disabled = true; ciBtn.textContent = "验证中…"; }
+  const retryKind = retryRecord && retryRecord.deploy ? "deploy" : "verify";
+  const statusPath = retryRecord && retryRecord.run_id ? (retryKind === "deploy" ? "/api/code/deploy" : "/api/code/verify") : "/api/code/verify";
   const started = Date.now(); let polls = 0; let stopped = false;
   const finish = (text, bad = false, label = "运行 / 验证") => {
     stopped = true; if (verifyTimer) { clearTimeout(verifyTimer); verifyTimer = null; }
@@ -6529,7 +6531,7 @@ async function runRemoteVerify() {
     const ctl = new AbortController(); verifyAbort = ctl;
     const timeout = setTimeout(() => ctl.abort(), VERIFY_REQUEST_MS);
     try {
-      const r = await authFetch(GATEWAY + "/api/code/verify", {cache: "no-store", signal: ctl.signal}), d = await r.json().catch(() => ({}));
+      const r = await authFetch(GATEWAY + statusPath, {cache: "no-store", signal: ctl.signal}), d = await r.json().catch(() => ({}));
       if (!r.ok || d.ok === false) throw new Error(d.msg || "读取验证状态失败");
       renderVerifyResult(d);
       if (d.state === "success") { finish("验证通过", false, "运行 / 验证"); return; }
@@ -6551,7 +6553,9 @@ async function runRemoteVerify() {
   try {
     const ctl = new AbortController(); verifyAbort = ctl; const timeout = setTimeout(() => ctl.abort(), VERIFY_REQUEST_MS);
     try {
-      const start = await authFetch(GATEWAY + "/api/code/verify", {method: "POST", headers: {"Content-Type": "application/json", "Accept": "application/json"}, body: JSON.stringify({ref: REPO.branch}), signal: ctl.signal});
+      const start = retryRecord && retryRecord.run_id
+        ? await authFetch(GATEWAY + "/api/code/retry", {method: "POST", headers: {"Content-Type": "application/json", "Accept": "application/json"}, body: JSON.stringify({run_id: String(retryRecord.run_id), kind: retryKind}), signal: ctl.signal})
+        : await authFetch(GATEWAY + "/api/code/verify", {method: "POST", headers: {"Content-Type": "application/json", "Accept": "application/json"}, body: JSON.stringify({ref: REPO.branch}), signal: ctl.signal});
       const first = await start.json().catch(() => ({})); if (!start.ok || first.ok === false) throw new Error(first.msg || "无法启动验证");
       renderVerifyResult(first); say("验证已排队，正在等待 GitHub Actions …"); verifyTimer = setTimeout(poll, 2500);
     } finally { clearTimeout(timeout); if (verifyAbort === ctl) verifyAbort = null; }
