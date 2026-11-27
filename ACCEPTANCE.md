@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 81 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，按当前源码预计 Node TAP 展开为 83 项。`workbench-acceptance.test.cjs` 有 41 个静态测试声明，因此按源码预计 `npm test` 共 124 项；最终数量以本次 TAP 输出为准。Playwright UI 文件另有 7 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
+> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 81 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，按当前源码预计 Node TAP 展开为 83 项。`workbench-acceptance.test.cjs` 有 42 个静态测试声明，因此按源码预计 `npm test` 共 125 项；最终数量以本次 TAP 输出为准。Playwright UI 文件另有 7 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
 
 ## 1. 唯一执行入口与判定规则
 
@@ -288,14 +288,14 @@ npm test
  
 ### WORKBENCH-10 — 同一项目写操作互斥与无锁失败关闭
 
-**自动化测试：** `ACCEPTANCE WORKBENCH-CONCURRENCY-01`、`ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01`、`ACCEPTANCE WORKBENCH-LOCK-SCOPE-01`、`ACCEPTANCE WORKBENCH-LOCK-CASE-01`，并由 `ACCEPTANCE LOCK-CLEANUP-01` 检查 Durable Object 锁释放。
+**自动化测试：** `ACCEPTANCE WORKBENCH-CONCURRENCY-01`、`ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01`、`ACCEPTANCE WORKBENCH-SAVE-CAS-01`、`ACCEPTANCE WORKBENCH-LOCK-SCOPE-01`、`ACCEPTANCE WORKBENCH-LOCK-CASE-01`，并由 `ACCEPTANCE LOCK-CLEANUP-01` 检查 Durable Object 锁释放。
 
 **测试覆盖：**
-- 同一仓库跨授权用户的分支创建、文件审核、合并和丢弃共用同一把 Durable Object 锁；仓库名大小写变体映射到同一锁身份。
-- 创建期间发起合并，第二个操作必须返回 busy，不得进入 GitHub 写操作；文件审核和丢弃也必须经过同一把锁。
+- 同一仓库跨授权用户的分支创建、编辑器保存、文件审核、合并、丢弃和历史回滚共用同一把 Durable Object 锁；仓库名大小写变体映射到同一锁身份。
+- 创建期间发起合并，第二个操作必须返回 busy，不得进入 GitHub 写操作；编辑器保存、文件审核、丢弃和回滚也必须经过同一把锁。
 - 锁只能由持有正确 token 的操作释放。
 - 操作结束释放锁，后续操作可重新获取。
-- 未绑定 `CODE_CLAIMS` 时，创建和合并均失败关闭，不得退回 KV 无锁执行。
+- 未绑定 `CODE_CLAIMS` 时，创建、编辑器保存和合并均失败关闭，不得退回 KV/MCP 无锁写入。
 
 **通过条件：** 并发写操作最多一个进入临界区；错误 token 不能解锁；缺少 Durable Object 绑定时不执行 GitHub 写操作。
 
@@ -348,14 +348,15 @@ npm test
 
 ### WORKBENCH-14 — Durable Object 仓库锁必须原子获取并支持续期
 
-**自动化测试：** `ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`WORKBENCH-LOCK-RENEW-01`、`WORKBENCH-LOCK-HEARTBEAT-01`、`WORKBENCH-LOCK-HEARTBEAT-FAIL-01`、`WORKBENCH-ROLLBACK-LOCK-01`。
+**自动化测试：** `ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`WORKBENCH-LOCK-RENEW-01`、`WORKBENCH-LOCK-HEARTBEAT-01`、`WORKBENCH-LOCK-HEARTBEAT-FAIL-01`、`WORKBENCH-SAVE-CAS-01`、`WORKBENCH-ROLLBACK-LOCK-01`。
 
 **测试覆盖：**
 - 两个并发请求同时获取同一仓库锁，事务竞争后只能有一个成功。
 - 锁持有者可续期；错误 token 不得续期或延长其他操作的租约。
 - 工作台长操作每 60 秒续租，结束时清除心跳并释放锁。
 - 续租失败时不误报成功，而是返回不确定状态与 GitHub 核验提示。
-- 历史回滚属于写操作，必须与创建、审核、合并、丢弃共用同一仓库锁，避免回滚与其他分支写入同时推进目标分支。
+- 编辑器保存必须经 Worker 锁入口执行，并以当前文件 SHA 做 compare-before-write；旧 SHA 返回冲突，不得覆盖新内容。
+- 历史回滚属于写操作，必须与创建、保存、审核、合并、丢弃共用同一仓库锁，避免回滚与其他写入同时推进目标分支。
 
 **通过条件：** 锁获取/续期/释放全部在 Durable Object storage transaction 中完成；不能再用分离的 get/put 作为互斥依据。
 
@@ -381,7 +382,7 @@ npm test
 
 以下清单按当前分支测试源文件逐项核对。测试名称是验收映射依据；如代码中的测试名称变化，必须同步更新本文件。
 
-### 14.1 Node.js 工作台行为测试（41 项）
+### 14.1 Node.js 工作台行为测试（42 项）
 
 文件：`tests/workbench-acceptance.test.cjs`
 
@@ -391,7 +392,7 @@ npm test
 | 文件审核与重试回滚 | `ACCEPTANCE REVIEW-01`、`ACCEPTANCE RETRY-ROLLBACK-01`、`ACCEPTANCE MULTI-REVIEW-01`、`ACCEPTANCE MULTI-REVIEW-RECOVERY-01`、`ACCEPTANCE WORKBENCH-RENAME-DIFF-01` |
 | 权限与幂等 | `ACCEPTANCE PERMISSION-01`、`ACCEPTANCE IDEMPOTENCY-01`、`ACCEPTANCE IDEMPOTENCY-CONCURRENT-CREATE-01` |
 | 丢弃、失败清理与创建补偿 | `ACCEPTANCE CLEANUP-01`、`ACCEPTANCE LOCK-CLEANUP-01`、`ACCEPTANCE CREATE-CLEANUP-01` |
-| 仓库写锁与租约 | `ACCEPTANCE WORKBENCH-CONCURRENCY-01`、`ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01`、`ACCEPTANCE WORKBENCH-LOCK-SCOPE-01`、`ACCEPTANCE WORKBENCH-LOCK-CASE-01`、`ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`ACCEPTANCE WORKBENCH-LOCK-RENEW-01`、`ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-01`、`ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-FAIL-01`、`ACCEPTANCE WORKBENCH-ROLLBACK-LOCK-01` |
+| 仓库写锁与租约 | `ACCEPTANCE WORKBENCH-CONCURRENCY-01`、`ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01`、`ACCEPTANCE WORKBENCH-LOCK-SCOPE-01`、`ACCEPTANCE WORKBENCH-LOCK-CASE-01`、`ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`ACCEPTANCE WORKBENCH-LOCK-RENEW-01`、`ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-01`、`ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-FAIL-01`、`ACCEPTANCE WORKBENCH-SAVE-CAS-01`、`ACCEPTANCE WORKBENCH-ROLLBACK-LOCK-01` |
 | 审核拒绝路径与失败保护 | `ACCEPTANCE REVIEW-GUARD-01`、`ACCEPTANCE REVIEW-GUARD-02`、`ACCEPTANCE REVIEW-READ-01`、`ACCEPTANCE REVIEW-READ-02`、`ACCEPTANCE REVIEW-WRITE-01`、`ACCEPTANCE REVIEW-WRITE-02` |
 | 合并后恢复与清理 | `ACCEPTANCE MERGE-HISTORY-RECOVERY-01`、`ACCEPTANCE MERGE-CLEANUP-01`、`ACCEPTANCE MERGE-RECORD-CLEANUP-01` |
 | 合并 CAS 与 Git ref 边界 | `ACCEPTANCE MERGE-CAS-01`～`MERGE-CAS-07`、`ACCEPTANCE GIT-REF-WRITE-01`、`ACCEPTANCE WORKBENCH-CAS-CONFLICT-01` |
