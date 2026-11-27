@@ -6011,7 +6011,7 @@ const bestPlace = (list, q) => {
 "use strict";
 const MCP_URL = "https://my-github-mcp.tianxinyuan881.workers.dev/mcp";
 const REPO = {owner: "tianxin1300", repo: "openmanus-gateway", branch: "main"};
-const FILE = "frontend/index.html", DIR = "frontend";
+let FILE = "frontend/index.html"; const DIR = "frontend";
 const MONACO_BASES = [
   "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min",
   "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min",
@@ -6164,6 +6164,224 @@ async function mcpPut(path, content, message, sha) {
   if (!t) throw new Error("MCP 里没有 update_file（现有工具：" + tools.map(x => x.name).join("、") + "）");
   return callTool(t, mkArgs(t, {owner: REPO.owner, repo: REPO.repo, path, branch: REPO.branch, content, message, sha}));
 }
+
+const WORKBENCH_PROJECTS = {
+  "openmanus-gateway": { label: "聚合体", owner: "tianxin1300", repo: "openmanus-gateway" },
+  "jiuyibanlv": { label: "就医伴侣", owner: "tianxin1300", repo: "jiuyibanlv" }
+};
+let activeBranchRecord = null, workbenchFiles = [], workbenchChanges = [];
+const workbenchDecisions = Object.create(null);
+function workbenchRepoFull() { return REPO.owner + "/" + REPO.repo; }
+async function wbApi(path, options = {}) {
+  const headers = Object.assign({ "Accept": "application/json" }, options.headers || {});
+  if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const response = await authFetch(GATEWAY + path, Object.assign({}, options, { headers }));
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false) {
+    const error = new Error(data.msg || ("请求失败（HTTP " + response.status + "）"));
+    error.data = data; error.status = response.status; throw error;
+  }
+  return data;
+}
+function updateWorkbenchBranchUI() {
+  const active = !!(activeBranchRecord && activeBranchRecord.branch);
+  const label = g("wb-branch");
+  if (label) { label.textContent = active ? activeBranchRecord.branch : "无活动临时分支"; label.title = active ? activeBranchRecord.branch : ""; }
+  if (g("wb-save")) g("wb-save").disabled = !active;
+  if (g("wb-push")) g("wb-push").disabled = !active;
+  if (g("wb-discard")) g("wb-discard").disabled = !active;
+  if (g("wb-branch-preview")) g("wb-branch-preview").disabled = !active || REPO.repo !== "openmanus-gateway";
+  if (g("wb-new-branch")) g("wb-new-branch").hidden = active;
+}
+async function ensureWorkbenchBranch() {
+  const repo = workbenchRepoFull();
+  const current = await wbApi("/api/code/branch/current?repo=" + encodeURIComponent(repo), { cache: "no-store" });
+  let record = current.active ? current : null;
+  if (!record) {
+    record = await wbApi("/api/code/branch/create", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repo, project: REPO.repo, base: "main" })
+    });
+  }
+  activeBranchRecord = record;
+  REPO.branch = record.branch;
+  updateWorkbenchBranchUI();
+  return record;
+}
+function workbenchLanguage(path) {
+  const ext = String(path || "").split(".").pop().toLowerCase();
+  return ({html:"html",htm:"html",js:"javascript",mjs:"javascript",cjs:"javascript",ts:"typescript",tsx:"typescript",jsx:"javascript",css:"css",json:"json",md:"markdown",yml:"yaml",yaml:"yaml",xml:"xml",py:"python",sh:"shell",sql:"sql",toml:"ini"})[ext] || "plaintext";
+}
+async function loadWorkbenchTree() {
+  const list = g("wb-file-list"); if (!list) return;
+  list.textContent = "正在读取文件树…";
+  try {
+    const data = await wbApi("/api/code/tree?repo=" + encodeURIComponent(workbenchRepoFull()) + "&ref=" + encodeURIComponent(REPO.branch || "main"), { cache: "no-store" });
+    workbenchFiles = Array.isArray(data.files) ? data.files : [];
+    renderWorkbenchTree();
+  } catch (error) { list.textContent = "文件树读取失败：" + (error.message || String(error)); }
+}
+function renderWorkbenchTree() {
+  const list = g("wb-file-list"); if (!list) return;
+  const query = String(g("wb-file-search")?.value || "").trim().toLowerCase();
+  list.innerHTML = "";
+  const visible = workbenchFiles.filter(path => !query || path.toLowerCase().includes(query)).slice(0, 1500);
+  visible.forEach(path => {
+    const button = document.createElement("button"); button.type = "button";
+    const depth = Math.max(0, path.split("/").length - 1);
+    button.style.paddingLeft = (7 + depth * 8) + "px";
+    button.textContent = path; button.title = path;
+    if (path === FILE) button.classList.add("on");
+    button.addEventListener("click", () => openWorkbenchFile(path));
+    list.appendChild(button);
+  });
+  if (!visible.length) list.textContent = "没有匹配文件";
+}
+async function openWorkbenchFile(path) {
+  if (dirty && !confirm("当前文件有未保存修改，切换文件会丢弃这些修改，继续？")) return;
+  FILE = path; curSha = null;
+  if (g("wb-file")) g("wb-file").textContent = FILE;
+  renderWorkbenchTree();
+  await loadFile();
+}
+async function loadWorkbenchChanges() {
+  const host = g("wb-change-list"); if (!host) return;
+  if (!activeBranchRecord) { host.textContent = "创建临时分支后，这里会逐文件显示改动。"; workbenchChanges = []; return; }
+  host.textContent = "正在读取改动…";
+  try {
+    const data = await wbApi("/api/code/branch/diff?repo=" + encodeURIComponent(workbenchRepoFull()), { cache: "no-store" });
+    workbenchChanges = Array.isArray(data.files) ? data.files : [];
+    renderWorkbenchChanges();
+  } catch (error) { host.textContent = "改动读取失败：" + (error.message || String(error)); }
+}
+function renderWorkbenchChanges() {
+  const host = g("wb-change-list"); if (!host) return;
+  host.innerHTML = "";
+  if (!workbenchChanges.length) { host.textContent = "当前分支没有文件改动"; return; }
+  workbenchChanges.forEach(file => {
+    const path = file.path;
+    if (!(path in workbenchDecisions)) workbenchDecisions[path] = false;
+    const row = document.createElement("div"); row.className = "wb-change-row";
+    const name = document.createElement("div"); name.className = "wb-change-path"; name.textContent = path; row.appendChild(name);
+    const meta = document.createElement("div"); meta.className = "wb-change-meta";
+    meta.textContent = (file.status || "modified") + " · +" + Number(file.additions || 0) + " / -" + Number(file.deletions || 0); row.appendChild(meta);
+    const actions = document.createElement("div"); actions.className = "wb-change-actions";
+    const accept = document.createElement("button"); accept.type = "button"; accept.textContent = workbenchDecisions[path] ? "已接受" : "接受"; if (workbenchDecisions[path]) accept.classList.add("on");
+    accept.addEventListener("click", () => { workbenchDecisions[path] = true; renderWorkbenchChanges(); });
+    const reject = document.createElement("button"); reject.type = "button"; reject.textContent = "拒绝"; reject.className = "reject";
+    reject.addEventListener("click", async () => {
+      reject.disabled = true;
+      try {
+        await wbApi("/api/code/branch/reject-file", { method: "POST", body: JSON.stringify({ repo: workbenchRepoFull(), branch: activeBranchRecord.branch, path }) });
+        delete workbenchDecisions[path];
+        if (FILE === path) await loadFile();
+        await Promise.all([loadWorkbenchChanges(), loadWorkbenchTree()]);
+        say("已拒绝文件改动并恢复临时分支中的基线版本：" + path);
+      } catch (error) { reject.disabled = false; say("拒绝文件失败：" + (error.message || String(error)), true); }
+    });
+    actions.append(accept, reject); row.appendChild(actions); host.appendChild(row);
+  });
+}
+async function loadWorkbenchVersions() {
+  const host = g("wb-version-list"); if (!host) return;
+  host.textContent = "正在读取历史版本…";
+  try {
+    const data = await wbApi("/api/code/history", { cache: "no-store" });
+    const rows = (data.history || []).filter(row => row && row.commit_sha && row.repo === workbenchRepoFull()).slice(0, 20);
+    host.innerHTML = "";
+    if (!rows.length) { host.textContent = "暂无已合并版本"; return; }
+    rows.forEach(row => {
+      const item = document.createElement("div"); item.className = "wb-version-row";
+      const title = document.createElement("div"); title.className = "wb-change-path"; title.textContent = String(row.commit_sha).slice(0, 12); item.appendChild(title);
+      const meta = document.createElement("div"); meta.className = "wb-change-meta"; meta.textContent = (row.at || "时间未知") + " · " + (row.summary || "代码提交"); item.appendChild(meta);
+      const files = document.createElement("div"); files.className = "wb-change-meta"; files.textContent = (row.files || []).join(", "); item.appendChild(files);
+      const rollback = document.createElement("button"); rollback.type = "button"; rollback.textContent = "回滚"; rollback.disabled = !!activeBranchRecord;
+      rollback.title = activeBranchRecord ? "请先推送或丢弃当前临时分支，再回滚历史版本" : "创建一个新回滚提交，不重写历史";
+      rollback.addEventListener("click", async () => {
+        if (activeBranchRecord) return say("请先推送或丢弃当前临时分支，再回滚历史版本。", true);
+        if (!confirm("确定创建新回滚提交，恢复到这个版本之前的文件内容？不会重写 main 历史。")) return;
+        rollback.disabled = true;
+        try {
+          const result = await wbApi("/api/code/rollback", { method: "POST", body: JSON.stringify({ id: row.id }) });
+          say(result.reply || "回滚提交已创建");
+          await Promise.all([loadWorkbenchVersions(), loadWorkbenchTree()]);
+          await ensureWorkbenchBranch(); await loadFile();
+        } catch (error) { rollback.disabled = false; say("回滚失败：" + (error.message || String(error)), true); }
+      });
+      item.appendChild(rollback); host.appendChild(item);
+    });
+  } catch (error) { host.textContent = "历史版本读取失败：" + (error.message || String(error)); }
+}
+async function mergeWorkbenchBranch() {
+  if (!activeBranchRecord) return say("当前没有活动临时分支。", true);
+  if (dirty) { await save(); if (dirty) return; }
+  const accepted = workbenchChanges.filter(file => workbenchDecisions[file.path] === true).map(file => file.path);
+  if (!accepted.length) return say("还没有接受任何文件。请在改动预览里逐个接受文件，或直接丢弃分支。", true);
+  const button = g("wb-push"); if (button) button.disabled = true;
+  try {
+    const result = await wbApi("/api/code/branch/merge", { method: "POST", body: JSON.stringify({ repo: workbenchRepoFull(), branch: activeBranchRecord.branch, accepted_paths: accepted, summary: "Workbench: " + accepted.length + " files" }) });
+    say(result.reply || (result.merged ? "已合并到 main" : "没有待合并改动"));
+    activeBranchRecord = null; REPO.branch = "main"; updateWorkbenchBranchUI();
+    workbenchChanges = []; Object.keys(workbenchDecisions).forEach(key => delete workbenchDecisions[key]);
+    await Promise.all([loadWorkbenchTree(), loadWorkbenchVersions(), loadFile()]);
+  } catch (error) {
+    const details = error.data && Array.isArray(error.data.files) ? error.data.files.join("\n") : "";
+    if (error.status === 409 || (error.data && error.data.conflict)) {
+      card("合并冲突：临时分支已保留", (error.message || "main 与临时分支存在冲突") + "\n\n冲突/改动文件：\n" + details + "\n\n请从左侧文件树打开文件，在临时分支里手动合并并保存，再点「推」。", true);
+      await loadWorkbenchChanges();
+    } else say("推送失败，临时分支保留：" + (error.message || String(error)), true);
+  } finally { if (button) button.disabled = !activeBranchRecord; }
+}
+async function discardWorkbenchBranch() {
+  if (!activeBranchRecord) return;
+  if (dirty && !confirm("丢弃临时分支会删除当前分支，未保存的编辑也会丢失。继续？")) return;
+  if (!dirty && !confirm("确定删除 " + activeBranchRecord.branch + "？main 不会改变。")) return;
+  const button = g("wb-discard"); if (button) button.disabled = true;
+  try {
+    const result = await wbApi("/api/code/branch/discard", { method: "POST", body: JSON.stringify({ repo: workbenchRepoFull(), branch: activeBranchRecord.branch }) });
+    activeBranchRecord = null; REPO.branch = "main"; dirty = false; curSha = null;
+    updateWorkbenchBranchUI(); say(result.main_untouched ? "临时分支已删除，main 未改变。" : "临时分支已清理。");
+    workbenchChanges = []; Object.keys(workbenchDecisions).forEach(key => delete workbenchDecisions[key]);
+    await Promise.all([loadWorkbenchTree(), loadWorkbenchChanges(), loadFile()]);
+  } catch (error) { say("删除临时分支失败，记录保留：" + (error.message || String(error)), true); }
+  finally { if (button) button.disabled = !activeBranchRecord; }
+}
+async function createWorkbenchBranch() {
+  try {
+    await ensureWorkbenchBranch();
+    await Promise.all([loadWorkbenchTree(), loadWorkbenchChanges(), loadFile()]);
+    say("已为项目创建独立临时分支：" + REPO.branch);
+  } catch (error) { say("创建临时分支失败：" + (error.message || String(error)), true); }
+}
+async function previewWorkbenchBranch() {
+  if (!activeBranchRecord) return say("当前没有活动临时分支。", true);
+  if (dirty) { await save(); if (dirty) return; }
+  try {
+    const result = await wbApi("/api/code/branch/preview", { method: "POST", body: JSON.stringify({ repo: workbenchRepoFull() }) });
+    say("临时预览构建已触发，部署完成后可打开：" + result.preview_url);
+    if (result.preview_url) window.open(result.preview_url, "_blank", "noopener");
+  } catch (error) { say("临时预览启动失败：" + (error.message || String(error)), true); }
+}
+async function switchWorkbenchProject(repoName) {
+  if (!WORKBENCH_PROJECTS[repoName]) return;
+  if (dirty && !confirm("切换项目会丢弃当前文件未保存的修改，继续？")) { g("wb-project").value = REPO.repo; return; }
+  const project = WORKBENCH_PROJECTS[repoName];
+  REPO.owner = project.owner; REPO.repo = project.repo; REPO.branch = "main";
+  activeBranchRecord = null; FILE = "frontend/index.html"; curSha = null; dirty = false;
+  if (g("wb-file")) g("wb-file").textContent = FILE;
+  updateWorkbenchBranchUI();
+  try {
+    await ensureWorkbenchBranch();
+    await Promise.all([loadFile(), loadWorkbenchTree(), loadWorkbenchChanges(), loadWorkbenchVersions()]);
+  } catch (error) { say("切换项目失败：" + (error.message || String(error)), true); }
+}
+g("wb-file-search")?.addEventListener("input", renderWorkbenchTree);
+g("wb-project")?.addEventListener("change", event => switchWorkbenchProject(event.target.value));
+g("wb-push")?.addEventListener("click", mergeWorkbenchBranch);
+g("wb-discard")?.addEventListener("click", discardWorkbenchBranch);
+g("wb-new-branch")?.addEventListener("click", createWorkbenchBranch);
+g("wb-branch-preview")?.addEventListener("click", previewWorkbenchBranch);
+updateWorkbenchBranchUI();
 
 /* ---------------- 任务拆解（Goblin Tools Magic ToDo 风格）：拆 10 个小任务 → 追加写进仓库根目录 TODO.md ---------------- */
 const TODO_FILE = "TODO.md", TODO_STEPS = 10;
