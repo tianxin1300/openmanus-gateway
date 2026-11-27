@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 81 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，按当前源码预计 Node TAP 展开为 83 项。`workbench-acceptance.test.cjs` 有 39 个静态测试声明，因此按源码预计 `npm test` 共 122 项；最终数量以本次 TAP 输出为准。Playwright UI 文件另有 6 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入这 120 项。
+> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 81 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，按当前源码预计 Node TAP 展开为 83 项。`workbench-acceptance.test.cjs` 有 41 个静态测试声明，因此按源码预计 `npm test` 共 124 项；最终数量以本次 TAP 输出为准。Playwright UI 文件另有 7 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
 
 ## 1. 唯一执行入口与判定规则
 
@@ -240,6 +240,8 @@ npm test
 
 **通过条件：** 未授权操作没有 GitHub 写调用；授权操作的创建、审核和合并历史均可追溯到认证用户。
 
+**边界：** 当前权限测试直接调用工作台函数并注入身份，不模拟 `userFromReq` 的真实 token 验证、失效 token 或 HTTP 路由；这些仍需独立 API 集成验收。
+
 ### WORKBENCH-07 — 重复执行与幂等性
 
 **自动化测试：** `ACCEPTANCE IDEMPOTENCY-01: repeated create reuses one branch and repeated merge cannot create a second commit`；`ACCEPTANCE IDEMPOTENCY-CONCURRENT-CREATE-01`
@@ -255,7 +257,7 @@ npm test
 
 ### WORKBENCH-08 — 多文件审核及重命名/删除边界
 
-**自动化测试：** `ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rejects rename/delete side effects`
+**自动化测试：** `ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rejects rename/delete side effects`；`ACCEPTANCE WORKBENCH-RENAME-DIFF-01`；Playwright `rejecting a renamed file sends the previous filename so the source path can be restored`
 
 **测试覆盖：**
 - 一次包含修改、新增、删除、重命名的多文件变更。
@@ -263,6 +265,7 @@ npm test
 - 拒绝重命名时同时恢复 `previous_filename` 源路径，并移除目标路径。
 - 拒绝删除时恢复基线文件；拒绝新增时删除新增文件。
 - 审核人写入审核事件。
+- Diff API 必须把 GitHub 的 `previous_filename` 映射为 `previous_path`，前端拒绝重命名时必须把旧路径传回 Worker；Node 与 Playwright 分别验证数据映射和实际按钮请求。
 
 **通过条件：** 最终合并差异只包含接受的文件；被拒绝文件的旧路径、新路径及删除/新增副作用均不能漏进合并。
 
@@ -345,13 +348,14 @@ npm test
 
 ### WORKBENCH-14 — Durable Object 仓库锁必须原子获取并支持续期
 
-**自动化测试：** `ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`WORKBENCH-LOCK-RENEW-01`、`WORKBENCH-LOCK-HEARTBEAT-01`、`WORKBENCH-LOCK-HEARTBEAT-FAIL-01`。
+**自动化测试：** `ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`WORKBENCH-LOCK-RENEW-01`、`WORKBENCH-LOCK-HEARTBEAT-01`、`WORKBENCH-LOCK-HEARTBEAT-FAIL-01`、`WORKBENCH-ROLLBACK-LOCK-01`。
 
 **测试覆盖：**
 - 两个并发请求同时获取同一仓库锁，事务竞争后只能有一个成功。
 - 锁持有者可续期；错误 token 不得续期或延长其他操作的租约。
 - 工作台长操作每 60 秒续租，结束时清除心跳并释放锁。
 - 续租失败时不误报成功，而是返回不确定状态与 GitHub 核验提示。
+- 历史回滚属于写操作，必须与创建、审核、合并、丢弃共用同一仓库锁，避免回滚与其他分支写入同时推进目标分支。
 
 **通过条件：** 锁获取/续期/释放全部在 Durable Object storage transaction 中完成；不能再用分离的 get/put 作为互斥依据。
 
@@ -377,30 +381,31 @@ npm test
 
 以下清单按当前分支测试源文件逐项核对。测试名称是验收映射依据；如代码中的测试名称变化，必须同步更新本文件。
 
-### 14.1 Node.js 工作台行为测试（39 项）
+### 14.1 Node.js 工作台行为测试（41 项）
 
 文件：`tests/workbench-acceptance.test.cjs`
 
 | 分组 | 专属测试名称 |
 |---|---|
 | 分支隔离与写入保护 | `ACCEPTANCE BRANCH-01`、`ACCEPTANCE MAIN-01`、`ACCEPTANCE CONFLICT-01` |
-| 文件审核与重试回滚 | `ACCEPTANCE REVIEW-01`、`ACCEPTANCE RETRY-ROLLBACK-01`、`ACCEPTANCE MULTI-REVIEW-01`、`ACCEPTANCE MULTI-REVIEW-RECOVERY-01` |
+| 文件审核与重试回滚 | `ACCEPTANCE REVIEW-01`、`ACCEPTANCE RETRY-ROLLBACK-01`、`ACCEPTANCE MULTI-REVIEW-01`、`ACCEPTANCE MULTI-REVIEW-RECOVERY-01`、`ACCEPTANCE WORKBENCH-RENAME-DIFF-01` |
 | 权限与幂等 | `ACCEPTANCE PERMISSION-01`、`ACCEPTANCE IDEMPOTENCY-01`、`ACCEPTANCE IDEMPOTENCY-CONCURRENT-CREATE-01` |
 | 丢弃、失败清理与创建补偿 | `ACCEPTANCE CLEANUP-01`、`ACCEPTANCE LOCK-CLEANUP-01`、`ACCEPTANCE CREATE-CLEANUP-01` |
-| 仓库写锁与租约 | `ACCEPTANCE WORKBENCH-CONCURRENCY-01`、`ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01`、`ACCEPTANCE WORKBENCH-LOCK-SCOPE-01`、`ACCEPTANCE WORKBENCH-LOCK-CASE-01`、`ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`ACCEPTANCE WORKBENCH-LOCK-RENEW-01`、`ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-01`、`ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-FAIL-01` |
+| 仓库写锁与租约 | `ACCEPTANCE WORKBENCH-CONCURRENCY-01`、`ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01`、`ACCEPTANCE WORKBENCH-LOCK-SCOPE-01`、`ACCEPTANCE WORKBENCH-LOCK-CASE-01`、`ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`ACCEPTANCE WORKBENCH-LOCK-RENEW-01`、`ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-01`、`ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-FAIL-01`、`ACCEPTANCE WORKBENCH-ROLLBACK-LOCK-01` |
 | 审核拒绝路径与失败保护 | `ACCEPTANCE REVIEW-GUARD-01`、`ACCEPTANCE REVIEW-GUARD-02`、`ACCEPTANCE REVIEW-READ-01`、`ACCEPTANCE REVIEW-READ-02`、`ACCEPTANCE REVIEW-WRITE-01`、`ACCEPTANCE REVIEW-WRITE-02` |
 | 合并后恢复与清理 | `ACCEPTANCE MERGE-HISTORY-RECOVERY-01`、`ACCEPTANCE MERGE-CLEANUP-01`、`ACCEPTANCE MERGE-RECORD-CLEANUP-01` |
 | 合并 CAS 与 Git ref 边界 | `ACCEPTANCE MERGE-CAS-01`～`MERGE-CAS-07`、`ACCEPTANCE GIT-REF-WRITE-01`、`ACCEPTANCE WORKBENCH-CAS-CONFLICT-01` |
 
 **计数说明：** 上述分组对应文件内 39 个 `test(...)` 用例。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
 
-### 14.2 Playwright UI E2E（6 个场景 × 2 个浏览器项目）
+### 14.2 Playwright UI E2E（7 个场景 × 2 个浏览器项目）
 
 文件：`tests/workbench-ui.spec.cjs`
 
 | 场景 | Chromium · iPhone 14 | WebKit · iPhone 14 |
 |---|---|---|
 | 文件审核：拒绝一个文件、接受另一个文件，只推送接受路径 | 独立执行 | 独立执行 |
+| 文件重命名审核：拒绝时提交 previous_path，确保旧路径可恢复 | 独立执行 | 独立执行 |
 | 丢弃保持 main 不变；历史回滚创建新的活动分支 | 独立执行 | 独立执行 |
 | 终端/运行日志标签页互斥切换；检查移动视口尺寸变化后的布局变量 | 独立执行 | 独立执行 |
 | 文件拒绝接口首次失败后，改动仍保留并允许重试 | 独立执行 | 独立执行 |
