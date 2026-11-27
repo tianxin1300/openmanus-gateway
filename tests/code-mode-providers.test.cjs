@@ -188,6 +188,32 @@ test('rollback creates a new commit and never force-moves the base branch', () =
   assert.doesNotMatch(rollback, /sha: item\.previous_sha, force/);
 });
 
+test('workbench review UI: history, branch tree and per-file decisions are wired to backend actions', () => {
+  assert.match(frontendStudioSource, /function showHistory\(/);
+  assert.match(frontendStudioSource, /api\("\/api\/code\/history"/);
+  assert.match(frontendStudioSource, /\/api\/code\/tree\?repo=/);
+  assert.match(frontendStudioSource, /p\.branch \|\| p\.baseBranch/);
+  assert.match(frontendStudioSource, /accepted_paths: yes \? selectedPaths\(\) : null/);
+  assert.match(frontendStudioSource, /conflict_resolutions: conflictChoices/);
+  assert.match(frontendStudioSource, /function renderConflicts\(/);
+  assert.match(frontendStudioSource, /p\.preview_url/);
+  assert.match(frontendStudioSource, /function selectedPaths\(/);
+});
+
+test('failed Actions retry re-runs failed jobs on the same run instead of dispatching a new workflow', () => {
+  const start = workerSource.indexOf('async function codeRetryRun(');
+  const end = workerSource.indexOf('async function codeGetFile(', start);
+  assert.ok(start >= 0 && end > start);
+  const retry = workerSource.slice(start, end);
+  assert.match(retry, /rerun-failed-jobs/);
+  assert.match(retry, /String\(old\.run_id \|\| ""\) !== runId/);
+  assert.match(retry, /old\.retry_count/);
+  assert.match(workerSource, /path === "\/api\/code\/retry"/);
+  assert.match(frontendSource, /async function runRemoteVerify\(retryRecord\)/);
+  assert.match(frontendSource, /GATEWAY \+ "\/api\/code\/retry"/);
+  assert.match(frontendSource, /retry\.onclick = \(\) => runRemoteVerify\(d\)/);
+});
+
 test('web workbench: exposes the local preview control', () => {
   const previewButtons = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-local-preview")[^>]*>/g)];
   assert.equal(previewButtons.length, 1);
