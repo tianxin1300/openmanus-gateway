@@ -1922,3 +1922,61 @@ test('codeMergeVerifiedPending keeps the verified state when GitHub merge is tem
   assert.equal(result.pending, true);
   assert.match(result.reply, /再次确认重试/);
 });
+
+
+test('CodeClaimDO: automatic repair is single-flight, bounded and re-verifies after patching', async () => {
+  const value = {
+    pending: { id: 'repair-1', project: 'demo', status: 'verification_failed', verify_request_id: 'req-1', verify_run_id: 'run-1', verify_expected_sha: 'sha-1', repair_attempts: 0, edits: [{ path: 'worker.js' }] },
+    created_at: 1700000000000, expires_at: 1700000600000, version: 5, claims: {}, results: {}
+  };
+  const events = [];
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async put(key, next) { this.value = next; },
+    async setAlarm(at) { events.push(at); }
+  };
+  const DO = loadCodeClaimDO(async () => ({ ok: true, status: 204 }));
+  const instance = new DO({ storage }, {});
+  const call = (action, body) => instance.fetch(new Request('https://code-claims/' + action, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  }));
+  const wrong = await call('repair-claim', { pending_id: 'repair-1', request_id: 'req-1', run_id: 'other' });
+  assert.equal(wrong.status, 409);
+  const claimed = await call('repair-claim', { pending_id: 'repair-1', request_id: 'req-1', run_id: 'run-1' });
+  assert.equal(claimed.status, 200);
+  assert.equal(storage.value.pending.status, 'repairing');
+  assert.equal(storage.value.pending.repair_attempts, 1);
+  const duplicate = await call('repair-claim', { pending_id: 'repair-1', request_id: 'req-1', run_id: 'run-1' });
+  assert.equal(duplicate.status, 409);
+  const finished = await call('repair-finish', {
+    pending_id: 'repair-1', ok: true,
+    verification: { verify_request_id: 'req-2', verify_expected_sha: 'sha-2', verify_run_id: '', verify_error_lines: [] }
+  });
+  assert.equal(finished.status, 200);
+  assert.equal(storage.value.pending.status, 'verification_pending');
+  assert.equal(storage.value.pending.verify_request_id, 'req-2');
+  assert.equal(storage.value.pending.version, storage.value.version);
+  assert.ok(storage.value.pending.verify_expires_at > 1700000000000);
+  assert.ok(events.length > 0);
+});
+
+test('automatic repair uses real Actions logs, source patches and a fresh verification dispatch', () => {
+  const start = workerSource.indexOf('async function codeRepairPendingFromVerification');
+  const end = workerSource.indexOf('async function codeVerifyStatus', start);
+  const repair = workerSource.slice(start, end);
+  assert.match(repair, /"repair-claim"/);
+  assert.match(repair, /codeLLM\(/);
+  assert.match(repair, /codeParseEdits\(/);
+  assert.match(repair, /codeApply\(/);
+  assert.match(repair, /codePushGuard\(/);
+  assert.match(repair, /codeUpdateFile\(/);
+  assert.match(repair, /codeQueuePendingVerification\(/);
+  const statusStart = workerSource.indexOf('async function codeVerifyStatus');
+  const statusEnd = workerSource.indexOf('async function codeGetFile', statusStart);
+  const status = workerSource.slice(statusStart, statusEnd);
+  assert.match(status, /verification\.pending && verification\.pending\.status === "verification_failed"/);
+  assert.match(status, /ctx\.waitUntil\(repair\)/);
+  assert.match(frontendStudioSource, /自动修复中/);
+  assert.match(frontendStudioSource, /function pollVerification\(\)/);
+});
