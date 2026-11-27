@@ -9065,7 +9065,7 @@ async function handle(request, env, ctx) {
     // ---- 对话（SSE 流式）----
     if (path === "/v1/chat/completions" && request.method === "POST") {
       const authHeader = request.headers.get("Authorization") || "";
-      if (/^Bearer\\s+omcron_/.test(authHeader) && !(await userFromReq(request, env, url))) return json({ error: "自动化令牌无效或已撤销", choices: [{ message: { role: "assistant", content: "❌ 自动化令牌无效或已撤销" } }] }, 401);
+      if (/^Bearer\s+omcron_/.test(authHeader) && !(await userFromReq(request, env, url))) return json({ error: "自动化令牌无效或已撤销", choices: [{ message: { role: "assistant", content: "❌ 自动化令牌无效或已撤销" } }] }, 401);
       if (env.REQUIRE_LOGIN === "1" && !(await userFromReq(request, env, url))) return json({ error: "请先登录", choices: [{ message: { role: "assistant", content: "❌ 请先登录" } }] }, 401);
       const raw = await request.text();
       if (raw.length > 400000) return json({ error: "请求太大", choices: [{ message: { role: "assistant", content: "❌ 请求太大" } }] }, 413);
