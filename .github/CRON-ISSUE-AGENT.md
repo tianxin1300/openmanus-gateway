@@ -31,5 +31,7 @@ Create a job in your Cron-job service:
 
 Store the GitHub token in the Cron-job service's secret/credential store, not in a public URL. The GitHub token used by Cron-job only needs permission to dispatch this workflow; the workflow's own `GITHUB_TOKEN` handles issue labels and comments.
 
-The processing Actions job has a hard 10-minute timeout. The isolated PR #60 preview Worker was rebuilt from the matching 60-second `codeLLM()` implementation (preview deployment commit `449f913073cdc94260e98470745337b1e9dee578`).\n\n## Safety boundary
+The processing Actions job has a hard 10-minute timeout. The isolated PR #60 preview Worker was rebuilt from the matching 60-second `codeLLM()` implementation (preview deployment commit `449f913073cdc94260e98470745337b1e9dee578`). For provider validation, an authenticated HTTP 200 or an Actions green check alone is not sufficient: the preview response must contain the explicit `CRON_AGENT_PREVIEW_OK` model-generated marker; a model-pool-exhausted response is not a successful model-call test.
+
+## Safety boundary
 This first version is deliberately analysis-only. It can read an issue, call the existing code-mode backend, comment the result, and save logs. It does not push code, create/merge PRs, or deploy. The existing code-mode backend may require a valid logged-in user token. Do not enable the Cron-job until both Actions secrets are configured and a manual dispatch has succeeded.
