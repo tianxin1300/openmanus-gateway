@@ -21,7 +21,7 @@ test('Cron 自动化令牌单独存储且不设置 KV 自动过期', () => {
 
 test('Cron 令牌只可通过 Bearer 调用 POST /v1/chat/completions', () => {
   assert.match(worker, /bearer\.startsWith\("omcron_"\)[\s\S]*?request\.method !== "POST" \|\| url\.pathname !== "\/v1\/chat\/completions"/);
-  assert.match(worker, /if \(\^Bearer/);
+  assert.ok(worker.includes("if (/^Bearer\\\\s+omcron_/.test(authHeader)"));
   assert.match(worker, /自动化令牌无效或已撤销/);
 });
 
