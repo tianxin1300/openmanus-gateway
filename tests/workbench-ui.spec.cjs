@@ -126,12 +126,16 @@ async function openWorkbench(page) {
   await page.evaluate(() => localStorage.setItem("openmanus_token", "playwright-ui-token"));
   await page.reload({ waitUntil: "domcontentloaded" });
   // Auth is intentionally stubbed in this isolated UI harness; keep the real workbench UI unobstructed.
+  // Keep auth out of this isolated workbench UI suite. WebKit can complete
+  // the page's auth initialization after the evaluate() callback, so enforce
+  // the harness-only hidden state with a page style instead of racing its class.
+  await page.addStyleTag({ content: "#auth-mask { display: none !important; }" });
   await page.evaluate(() => {
     const mask = document.getElementById("auth-mask");
     if (mask) mask.classList.add("hidden");
     document.body.classList.remove("auth-locked");
   });
-  await expect(page.locator("#auth-mask")).toHaveClass(/hidden/);
+  await expect(page.locator("#auth-mask")).toBeHidden();
   await page.locator("#wb-open").click();
   await expect(page.locator("#wb")).toBeVisible();
   await expect(page.locator("#wb-branch")).toContainText("code/");
