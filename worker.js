@@ -834,7 +834,7 @@ async function codeRepairPendingFromVerification(env, user, job) {
   const pend = claimed.pending;
   const finish = async (status, result, edits, verification) => {
     const saved = await codeClaimCall(env, user, "repair-finish", {
-      pending_id: pend.id, ok: status === "verification_pending", verification,
+      pending_id: pend.id, ok: status === "verification_pending", verification, edits,
       error: result && (result.reply || result.msg) || "自动修复未完成"
     });
     return saved.ok ? { ...result, pending: true, status: saved.pending && saved.pending.status } : { ok: false, pending: true, reply: (result.reply || result.msg || "自动修复失败") + "；状态保存失败：" + (saved.msg || "请刷新确认") };
@@ -873,12 +873,14 @@ async function codeRepairPendingFromVerification(env, user, job) {
     if (applied.errs.length || !applied.done.length) return await finish("verification_failed", { ok: false, reply: "模型修复块无法安全应用：" + applied.errs.map((e) => e.msg).join("；") }, pend.edits);
     const changed = [...new Set(applied.done.map((e) => e.path))];
     if (changed.length > 4) return await finish("verification_failed", { ok: false, reply: "自动修复涉及超过 4 个文件，已停止自动写入，保留临时分支供人工审查。" }, pend.edits);
+    const repairedEdits = [...(pend.edits || []), ...applied.done.map((e) => ({ ...e, auto_repair: true }))];
+    pend.edits = repairedEdits;
     for (const path of changed) {
       const update = await codeUpdateFile(env, pend.repo, path, applied.out[path], "AI: repair failed verification", pend.branch, shas[path]);
-      if (!update.ok) return await finish("verification_failed", { ok: false, reply: "自动修复写入 " + path + " 失败：" + update.msg }, pend.edits);
+      if (!update.ok) return await finish("verification_failed", { ok: false, reply: "自动修复写入 " + path + " 失败：" + update.msg }, repairedEdits);
     }
     pend.repair_model = model.from || "unknown";
-    return await codeQueuePendingVerification(env, user, pend, finish, pend.edits);
+    return await codeQueuePendingVerification(env, user, pend, finish, repairedEdits);
   } catch (e) {
     return await finish("verification_failed", { ok: false, reply: "自动修复过程异常：" + String(e && e.message || e).slice(0, 300) }, pend.edits);
   }
@@ -1187,7 +1189,7 @@ async function codePendingSweep(env) {
 
 function codePendingView(p) {
   if (!p || !Array.isArray(p.edits) || !p.edits.length || !["awaiting_approval", "applying", "partial", "conflict", "failed", "verification_pending", "verification_passed", "verification_failed", "repairing"].includes(p.status || "awaiting_approval")) return null;
-  return { id: p.id || "", pending_id: p.id || "", version: Number(p.version) || 1, project: p.project || "", status: p.status || "awaiting_approval", repo: p.repo, branch: p.branch, baseBranch: p.baseBranch || "main", preview_url: p.preview_url || codeTempPreview(p.branch), summary: p.summary, at: p.at, updatedAt: p.updatedAt || p.at, verify_request_id: p.verify_request_id || "", verify_run_id: p.verify_run_id || "", verify_run_url: p.verify_run_url || "", verify_expected_sha: p.verify_expected_sha || "", verify_head_sha: p.verify_head_sha || "", verify_error_lines: p.verify_error_lines || [], verify_failed_step: p.verify_failed_step || "", repair_attempts: Number(p.repair_attempts || 0), repair_error: p.repair_error || "", warn: p.warn || [], edits: p.edits.map((e) => ({ path: e.path, line: e.line || 0, old: codeCut(e.old, 4000), new: codeCut(e.new, 4000) })) };
+  return { id: p.id || "", pending_id: p.id || "", version: Number(p.version) || 1, project: p.project || "", status: p.status || "awaiting_approval", repo: p.repo, branch: p.branch, baseBranch: p.baseBranch || "main", preview_url: p.preview_url || codeTempPreview(p.branch), summary: p.summary, at: p.at, updatedAt: p.updatedAt || p.at, verify_request_id: p.verify_request_id || "", verify_run_id: p.verify_run_id || "", verify_run_url: p.verify_run_url || "", verify_expected_sha: p.verify_expected_sha || "", verify_head_sha: p.verify_head_sha || "", verify_error_lines: p.verify_error_lines || [], verify_failed_step: p.verify_failed_step || "", repair_attempts: Number(p.repair_attempts || 0), repair_error: p.repair_error || "", warn: p.warn || [], edits: p.edits.map((e) => ({ path: e.path, line: e.line || 0, old: codeCut(e.old, 4000), new: codeCut(e.new, 4000), auto_repair: !!e.auto_repair })) };
 }
 const codeBalanceWarn = (a, b) => ["{}", "()", "[]"].filter((p) => { const d = (t) => t.split(p[0]).length - t.split(p[1]).length; return d(a) !== d(b); });
 const codeCut = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n) + "…（共 " + s.length + " 字）" : s; };
@@ -1316,7 +1318,7 @@ async function codeMergeVerifiedPending(env, user, pend, finish) {
   if (!merged.ok) return await finish("verification_passed", { ok: false, pending: true, status: "verification_passed", reply: "验证已通过，但合并失败：" + merged.msg + "。临时分支仍保留，可再次确认重试。" }, pend.edits);
   const commitSha = String((merged.data && merged.data.sha) || "");
   const rows = await codeHistoryLoad(env, user);
-  const record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: base, commit_sha: commitSha, previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: pend.edits.map((e) => e.path), preview_url: pend.preview_url || codeTempPreview(pend.branch) };
+  const record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: base, commit_sha: commitSha, previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: [...new Set(pend.edits.map((e) => e.path))], preview_url: pend.preview_url || codeTempPreview(pend.branch) };
   try { await codeHistorySave(env, user, [record, ...rows]); } catch (_) {}
   const removed = await codeDeleteBranch(env, pend.repo, pend.branch).catch((e) => ({ ok: false, msg: String(e && e.message || e) }));
   return await finish("applied", { ok: true, pushed: true, consumed: true, status: "applied", merged: true, commit_sha: commitSha, branch_deleted: !!removed.ok, history_id: record.id, reply: "✅ 已通过 Actions 验证并合并到 " + base + (removed.ok ? "，临时分支已删除。" : "；临时分支删除失败，请稍后清理：" + (removed.msg || "")) }, []);
@@ -9597,6 +9599,7 @@ export class CodeClaimDO {
       const current = await this.load(), p = current && current.pending;
       if (!current || !p || p.id !== String(body.pending_id || "") || p.status !== "repairing") return this.response({ ok: false, conflict: true, msg: "自动修复占位已变化" }, 409);
       const verification = body.verification && typeof body.verification === "object" ? body.verification : null;
+      if (Array.isArray(body.edits)) p.edits = body.edits;
       if (body.ok === true && verification && verification.verify_request_id && verification.verify_expected_sha) {
         Object.assign(p, verification); p.status = "verification_pending"; p.repair_error = "";
         current.expires_at = now + 20 * 60 * 1000; p.verify_expires_at = current.expires_at;
