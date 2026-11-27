@@ -828,7 +828,7 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
     return { ok: false, conflict: true, base_advanced: true, base_commit: record.baseCommit, current_base_commit: previousSha, msg: record.baseBranch + " 已在创建临时分支后发生变化。为防止旧基线覆盖新修改，已阻止合并；请先同步基线并重新审核改动。" };
   }
   const merged = await codeMergeTempBranch(env, repo, record.branch, record.baseBranch, String(body.summary || "Workbench: merge " + record.project), previousSha, String(compared.data && compared.data.head_commit && compared.data.head_commit.sha || ""));
-  if (!merged.ok) return { ok: false, conflict: merged.status === 409, files, msg: "合并失败，临时分支保留：" + merged.msg };
+  if (!merged.ok) return { ok: false, conflict: !!merged.conflict || merged.status === 409, files, msg: "合并失败，临时分支保留：" + merged.msg };
   let commitSha = String(merged.data && merged.data.sha || "");
   if (!commitSha) {
     const after = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + record.baseBranch));
