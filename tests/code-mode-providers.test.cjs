@@ -227,8 +227,10 @@ test('temporary branch preview is built from the staged branch and uses the Page
   assert.ok(previewMiddleware.includes("branch-(code-[a-z0-9-]+)"));
   assert.match(previewMiddleware, /branchAlias \+ "\.zhineng\.pages\.dev"/);
   assert.match(previewMiddleware, /context\.next\(\)/);
-  const deployWorkflow = fs.readFileSync(path.join(root, '.github/workflows/deploy-project.yml'), 'utf8');
+  const deployWorkflow = fs.readFileSync(path.join(root, '.github/workflows/deploy-branch-preview.yml'), 'utf8');
   assert.match(deployWorkflow, /--branch "\$DEPLOY_REF"/);
+  const frozenDeployWorkflow = fs.readFileSync(path.join(root, '.github/workflows/deploy-project.yml'), 'utf8');
+  assert.match(frozenDeployWorkflow, /--branch main/);
 });
 
 test('developer workbench edits only isolated project branches and cannot save directly to main', () => {
