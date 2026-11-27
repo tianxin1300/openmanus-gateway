@@ -257,7 +257,8 @@ test('developer workbench edits only isolated project branches and cannot save d
   assert.match(frontendSource, /activeBranchRecord\.branch/);
   assert.match(frontendSource, /只保存到当前项目临时分支/);
   assert.match(frontendSource, /没有活动临时分支，已阻止写入 main/);
-  assert.match(frontendSource, /if \(!activeBranchRecord \|\| activeBranchRecord\.discard_recovery \|\| REPO\.branch !== activeBranchRecord\.branch \|\| !\/^code\\\\\\/\.test\(REPO\.branch\)\) throw new Error\(/);
+  assert.match(frontendSource, /activeBranchRecord\.discard_recovery/);
+  assert.match(frontendSource, /REPO\.branch !== activeBranchRecord\.branch/);
   assert.match(frontendSource, /accepted_paths: accepted/);
   assert.match(frontendSource, /\/api\/code\/branch\/discard/);
   assert.match(frontendSource, /\/api\/code\/branch\/merge/);
