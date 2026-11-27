@@ -886,6 +886,29 @@ async function codeRepairPendingFromVerification(env, user, job) {
   }
 }
 
+async function codeVerifySweep(env) {
+  if (!env.KV || !env.GH_PAT) return { checked: 0, skipped: true };
+  const cursorKey = "code:verify-sweep:last";
+  let page;
+  try { page = await env.KV.list({ prefix: "code:verify:", limit: 1000 }); }
+  catch (e) { return { checked: 0, msg: "验证任务索引读取失败：" + String(e && e.message || e).slice(0, 160) }; }
+  const names = (page.keys || []).map((k) => k.name).filter((name) => name !== cursorKey);
+  if (!names.length) return { checked: 0 };
+  const last = await env.KV.get(cursorKey).catch(() => "");
+  const found = names.indexOf(last);
+  const start = found >= 0 ? (found + 1) % names.length : 0;
+  for (let offset = 0; offset < names.length; offset++) {
+    const name = names[(start + offset) % names.length], user = name.slice("code:verify:".length);
+    if (!user) continue;
+    const job = await env.KV.get(name, "json").catch(() => null);
+    if (!job || !job.pending_id || (job.status === "completed" && (job.pending_status || job.auto_repair_started))) continue;
+    await env.KV.put(cursorKey, name, { expirationTtl: 86400 * 30 });
+    const status = await codeVerifyStatus(env, user);
+    return { checked: 1, status: status.status || "", state: status.state || "", auto_repair_started: !!status.auto_repair_started };
+  }
+  return { checked: 0 };
+}
+
 async function codeVerifyStatus(env, user) {
   const old = env.KV ? await env.KV.get(codeVerifyKey(user), "json") : null;
   if (!old) return { ok: false, msg: "没有找到验证任务，请先点击运行 / 验证" };
@@ -5438,6 +5461,7 @@ const WORKER_DEFAULT = {
       try { const r = await agCronReminders(e2); if (r.sent || r.msg) console.log("[cron] reminders", JSON.stringify({ sent: r.sent || 0, pending: r.pending || 0, msg: r.msg || "" })); }
       catch (e) { console.error("[cron] reminders failed", e && e.message || e); }
       try { const swept = await codePendingSweep(e2); if (swept.count) console.log("[cron] pending-sweep", JSON.stringify(swept)); } catch (e) { console.error("[cron] pending-sweep failed", e && e.message || e); }   // v108：过期待处理改动兜底清理
+      try { const verified = await codeVerifySweep(e2); if (verified.checked || verified.msg) console.log("[cron] code-verify-sweep", JSON.stringify(verified)); } catch (e) { console.error("[cron] code-verify-sweep failed", String(e && e.message || e).slice(0, 200)); }
       try {      // v99k：早报——北京时间（UTC+8）08 点这一小时内每分钟都会尝试，morning:<北京日期> 防重复；没日程 / 没待办也发；成败都写日志
         const bj = agParts(event && event.scheduledTime || Date.now());
         if (bj.h === 8) {
