@@ -9411,7 +9411,8 @@ export class CodeClaimDO {
     const value = await this.storage.get("claim");
     if (!value) return null;
     const createdAt = (value.pending && value.pending.created_at) || value.created_at || 0;
-    if ((value.expires_at && value.expires_at <= Date.now()) || (createdAt && Date.now() - createdAt >= CODE_PENDING_TTL_MS)) {
+    const verificationActive = value.pending && value.pending.status === "verification_pending" && value.pending.verify_expires_at > Date.now();
+    if (!verificationActive && ((value.expires_at && value.expires_at <= Date.now()) || (createdAt && Date.now() - createdAt >= CODE_PENDING_TTL_MS))) {
       const p = value.pending;
       if (p && ["applying", "discarding"].includes(p.status)) {
         await this.storage.setAlarm(Date.now() + 60000);
@@ -9436,6 +9437,7 @@ export class CodeClaimDO {
     if (!value) return;
     const createdAt = (value.pending && value.pending.created_at) || value.created_at || 0;
     const expiresAt = value.expires_at || (createdAt ? createdAt + CODE_PENDING_TTL_MS : 0);
+    if (p && p.status === "verification_pending" && p.verify_expires_at > Date.now()) { await this.storage.setAlarm(Math.min(p.verify_expires_at, Date.now() + 60000)); return; }
     if (expiresAt && expiresAt > Date.now()) { await this.storage.setAlarm(expiresAt); return; }
     const p = value.pending;
     if (p && ["applying", "discarding"].includes(p.status)) {
@@ -9477,7 +9479,7 @@ export class CodeClaimDO {
       if (current && current.results && current.results[operationId]) return this.response({ ok: true, replayed: true, result: current.results[operationId] });
       if (current && current.claims && current.claims[operationId]) return this.response({ ok: false, replayed: true, in_progress: true, pending: true, msg: "相同操作正在处理，请等待第一次请求完成" }, 409);
       if (!p || p.id !== pendingId || Number(current.version) !== Number(body.version) || p.project !== project) return this.response({ ok: false, conflict: true, pending: codePendingView(p), msg: "待推送内容已变化，请刷新预览后再操作" }, 409);
-      if (!["awaiting_approval", "partial", "failed", "verification_passed"].includes(p.status || "awaiting_approval")) return this.response({ ok: false, pending: true, busy: p.status === "applying", msg: p.status === "applying" ? "这项修改正在处理，请不要重复点击" : "这项修改当前不能确认" }, 409);
+      if (!["awaiting_approval", "partial", "failed", "verification_failed", "verification_passed"].includes(p.status || "awaiting_approval")) return this.response({ ok: false, pending: true, busy: p.status === "applying", msg: p.status === "applying" ? "这项修改正在处理，请不要重复点击" : "这项修改当前不能确认" }, 409);
       current.claims[operationId] = { at: now, yes: body.yes === true };
       p.claimed_from_status = p.status || "awaiting_approval";
       p.status = "applying"; p.updatedAt = now; p.operation_id = operationId;
@@ -9489,6 +9491,7 @@ export class CodeClaimDO {
       if (!current || !p || p.id !== String(body.pending_id || "") || p.operation_id !== operationId || !current.claims[operationId]) return this.response({ ok: false, msg: "操作已失效或不属于当前 claim" }, 409);
       const result = body.result && typeof body.result === "object" ? body.result : { ok: false, reply: "操作完成" };
       p.status = String(body.status || (result.ok ? "applied" : "failed"));
+      if (p.status === "verification_pending") { current.expires_at = now + 20 * 60 * 1000; p.verify_expires_at = current.expires_at; await this.storage.setAlarm(current.expires_at); }
       if (Array.isArray(body.edits)) p.edits = body.edits;
       if (body.verification && typeof body.verification === "object") Object.assign(p, body.verification);
       p.updatedAt = now; current.results[operationId] = result; current.version = Number(current.version) + 1;
@@ -9499,7 +9502,7 @@ export class CodeClaimDO {
     if (action === "verification") {
       const current = await this.load(), p = current && current.pending;
       const pendingId = String(body.pending_id || ""), runId = String(body.run_id || ""), expectedSha = String(body.expected_sha || ""), actualSha = String(body.actual_sha || "");
-      if (!current || !p || p.id !== pendingId || p.status !== "verification_pending" || !runId || p.verify_run_id !== runId || !expectedSha || p.verify_expected_sha !== expectedSha || actualSha !== expectedSha) return this.response({ ok: false, conflict: true, msg: "验证结果与当前待处理提交不匹配，拒绝标记通过" }, 409);
+      if (!current || !p || p.id !== pendingId || p.status !== "verification_pending" || !runId || p.verify_run_id !== runId || !expectedSha || p.verify_expected_sha !== expectedSha) return this.response({ ok: false, conflict: true, msg: "验证结果与当前待处理提交不匹配，拒绝标记通过" }, 409);
       const conclusion = String(body.conclusion || "success");
       p.status = conclusion === "success" && actualSha === expectedSha ? "verification_passed" : "verification_failed";
       p.verify_conclusion = conclusion; p.verify_head_sha = actualSha; p.verify_completed_at = now; p.verify_error_lines = Array.isArray(body.error_lines) ? body.error_lines.slice(0, 60) : []; p.verify_failed_step = String(body.failed_step || "").slice(0, 160); p.updatedAt = now; current.version = Number(current.version || 0) + 1;
