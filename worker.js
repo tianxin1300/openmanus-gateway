@@ -586,7 +586,9 @@ async function codeWorkbenchBranchCreateUnlocked(env, user, body = {}) {
   try {
     await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 });
   } catch (error) {
-    const cleanup = await codeDeleteBranch(env, repo, made.branch);
+    let cleanup;
+    try { cleanup = await codeDeleteBranch(env, repo, made.branch); }
+    catch (cleanupError) { cleanup = { ok: false, msg: cleanupError && cleanupError.message || "GitHub 清理请求异常" }; }
     if (!cleanup.ok && cleanup.status !== 404) {
       return { ok: false, orphaned: true, branch: made.branch, msg: "临时分支已创建，但本地记录保存失败且 GitHub 清理失败；分支名已保留，请重试清理：" + (cleanup.msg || "未知错误") };
     }
