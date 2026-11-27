@@ -58,12 +58,68 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save --no-package-lock --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
       - name: Deploy temporary Pages preview
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         working-directory: frontend
-        run: npx wrangler pages deploy . --project-name zhineng --branch "$DEPLOY_REF" --commit-dirty=true
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler pages deploy . --project-name zhineng --branch "$DEPLOY_REF" --commit-dirty=true 2>&1 | tee /tmp/branch-preview-deploy.log
+          PREVIEW_URL="$(sed -nE 's/^.*Deployment alias URL: (https:\/\/[^[:space:]]+).*$/\1/p' /tmp/branch-preview-deploy.log | tail -n 1)"
+          if [ -z "$PREVIEW_URL" ]; then
+            echo "Could not determine the deployed Pages preview URL from Wrangler output." >&2
+            exit 1
+          fi
+          echo "PREVIEW_URL=$PREVIEW_URL" >> "$GITHUB_ENV"
+          echo "Preview URL: $PREVIEW_URL"
+      - name: Verify preview HTTP 200 with curl
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            HTTP_CODE="$(curl -s -o /dev/null -w "%{http_code}" "$PREVIEW_URL")"
+            echo "Preview HTTP status (attempt $attempt): $HTTP_CODE"
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "PASS: preview returned HTTP 200."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "FAIL: preview did not return HTTP 200: $PREVIEW_URL" >&2
+          exit 1
+      - name: Verify preview opens with Playwright
+        env:
+          PREVIEW_URL: ${{ env.PREVIEW_URL }}
+        run: |
+          node <<'NODE'
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            try {
+              const page = await browser.newPage();
+              const response = await page.goto(process.env.PREVIEW_URL, {
+                waitUntil: 'domcontentloaded',
+                timeout: 60000
+              });
+              const status = response ? response.status() : 0;
+              if (status !== 200) {
+                throw new Error(`Playwright navigation failed: HTTP ${status} at ${process.env.PREVIEW_URL}`);
+              }
+              console.log(`PASS: Playwright page.goto opened ${page.url()} with HTTP ${status}`);
+            } finally {
+              await browser.close();
+            }
+          })().catch(error => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
       - name: Summary
         if: always()
         run: |
