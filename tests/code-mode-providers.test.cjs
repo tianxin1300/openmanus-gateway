@@ -226,6 +226,43 @@ test('temporary branch preview is built from the staged branch and uses the Page
   assert.match(deployWorkflow, /--branch "\$DEPLOY_REF"/);
 });
 
+test('developer workbench edits only isolated project branches and cannot save directly to main', () => {
+  const script = /<script\b(?=[^>]*\bid=["']wb-devbench["'])[^>]*>([\s\S]*?)<\/script\s*>/i.exec(frontendSource);
+  assert.ok(script);
+  assert.doesNotThrow(() => new vm.Script(script[1]));
+  assert.match(frontendSource, /id="wb-project"/);
+  assert.match(frontendSource, /id="wb-push"/);
+  assert.match(frontendSource, /id="wb-discard"/);
+  assert.match(frontendSource, /id="wb-new-branch"/);
+  assert.match(frontendSource, /id="wb-branch-preview"/);
+  assert.match(frontendSource, /id="wb-file-search"/);
+  assert.match(frontendSource, /id="wb-change-list"/);
+  assert.match(frontendSource, /id="wb-version-list"/);
+  assert.match(frontendSource, /async function ensureWorkbenchBranch\(/);
+  assert.match(frontendSource, /activeBranchRecord\.branch/);
+  assert.match(frontendSource, /只保存到当前项目临时分支/);
+  assert.match(frontendSource, /没有活动临时分支，已阻止写入 main/);
+  assert.match(frontendSource, /已阻止直接写入 main/);
+  assert.match(frontendSource, /accepted_paths: accepted/);
+  assert.match(frontendSource, /\/api\/code\/branch\/discard/);
+  assert.match(frontendSource, /\/api\/code\/branch\/merge/);
+});
+
+test('workbench branch APIs persist project isolation, reject files on branch, and record merge history', () => {
+  assert.match(workerSource, /codeWorkbenchBranchKey/);
+  assert.match(workerSource, /codeWorkbenchBranchCreate/);
+  assert.match(workerSource, /codeWorkbenchBranchCurrent/);
+  assert.match(workerSource, /codeWorkbenchBranchDiscard/);
+  assert.match(workerSource, /codeWorkbenchBranchMerge/);
+  assert.match(workerSource, /codeWorkbenchBranchRejectFile/);
+  assert.match(workerSource, /accepted_paths/);
+  assert.match(workerSource, /codeHistorySave\(env, user, \[row, \.\.\.history\]\)/);
+  assert.match(workerSource, /main_untouched: true/);
+  assert.match(workerSource, /path === "\/api\/code\/branch\/create"/);
+  assert.match(workerSource, /path === "\/api\/code\/branch\/merge"/);
+  assert.match(workerSource, /path === "\/api\/code\/branch\/discard"/);
+});
+
 test('web workbench: exposes the local preview control', () => {
   const previewButtons = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-local-preview")[^>]*>/g)];
   assert.equal(previewButtons.length, 1);
