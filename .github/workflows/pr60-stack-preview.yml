@@ -6,7 +6,8 @@ on:
     branches: [code/cron-automation-token-20261128]
 
 permissions:
-  contents: read
+  contents: write
+  actions: write
   pull-requests: write
   issues: write
 
@@ -172,9 +173,16 @@ jobs:
         env:
           WORKER_URL: ${{ steps.worker.outputs.url }}
           LOGIN_TOKEN: ${{ steps.preview-api.outputs.login_token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GH_PAT: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
+          test -n "$GH_PAT" || { echo "::error::GitHub workflow token is missing"; exit 1; }
+          echo "::add-mask::$GH_PAT"
+          printf '%s' "$GH_PAT" | npx --yes wrangler@4 secret put GH_PAT --config wrangler.pr60-preview.toml
+          printf '%s' "pr60-preview-${GITHUB_SHA:0:8}" | npx --yes wrangler@4 secret put CODE_OWNER --config wrangler.pr60-preview.toml
           AUTH=(-H "Authorization: Bearer $LOGIN_TOKEN" -H 'Accept: application/json')
           CLEANED=false
           cleanup() {
