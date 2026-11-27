@@ -12,7 +12,7 @@ function sourceOf(start, end) {
   return worker.slice(a, b);
 }
 function runFunction(source, name, globals) {
-  const sandbox = { ...globals, URL, Date, Math, JSON, Set, Map, Promise, console, crypto: globals.crypto || require('node:crypto').webcrypto, codeWorkbenchWithLock: globals.codeWorkbenchWithLock || (async (_env, _user, _repo, _operation, run) => run()) };
+  const sandbox = { ...globals, URL, Date, Math, JSON, Set, Map, Promise, console, setInterval, clearInterval, crypto: globals.crypto || require('node:crypto').webcrypto, codeWorkbenchWithLock: globals.codeWorkbenchWithLock || (async (_env, _user, _repo, _operation, run) => run()) };
   vm.runInNewContext(source + '\nglobalThis.__tested = ' + name + ';', sandbox);
   return sandbox.__tested;
 }
@@ -436,11 +436,21 @@ test('ACCEPTANCE LOCK-CLEANUP-01: failed or cancelled claim releases its operati
     codeDeleteBranch: async () => ({ ok: true })
   });
   const values = new Map();
+  let transactionTail = Promise.resolve();
   const storage = {
     async get(k) { return values.get(k); },
     async put(k, v) { values.set(k, v); },
     async delete(k) { values.delete(k); },
-    async setAlarm() {}
+    async setAlarm() {},
+    transaction(fn) {
+      const next = transactionTail.then(() => fn({
+        get: async k => values.get(k),
+        put: async (k, v) => { values.set(k, v); },
+        delete: async k => { values.delete(k); }
+      }));
+      transactionTail = next.catch(() => {});
+      return next;
+    }
   };
   const instance = new Claim({ storage }, {});
   const call = async (action, body) => {
@@ -815,4 +825,75 @@ test('ACCEPTANCE WORKBENCH-LOCK-CASE-01: case variants of one repository resolve
   }, 'OWNER/Repo', 'branch-lock', { lock_id: 'workbench:owner/repo', token: 't' });
   assert.equal(result.ok, true);
   assert.equal(resolvedId, 'workbench:owner/repo');
+});
+
+
+test('ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01: simultaneous lock acquisition is atomic in the Durable Object transaction', async () => {
+  const Claim = runFunction(sourceOf('class CodeClaimDO {', 'export class CodeRunnerDO'), 'CodeClaimDO', {
+    Response, Request, URL, CODE_PENDING_TTL_MS: 600000, codePendingView: p => p,
+    codeDeleteBranch: async () => ({ ok: true })
+  });
+  const values = new Map();
+  let tail = Promise.resolve();
+  const storage = {
+    async get(k) { return values.get(k); },
+    async put(k, v) { values.set(k, v); },
+    async delete(k) { values.delete(k); },
+    async setAlarm() {},
+    transaction(fn) {
+      const next = tail.then(() => fn({
+        get: async k => values.get(k),
+        put: async (k, v) => { values.set(k, v); },
+        delete: async k => { values.delete(k); }
+      }));
+      tail = next.catch(() => {});
+      return next;
+    }
+  };
+  const instance = new Claim({ storage }, {});
+  const call = async (token) => {
+    const response = await instance.fetch(new Request('https://claim/branch-lock', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lock_id: 'workbench:owner/repo', token })
+    }));
+    return response.json();
+  };
+  const results = await Promise.all([call('one'), call('two')]);
+  assert.equal(results.filter(x => x.acquired).length, 1, 'exactly one concurrent request owns the lock');
+  assert.equal(results.filter(x => x.busy).length, 1, 'the other concurrent request is rejected');
+});
+
+test('ACCEPTANCE WORKBENCH-LOCK-RENEW-01: only the current unexpired owner can renew a lease', async () => {
+  const Claim = runFunction(sourceOf('class CodeClaimDO {', 'export class CodeRunnerDO'), 'CodeClaimDO', {
+    Response, Request, URL, CODE_PENDING_TTL_MS: 600000, codePendingView: p => p,
+    codeDeleteBranch: async () => ({ ok: true })
+  });
+  const values = new Map();
+  const storage = {
+    async get(k) { return values.get(k); },
+    async put(k, v) { values.set(k, v); },
+    async delete(k) { values.delete(k); },
+    async setAlarm() {},
+    async transaction(fn) { return fn({
+      get: async k => values.get(k),
+      put: async (k, v) => { values.set(k, v); },
+      delete: async k => { values.delete(k); }
+    }); }
+  };
+  const instance = new Claim({ storage }, {});
+  const call = async (action, token) => {
+    const response = await instance.fetch(new Request('https://claim/' + action, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lock_id: 'workbench:owner/repo', token })
+    }));
+    return response.json();
+  };
+  const acquired = await call('branch-lock', 'owner');
+  const renewed = await call('branch-renew', 'owner');
+  assert.equal(renewed.renewed, true);
+  assert.ok(renewed.expires_at > acquired.expires_at);
+  const stale = await call('branch-renew', 'intruder');
+  assert.equal(stale.ok, false);
+  assert.equal(stale.stale, true);
+  assert.equal((await call('branch-unlock', 'owner')).released, true);
 });
