@@ -1976,12 +1976,13 @@ test('CodeClaimDO: automatic repair is single-flight, bounded and re-verifies af
   const duplicate = await call('repair-claim', { pending_id: 'repair-1', request_id: 'req-1', run_id: 'run-1' });
   assert.equal(duplicate.status, 409);
   const finished = await call('repair-finish', {
-    pending_id: 'repair-1', ok: true,
+    pending_id: 'repair-1', ok: true, edits: [{ path: 'worker.js', auto_repair: true }],
     verification: { verify_request_id: 'req-2', verify_expected_sha: 'sha-2', verify_run_id: '', verify_error_lines: [] }
   });
   assert.equal(finished.status, 200);
   assert.equal(storage.value.pending.status, 'verification_pending');
   assert.equal(storage.value.pending.verify_request_id, 'req-2');
+  assert.equal(storage.value.pending.edits[0].auto_repair, true);
   assert.equal(storage.value.pending.version, storage.value.version);
   assert.ok(storage.value.pending.verify_expires_at > 1700000000000);
   assert.ok(events.length > 0);
@@ -2042,5 +2043,8 @@ test('automatic repair reads failed logs, applies model SEARCH/REPLACE and queue
   assert.ok(calls.some(x => x[0] === 'model' && x[1].includes('worker.js:1 expected before')));
   assert.ok(calls.some(x => x[0] === 'update' && x[1] === 'worker.js' && x[2] === 'after' && x[3] === 'code/demo' && x[4] === 'sha-worker.js'));
   assert.ok(calls.some(x => x[0] === 'verify' && x[1] === 'OpenRouter · fake'));
-  assert.ok(calls.some(x => x[0] === 'claim' && x[1] === 'repair-finish'));
+  const finishCall = calls.find(x => x[0] === 'claim' && x[1] === 'repair-finish');
+  assert.ok(finishCall);
+  assert.equal(finishCall[2].edits.length, 2);
+  assert.equal(finishCall[2].edits[1].auto_repair, true);
 });
