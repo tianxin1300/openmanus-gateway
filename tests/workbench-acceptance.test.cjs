@@ -1312,3 +1312,104 @@ test('ACCEPTANCE WORKBENCH-CAS-CONFLICT-01: GitHub 422 non-fast-forward is surfa
   assert.equal(result.conflict, true);
   assert.match(result.msg, /Update is not a fast forward/);
 });
+
+
+test('ACCEPTANCE RENAME-REJECT-MERGE-01: real rename rejection restores the source and excludes both paths from merge', async () => {
+  const repo = 'owner/repo';
+  const baseSha = 'a'.repeat(40);
+  const branchSha = 'b'.repeat(40);
+  const record = { repo, branch: 'code/rename-regression', baseBranch: 'main', baseCommit: baseSha, project: 'rename-regression', status: 'active' };
+  const files = {
+    'keep.js': { base: 'base-keep', branch: 'edited-keep' },
+    'old-name.js': { base: 'original-source', branch: null },
+    'new-name.js': { base: null, branch: 'renamed-content' }
+  };
+  const history = [];
+  let compareCalls = 0;
+  let mergeCalls = 0;
+  const kv = {
+    async get() { return record; },
+    async put(_key, value) { Object.assign(record, JSON.parse(value)); },
+    async delete() { this.deleted = true; }
+  };
+  const reject = runFunction(
+    sourceOf('async function codeWorkbenchBranchRejectFileUnlocked(', 'async function codeWorkbenchBranchRejectFile('),
+    'codeWorkbenchBranchRejectFileUnlocked',
+    {
+      codeRepoOk: () => true,
+      codePathOk: path => typeof path === 'string' && !!path && !path.startsWith('/') && !path.split('/').includes('..'),
+      codePushGuard: () => '',
+      codeWorkbenchBranchCurrent: async () => ({ ok: true, active: true, ...record }),
+      codeWorkbenchBranchKey: () => 'branch-key',
+      codeGetFile: async (_env, _repo, path, ref) => {
+        const row = files[path];
+        if (!row) return { ok: true, exists: false };
+        const value = ref === baseSha ? row.base : row.branch;
+        return value == null ? { ok: true, exists: false } : { ok: true, exists: true, text: value, sha: path + '-sha' };
+      },
+      codeUpdateFile: async (_env, _repo, path, content) => {
+        files[path].branch = content;
+        return { ok: true };
+      },
+      codeGhUrl: (_repo, path) => 'https://api.github.com/repos/owner/repo/contents/' + path,
+      codeGhApi: async (_env, url, options = {}) => {
+        if (options.method === 'DELETE') {
+          const path = decodeURIComponent(url.split('/contents/')[1]);
+          files[path].branch = null;
+          return { ok: true };
+        }
+        throw new Error('unexpected reject API call: ' + url);
+      }
+    }
+  );
+  const merge = runFunction(
+    sourceOf('async function codeWorkbenchBranchMergeUnlocked(', 'async function codeWorkbenchBranchMerge('),
+    'codeWorkbenchBranchMergeUnlocked',
+    {
+      codeRepoOk: () => true,
+      codePushGuard: () => '',
+      codeWorkbenchBranchKey: () => 'branch-key',
+      codeWorkbenchBranchRejectFileUnlocked: reject,
+      codeGhApi: async (_env, url) => {
+        if (url.includes('/compare/')) {
+          compareCalls++;
+          if (compareCalls === 1) {
+            return { ok: true, data: { files: [
+              { filename: 'keep.js', status: 'modified' },
+              { filename: 'new-name.js', previous_filename: 'old-name.js', status: 'renamed' }
+            ] } };
+          }
+          const remaining = [];
+          for (const [path, row] of Object.entries(files)) {
+            if (row.base === row.branch) continue;
+            if (row.base == null && row.branch != null) remaining.push({ filename: path, status: 'added' });
+            else if (row.base != null && row.branch == null) remaining.push({ filename: path, status: 'removed' });
+            else if (row.base !== row.branch) remaining.push({ filename: path, status: 'modified' });
+          }
+          return { ok: true, data: { files: remaining } };
+        }
+        if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: baseSha } } };
+        if (url.endsWith('/heads/code/rename-regression')) return { ok: true, data: { object: { sha: branchSha } } };
+        throw new Error('unexpected merge API call: ' + url);
+      },
+      codeGitRefUrl: (_repo, ref) => 'https://api.github.com/repos/owner/repo/git/ref/' + ref,
+      codeMergeTempBranch: async () => { mergeCalls++; return { ok: true, data: { sha: 'merged-rename-regression' } }; },
+      codeHistoryLoad: async () => history,
+      codeHistorySave: async (_env, _user, rows) => { history.splice(0, history.length, ...rows); },
+      codeDeleteBranch: async () => ({ ok: true })
+    }
+  );
+
+  const result = await merge({ KV: kv }, 'reviewer', {
+    repo, branch: record.branch, accepted_paths: ['keep.js']
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.files, ['keep.js'], 'the post-rejection compare must contain only the accepted path');
+  assert.equal(files['old-name.js'].branch, 'original-source', 'the old source path is restored to its baseline content');
+  assert.equal(files['new-name.js'].branch, null, 'the renamed destination path is removed from the temp branch');
+  assert.equal(mergeCalls, 1, 'only the remaining accepted diff is merged');
+  assert.equal(compareCalls, 2, 'merge must re-read GitHub diff after applying the real rejection helper');
+  assert.deepEqual(history[0].files, ['keep.js']);
+  assert.equal(kv.deleted, true);
+});
