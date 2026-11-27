@@ -332,7 +332,7 @@ test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, save, rev
     codeRepoOk: () => true, codePushGuard: guard,
     codeWorkbenchBranchKey: () => 'key', codeDeleteBranch: async () => { writes++; return { ok: true }; }
   });
-  const preview = runFunction(sourceOf('async function codeWorkbenchBranchPreview(', 'async function codeWorkbenchBranchDiscardUnlocked('), 'codeWorkbenchBranchPreview', {
+  const preview = runFunction(sourceOf('async function codeWorkbenchBranchPreviewUnlocked(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchPreview', {
     codePushGuard: guard,
     codeWorkbenchBranchCurrent: async () => ({ ok: true, active: true, branch: 'code/owned' }),
     codeGhApi: async () => { writes++; return { ok: true }; }
@@ -638,7 +638,7 @@ test('ACCEPTANCE WORKBENCH-CONCURRENCY-01: simultaneous branch operations are se
   assert.equal(held, false, 'lock is released after the operation finishes');
 });
 
-test('ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01: create, save and merge refuse to run without CODE_CLAIMS', async () => {
+test('ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01: create, save, preview and merge refuse to run without CODE_CLAIMS', async () => {
   const helper = sourceOf('async function codeWorkbenchWithLock(', 'async function codeWorkbenchBranchCurrent(');
   const createWrapper = sourceOf('async function codeWorkbenchBranchCreate(', 'async function codeWorkbenchBranchDiff(');
   const mergeWrapper = sourceOf('async function codeWorkbenchBranchMerge(', 'async function codeMemoryAppend(');
@@ -652,14 +652,19 @@ test('ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01: create, save and merge refuse to
   const save = runFunction(helper + '\n' + saveWrapper, 'codeWorkbenchBranchSaveFile', {
     codeWorkbenchBranchSaveFileUnlocked: async () => { throw new Error('must not execute'); }
   });
+  const previewWrapper = sourceOf('async function codeWorkbenchBranchPreviewUnlocked(', 'async function codeWorkbenchBranchDiscardUnlocked(');
+  const preview = runFunction(helper + '\n' + previewWrapper, 'codeWorkbenchBranchPreview', {
+    codeWorkbenchBranchPreviewUnlocked: async () => { throw new Error('must not execute'); }
+  });
   const noBinding = {};
   assert.equal((await create(noBinding, 'owner', { repo: 'tianxin1300/openmanus-gateway' })).ok, false);
   assert.equal((await merge(noBinding, 'owner', { repo: 'tianxin1300/openmanus-gateway' })).ok, false);
   assert.equal((await save(noBinding, 'owner', { repo: 'tianxin1300/openmanus-gateway' })).ok, false);
+  assert.equal((await preview(noBinding, 'owner', 'tianxin1300/openmanus-gateway')).ok, false);
 });
 
 
-test('ACCEPTANCE WORKBENCH-LOCK-SCOPE-01: save, review and discard also acquire the repository write lock', async () => {
+test('ACCEPTANCE WORKBENCH-LOCK-SCOPE-01: save, review, discard and preview also acquire the repository write lock', async () => {
   const calls = [];
   const lock = async (_env, _user, repo, operation, run) => {
     calls.push({ repo, operation });
@@ -677,13 +682,19 @@ test('ACCEPTANCE WORKBENCH-LOCK-SCOPE-01: save, review and discard also acquire 
     codeWorkbenchWithLock: lock,
     codeWorkbenchBranchSaveFileUnlocked: async () => ({ ok: true, saved: true })
   });
+  const preview = runFunction(sourceOf('async function codeWorkbenchBranchPreviewUnlocked(', 'async function codeWorkbenchBranchDiscardUnlocked('), 'codeWorkbenchBranchPreview', {
+    codeWorkbenchWithLock: lock,
+    codeWorkbenchBranchPreviewUnlocked: async () => ({ ok: true, preview: true })
+  });
   assert.equal((await reject({}, 'reviewer', { repo: 'owner/repo', path: 'a.js' })).reviewed, true);
   assert.equal((await discard({}, 'owner', { repo: 'owner/repo' })).discarded, true);
   assert.equal((await save({}, 'owner', { repo: 'owner/repo' })).saved, true);
+  assert.equal((await preview({}, 'owner', 'owner/repo')).preview, true);
   assert.deepEqual(calls, [
     { repo: 'owner/repo', operation: 'review' },
     { repo: 'owner/repo', operation: 'discard' },
-    { repo: 'owner/repo', operation: 'save' }
+    { repo: 'owner/repo', operation: 'save' },
+    { repo: 'owner/repo', operation: 'preview' }
   ]);
   assert.match(worker, /codeWorkbenchBranchRejectFileUnlocked\(env, user, \{ repo, path, previous_path:/);
 });
