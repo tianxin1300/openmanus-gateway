@@ -544,11 +544,21 @@ async function codeWorkbenchWithLock(env, user, repo, operation, run) {
   if (!env.CODE_CLAIMS) return { ok: false, msg: "CODE_CLAIMS Durable Object 未绑定，拒绝无锁执行工作台写操作" };
   const lockId = "workbench:" + String(repo).trim().toLowerCase();
   const token = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + "-" + String(Math.random()).slice(2);
-  const acquired = await codeWorkbenchLockCall(env, repo, "branch-lock", { lock_id: lockId, token, operation: String(operation) });
+  const lockBody = { lock_id: lockId, token, operation: String(operation) };
+  const acquired = await codeWorkbenchLockCall(env, repo, "branch-lock", lockBody);
   if (!acquired || !acquired.ok) return { ok: false, busy: !!(acquired && acquired.busy), msg: acquired && acquired.msg || "工作台操作锁获取失败" };
+  let renewalFailed = false;
+  const heartbeat = setInterval(() => {
+    codeWorkbenchLockCall(env, repo, "branch-renew", lockBody).then((result) => {
+      if (!result || !result.ok) renewalFailed = true;
+    }).catch(() => { renewalFailed = true; });
+  }, 60000);
   try {
-    return await run();
+    const result = await run();
+    if (renewalFailed) return { ok: false, lock_renewal_failed: true, operation_result: result, msg: "工作台操作期间锁续期失败；请核对 GitHub 实际结果后再重试，避免重复提交。" };
+    return result;
   } finally {
+    clearInterval(heartbeat);
     await codeWorkbenchLockCall(env, repo, "branch-unlock", { lock_id: lockId, token }).catch(() => null);
   }
 }
@@ -9773,24 +9783,30 @@ export class CodeClaimDO {
       return this.response({ ok: true, pending: current && current.pending || null, version: current && current.version || 0, result: current && current.result || null });
     }
     const body = await request.json().catch(() => ({})), now = Date.now();
-    if (action === "branch-lock") {
+    if (["branch-lock", "branch-renew", "branch-unlock"].includes(action)) {
       const lockId = String(body.lock_id || ""), token = String(body.token || "");
       if (!lockId || !token || lockId.length > 240 || token.length > 240) return this.response({ ok: false, msg: "无效的工作台锁参数" }, 400);
-      const locks = (await this.storage.get("workbench_locks")) || {};
-      const currentLock = locks[lockId];
-      if (currentLock && Number(currentLock.expires_at) > now) return this.response({ ok: false, busy: true, msg: "同一项目操作正在执行，请稍后重试" }, 409);
-      locks[lockId] = { token, expires_at: now + 600000 };
-      await this.storage.put("workbench_locks", locks);
-      return this.response({ ok: true, acquired: true, expires_at: locks[lockId].expires_at });
-    }
-    if (action === "branch-unlock") {
-      const lockId = String(body.lock_id || ""), token = String(body.token || "");
-      if (!lockId || !token) return this.response({ ok: false, msg: "无效的工作台解锁参数" }, 400);
-      const locks = (await this.storage.get("workbench_locks")) || {};
-      if (!locks[lockId] || locks[lockId].token !== token) return this.response({ ok: false, stale: true, msg: "锁已过期或不属于当前操作" }, 409);
-      delete locks[lockId];
-      await this.storage.put("workbench_locks", locks);
-      return this.response({ ok: true, released: true });
+      const result = await this.storage.transaction(async (txn) => {
+        const locks = (await txn.get("workbench_locks")) || {};
+        const currentLock = locks[lockId];
+        if (action === "branch-lock") {
+          if (currentLock && Number(currentLock.expires_at) > now) return { ok: false, busy: true, msg: "同一项目操作正在执行，请稍后重试" };
+          locks[lockId] = { token, operation: String(body.operation || ""), expires_at: now + 600000 };
+          await txn.put("workbench_locks", locks);
+          return { ok: true, acquired: true, expires_at: locks[lockId].expires_at };
+        }
+        if (!currentLock || currentLock.token !== token || Number(currentLock.expires_at) <= now) return { ok: false, stale: true, msg: "锁已过期或不属于当前操作" };
+        if (action === "branch-renew") {
+          currentLock.expires_at = now + 600000;
+          locks[lockId] = currentLock;
+          await txn.put("workbench_locks", locks);
+          return { ok: true, renewed: true, expires_at: currentLock.expires_at };
+        }
+        delete locks[lockId];
+        await txn.put("workbench_locks", locks);
+        return { ok: true, released: true };
+      });
+      return this.response(result, result.ok ? 200 : result.busy ? 409 : 409);
     }
     if (action === "create") {
       const current = await this.load(), incoming = body.pending;
