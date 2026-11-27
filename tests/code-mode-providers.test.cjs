@@ -183,6 +183,10 @@ test('rollback creates a new commit and never force-moves the base branch', () =
   assert.match(rollback, /\/git\/commits\//);
   assert.match(rollback, /method: "POST"/);
   assert.match(rollback, /parents: \[currentSha\]/);
+  assert.match(rollback, /base_tree: currentTree/);
+  assert.match(rollback, /changedPaths = Array\.isArray\(item\.files\)/);
+  assert.match(rollback, /treeChanges\.push\(entry \?/);
+  assert.match(rollback, /拒绝执行整仓库回滚/);
   assert.match(rollback, /force: false/);
   assert.match(rollback, /codePushGuard\(env, user, repo, "frontend\/index\.html"\)/);
   assert.doesNotMatch(rollback, /force: true/);
