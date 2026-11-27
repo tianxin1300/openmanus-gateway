@@ -380,3 +380,50 @@ test('ACCEPTANCE CLEANUP-01: failed deletion retains recoverable state; successf
   assert.equal(next.ok, true);
   assert.equal(next.branch, 'code/next-task');
 });
+
+
+test('ACCEPTANCE LOCK-CLEANUP-01: failed or cancelled claim releases its operation lock and permits the next task', async () => {
+  const claimSource = sourceOf('class CodeClaimDO {', 'export class CodeRunnerDO');
+  const Claim = runFunction(claimSource, 'CodeClaimDO', {
+    Response, Request, URL, CODE_PENDING_TTL_MS: 600000,
+    codePendingView: p => p,
+    codeDeleteBranch: async () => ({ ok: true })
+  });
+  const values = new Map();
+  const storage = {
+    async get(k) { return values.get(k); },
+    async put(k, v) { values.set(k, v); },
+    async delete(k) { values.delete(k); },
+    async setAlarm() {}
+  };
+  const instance = new Claim({ storage }, {});
+  const call = async (action, body) => {
+    const response = await instance.fetch(new Request('https://claim/' + action, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    }));
+    return response.json();
+  };
+  const pending = { id: 'task-one', project: 'p', repo: 'tianxin1300/openmanus-gateway', branch: 'code/task-one',
+    edits: [{ path: 'a.js', old: 'a', new: 'b' }], created_at: Date.now() };
+  assert.equal((await call('create', { pending })).ok, true);
+  const claimArgs = { pending_id: 'task-one', project: 'p', operation_id: 'op-one', version: 1, yes: true };
+  assert.equal((await call('claim', claimArgs)).claimed, true);
+  const duplicate = await call('claim', claimArgs);
+  assert.equal(duplicate.in_progress, true, 'duplicate click while active is blocked by the operation lock');
+  const finished = await call('finish', { pending_id: 'task-one', operation_id: 'op-one', status: 'failed',
+    result: { ok: false, reply: 'simulated push failure' }, edits: pending.edits });
+  assert.equal(finished.ok, true);
+  let stored = await storage.get('claim');
+  assert.deepEqual(Object.keys(stored.claims), [], 'failed operation releases its lock');
+  assert.equal(stored.pending.status, 'failed');
+
+  const discarded = await call('discard', { pending_id: 'task-one', version: stored.version });
+  assert.equal(discarded.discarding, true);
+  const cleared = await call('clear', { pending_id: 'task-one', version: stored.version });
+  assert.equal(cleared.cleared, true);
+  assert.equal(await storage.get('claim'), undefined, 'cancel clears the review state and lock record');
+
+  const next = { ...pending, id: 'task-two', branch: 'code/task-two' };
+  const createdAgain = await call('create', { pending: next });
+  assert.equal(createdAgain.ok, true, 'a new task can claim the cleared state');
+});
