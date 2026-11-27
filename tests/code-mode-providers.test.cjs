@@ -1733,9 +1733,9 @@ test('workbench history loads on tab open and exposes full both Runner state', (
 });
 
 
-test('CodeClaimDO: verification state can only pass for the exact pending run and commit', async () => {
+test('CodeClaimDO: verification accepts only its dispatched run and records SHA mismatch as failure', async () => {
   const value = {
-    pending: { id: 'verify-1', project: 'demo', status: 'verification_pending', verify_run_id: 'run-42', verify_expected_sha: 'abc1234', edits: [{ path: 'a.js' }] },
+    pending: { id: 'verify-1', project: 'demo', status: 'verification_pending', verify_request_id: 'req-42', verify_run_id: '', verify_expected_sha: 'abc1234', edits: [{ path: 'a.js' }] },
     created_at: 1700000000000, expires_at: 1700000600000, version: 3, claims: {}, results: {}
   };
   const storage = {
@@ -1749,14 +1749,46 @@ test('CodeClaimDO: verification state can only pass for the exact pending run an
   const request = body => instance.fetch(new Request('https://code-claims/verification', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   }));
-  const wrongRun = await request({ pending_id: 'verify-1', run_id: 'run-other', expected_sha: 'abc1234', actual_sha: 'abc1234' });
+  const wrongRun = await request({ pending_id: 'verify-1', request_id: 'req-42', run_id: 'run-other', expected_sha: 'abc1234', actual_sha: 'abc1234' });
   assert.equal(wrongRun.status, 409);
-  const wrongSha = await request({ pending_id: 'verify-1', run_id: 'run-42', expected_sha: 'abc1234', actual_sha: 'def5678' });
-  assert.equal(wrongSha.status, 409);
-  assert.equal(storage.value.pending.status, 'verification_pending');
-  const passed = await request({ pending_id: 'verify-1', run_id: 'run-42', expected_sha: 'abc1234', actual_sha: 'abc1234' });
+  const mismatch = await request({ pending_id: 'verify-1', request_id: 'req-42', run_id: 'run-42', expected_sha: 'abc1234', actual_sha: 'def5678', conclusion: 'success' });
+  assert.equal(mismatch.status, 200);
+  assert.equal(storage.value.pending.status, 'verification_failed');
+  assert.equal(storage.value.pending.verify_head_sha, 'def5678');
+  storage.value.pending.status = 'verification_pending';
+  storage.value.pending.verify_run_id = '';
+  const passed = await request({ pending_id: 'verify-1', request_id: 'req-42', run_id: 'run-42', expected_sha: 'abc1234', actual_sha: 'abc1234', conclusion: 'success' });
   assert.equal(passed.status, 200);
   assert.equal(storage.value.pending.status, 'verification_passed');
   assert.equal(storage.value.pending.verify_head_sha, 'abc1234');
-  assert.equal(storage.value.version, 4);
+  assert.equal(storage.value.version, 5);
+});
+
+test('CodeClaimDO: verification_pending extends expiry and cannot be claimed or discarded', async () => {
+  const value = {
+    pending: { id: 'verify-2', project: 'demo', status: 'verification_pending', verify_expires_at: 1700001200000, created_at: 1, repo: 'owner/repo', branch: 'code/demo', edits: [{ path: 'a.js' }] },
+    created_at: 1, expires_at: 1, version: 4, claims: {}, results: {}
+  };
+  const events = [];
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async put(key, next) { this.value = next; },
+    async setAlarm(at) { events.push(at); }
+  };
+  const DO = loadCodeClaimDO(async () => { throw new Error('must not delete while verification active'); });
+  const instance = new DO({ storage }, {});
+  const state = await instance.fetch(new Request('https://code-claims/state'));
+  assert.equal(state.status, 200);
+  const claim = await instance.fetch(new Request('https://code-claims/claim', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pending_id: 'verify-2', version: 4, project: 'demo', operation_id: 'op-1', yes: true })
+  }));
+  assert.equal(claim.status, 409);
+  const discard = await instance.fetch(new Request('https://code-claims/discard', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pending_id: 'verify-2', version: 4 })
+  }));
+  assert.equal(discard.status, 409);
+  assert.equal(storage.value.pending.status, 'verification_pending');
 });
