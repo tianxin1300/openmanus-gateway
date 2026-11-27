@@ -280,3 +280,21 @@ npm test
 **通过条件：** 删除失败保留可恢复状态；成功取消后旧状态清空，下一任务创建成功。
 
 **边界：** 当前自动测试覆盖分支记录与审核状态清理；真实 Durable Object 锁在断网、进程中断和过期告警下的恢复仍需单独端到端验收。
+
+
+## 8. 工作台写操作并发互斥（新增）
+ 
+### WORKBENCH-10 — 同一项目写操作互斥与无锁失败关闭
+
+**自动化测试：** `ACCEPTANCE WORKBENCH-CONCURRENCY-01`、`ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01`，并由 `ACCEPTANCE LOCK-CLEANUP-01` 检查 Durable Object 锁释放。
+
+**测试覆盖：**
+- 同一用户、同一仓库的分支创建和合并共用同一把 Durable Object 锁。
+- 创建期间发起合并，第二个操作必须返回 busy，不得进入 GitHub 写操作。
+- 锁只能由持有正确 token 的操作释放。
+- 操作结束释放锁，后续操作可重新获取。
+- 未绑定 `CODE_CLAIMS` 时，创建和合并均失败关闭，不得退回 KV 无锁执行。
+
+**通过条件：** 并发写操作最多一个进入临界区；错误 token 不能解锁；缺少 Durable Object 绑定时不执行 GitHub 写操作。
+
+**边界：** 当前自动测试模拟 Durable Object storage 与请求互斥；Cloudflare 生产 Durable Object 在部署配置、真实并发网络请求和进程中断场景仍需部署后 E2E 验收。
