@@ -272,6 +272,7 @@
     var repairing = currentPending.status === "repairing" || (currentPending.status === "verification_failed" && autoRepairPoll);
     if (!repairing && currentPending.status !== "verification_pending") return;
     verifyPollBusy = true;
+    if (!repairing) say("正在检查 Actions 结果；如果测试失败，系统会自动读取日志并尝试修复。");
     var request = repairing ? api("/api/code/pending", { cache: "no-store" }) : api("/api/code/verify", { cache: "no-store" });
     request.then(function (r) { return r.json(); }).then(function (j) {
       if (repairing) return refreshPending(true);
