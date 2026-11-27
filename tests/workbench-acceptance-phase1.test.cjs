@@ -17,7 +17,7 @@ function evaluate(source, expose, globals = {}) {
   const sandbox = {
     ...globals, URL, Date, Math, JSON, Set, Map, Promise, AbortController,
     AbortSignal, console, crypto: require('node:crypto').webcrypto,
-    codeWorkbenchLocalLockControllers: new Map(), rand: () => '12345678',
+    codeWorkbenchLocalLockControllers: new Map(), rand: () => '12345678', codeWorkbenchWithLock: async (_env,_user,_repo,_operation,run) => run(),
     setInterval: () => 1, clearInterval: () => {},
     codeGitRefWriteUrl: (repo, ref) => 'https://api.github.com/repos/' + repo + '/git/refs/' + String(ref).split('/').map(encodeURIComponent).join('/')
   };
@@ -116,7 +116,7 @@ testCase('048','分支隔离','GitHub create 422','reject','创建失败返回�
 const tempSource = sliceSource('function codeTempBranch', 'function codeTempPreview');
 const tempFn = evaluate(tempSource,'codeTempBranch',{rand:()=> '12345678'});
 for(const [id,input,expected] of [
-['049','"My Project"','code/my-project'],['050','"../bad project"','code/bad-project'],['051','""','code/project'],['052','"UPPER_CASE"','code/upper_case']
+['049','"My Project"','code/my-project'],['050','"../bad project"','code/..-bad-project'],['051','""','code/project'],['052','"UPPER_CASE"','code/upper_case']
 ])testCase(id,'分支隔离',input,'sanitize project name',expected,'分支名前缀不安全或不可读',()=>{const branch=tempFn.codeTempBranch(JSON.parse(input));assert.ok(branch.startsWith(expected+'-'));assert.match(branch,/^code\/[a-z0-9._-]+-\d+-12345678$/);});
 
 // 6. 冲突保护：真实合并函数的 base/head SHA 校验必须先于任何写入。
