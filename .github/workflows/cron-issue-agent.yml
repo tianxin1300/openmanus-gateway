@@ -8,6 +8,10 @@ on:
         description: "Optional issue number; empty means claim the oldest bot:ready issue"
         required: false
         type: string
+  # Draft PR 的工作流尚未进入默认分支，先用分支 push 做隔离联调；不会处理真实 Issue。
+  push:
+    branches:
+      - code/cron-issue-agent-20261128
 
 permissions:
   contents: read
@@ -18,7 +22,47 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preview-smoke:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate preview secrets
+        env:
+          OPENMANUS_API_URL: ${{ secrets.OPENMANUS_API_URL }}
+          OPENMANUS_USER_TOKEN: ${{ secrets.OPENMANUS_USER_TOKEN }}
+        run: |
+          test -n "$OPENMANUS_API_URL" || { echo "::error::Missing OPENMANUS_API_URL secret"; exit 1; }
+          test -n "$OPENMANUS_USER_TOKEN" || { echo "::error::Missing OPENMANUS_USER_TOKEN secret"; exit 1; }
+          case "$OPENMANUS_API_URL" in
+            https://openmanus-gateway-pr60-preview.*.workers.dev) ;;
+            *) echo "::error::OPENMANUS_API_URL is not the PR #60 isolated preview Worker"; exit 1 ;;
+          esac
+
+      - name: Verify Cron token can call code-mode endpoint
+        env:
+          OPENMANUS_API_URL: ${{ secrets.OPENMANUS_API_URL }}
+          OPENMANUS_USER_TOKEN: ${{ secrets.OPENMANUS_USER_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROMPT="这是 PR #58 的预览联调，不处理真实 Issue。请只回复固定文本 CRON_AGENT_PREVIEW_OK。不要读取仓库文件，不要使用工具，不要修改文件，不要创建 PR 或部署。"
+          BODY="$(jq -nc --arg prompt "$PROMPT" --arg repo "$GITHUB_REPOSITORY" '{model:"claude-sonnet-4-5",provider:"OpenRouter",code_mode:true,stream:false,message:$prompt,messages:[{role:"user",content:$prompt}],code_project:$repo}')"
+          STATUS="$(curl --silent --show-error --max-time 180 --output /tmp/cron-agent-preview.json --write-out '%{http_code}' "$OPENMANUS_API_URL/v1/chat/completions" -H 'Content-Type: application/json' -H "Authorization: Bearer $OPENMANUS_USER_TOKEN" --data "$BODY")"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Preview Worker returned HTTP $STATUS"
+            jq -r '.error // .choices[0].message.content // "No error details returned"' /tmp/cron-agent-preview.json | head -c 1000
+            exit 1
+          fi
+          ANSWER="$(jq -r '.choices[0].message.content // .reply // empty' /tmp/cron-agent-preview.json)"
+          test -n "$ANSWER" || { echo "::error::Preview Worker returned an empty completion"; exit 1; }
+          echo "PASS: Cron automation token authenticated and code-mode endpoint returned a completion."
+          echo "Response characters: ${#ANSWER}"
+          echo "No Issue was claimed, commented on, relabelled, or modified."
+
   poll-and-process:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
