@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 79 个测试用例，`workbench-acceptance.test.cjs` 有 39 个测试用例；Playwright UI 文件有 2 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行。数量以对应文件当前实际内容为准。
+> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 79 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，因此 Node TAP 实际运行 81 项。`workbench-acceptance.test.cjs` 运行 39 项，`npm test` 合计 120 项。Playwright UI 文件另有 6 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入这 120 项。
 
 ## 1. 唯一执行入口与判定规则
 
@@ -68,7 +68,7 @@ npm test
 **自动化测试：** `ACCEPTANCE AUTO-04: terminal and run-log tabs switch exclusively and follow visual viewport changes`
 
 **测试覆盖：**
-- 终端与运行日志使用独立标签页，并具备正确的 `role`、`aria-controls` 与 `aria-selected` 状态。
+- 终端与运行日志使用 `tablist`/`tab` 语义，并核对 `aria-controls`、初始 `aria-selected` 与面板关联。
 - 切换标签时只显示选中的面板；进入运行日志标签时加载运行历史。
 - 切回终端时恢复终端面板，运行日志面板隐藏。
 - `visualViewport` 的 resize/scroll 及 window resize 事件同步工作台高度与顶部偏移量。
@@ -165,7 +165,7 @@ npm test
 
 ## 5. 最终交付结论
 
-- **代码自动验收：** AUTO-01～04、CHAIN-01～06 共 10 项均有专属测试，按本次执行结果逐项判定；WORKBENCH-01～15 按各自列出的专属测试判定。不得将未执行或失败项计为通过。
+- **代码自动验收：** AUTO-01～04、CHAIN-01～06 共 10 项均有专属测试，按本次执行结果逐项判定；WORKBENCH-01～16 按各自列出的专属测试判定。不得将未执行或失败项计为通过。
 - **最终交付：** 代码自动验收通过后，仍需按项目流程完成部署。
 
 ## 6. 开发工作台行为验收（WORKBENCH-01～05）
@@ -394,7 +394,7 @@ npm test
 
 **计数说明：** 上述分组对应文件内 39 个 `test(...)` 用例。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
 
-### 14.2 Playwright UI E2E（3 个场景 × 2 个浏览器项目）
+### 14.2 Playwright UI E2E（6 个场景 × 2 个浏览器项目）
 
 文件：`tests/workbench-ui.spec.cjs`
 
@@ -403,6 +403,9 @@ npm test
 | 文件审核：拒绝一个文件、接受另一个文件，只推送接受路径 | 独立执行 | 独立执行 |
 | 丢弃保持 main 不变；历史回滚创建新的活动分支 | 独立执行 | 独立执行 |
 | 终端/运行日志标签页互斥切换；检查移动视口尺寸变化后的布局变量 | 独立执行 | 独立执行 |
+| 文件拒绝接口首次失败后，改动仍保留并允许重试 | 独立执行 | 独立执行 |
+| 合并遇到 409 冲突时保留临时分支和已接受差异 | 独立执行 | 独立执行 |
+| 丢弃接口失败时保留活动分支并允许再次操作 | 独立执行 | 独立执行 |
 
 工作流命令：
 - `npx playwright test --project=chromium-iphone`
@@ -417,3 +420,22 @@ npm test
 - UI E2E 使用浏览器路由 fixtures 模拟 API，不会真实调用后端写操作。
 - 真实 GitHub 权限、真实 Durable Object 部署配置、真实网络故障恢复和生产 Pages/Worker 健康仍需独立环境验收。
 - AUTO-04 已有专属测试；是否通过仍以本次 `npm test` 实际结果为准。
+
+## 15. 工作台 UI 失败恢复验收（WORKBENCH-16）
+
+### WORKBENCH-16 — 文件审核、合并冲突与丢弃失败必须保留可恢复状态
+
+**自动化测试：**
+- `failed file rejection keeps the diff visible and allows a successful retry`
+- `merge conflict keeps the temporary branch and accepted diff available`
+- `failed discard keeps the active branch and permits another attempt`
+
+**测试覆盖：**
+- 文件拒绝接口首次返回 HTTP 500：该文件仍留在改动列表，拒绝按钮恢复可用；再次操作成功后，文件才从列表移除。
+- 合并接口返回 HTTP 409：显示冲突提示，保留活动临时分支、已接受文件和再次推送能力。
+- 丢弃接口返回 HTTP 503：不能清除活动分支状态；丢弃按钮恢复可用，用户可以重试。
+- 三个场景分别在 Chromium 与 WebKit 的 iPhone 14 项目执行。
+
+**通过条件：** 任一失败响应均不能让前端误显示操作成功或丢失可恢复分支状态；重试入口必须恢复。
+
+**边界：** 这三项 Playwright 测试使用浏览器 API fixtures 注入 500/409/503 响应，验证前端错误处理与状态保留；不代表真实 GitHub API 在生产网络中的端到端故障演练。
