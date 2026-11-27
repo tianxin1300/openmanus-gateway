@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 81 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，按当前源码预计 Node TAP 展开为 83 项。`workbench-acceptance.test.cjs` 有 42 个静态测试声明，因此按源码预计 `npm test` 共 125 项；最终数量以本次 TAP 输出为准。Playwright UI 文件另有 8 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
+> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 81 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，按当前源码预计 Node TAP 展开为 83 项。`workbench-acceptance.test.cjs` 有 43 个静态测试声明，因此按源码预计 `npm test` 共 126 项；最终数量以本次 TAP 输出为准。Playwright UI 文件另有 9 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
 
 ## 1. 唯一执行入口与判定规则
 
@@ -235,6 +235,8 @@ npm test
 - 非授权用户及自动化身份尝试创建临时分支、编辑器保存、审核文件、合并推送、丢弃分支、触发预览和历史回滚。
 - 七类受保护写入/部署操作均必须在任何 GitHub 写请求前拒绝。
 - 授权创建记录 `created_by`。
+- 授权保存记录 `last_saved_by` 与 `save_events.actor`；预览触发记录 `preview_started_by` 与 `preview_events.actor`。
+- 历史回滚写入 `actor`；丢弃临时分支写入带操作者的 `workbench_discard` 历史事件。
 - 文件拒绝审核记录 `last_reviewed_by` 与 `review_events.actor`。
 - 合并历史记录 `actor`。
 
@@ -349,7 +351,7 @@ npm test
 
 ### WORKBENCH-14 — Durable Object 仓库锁必须原子获取并支持续期
 
-**自动化测试：** `ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`WORKBENCH-LOCK-RENEW-01`、`WORKBENCH-LOCK-HEARTBEAT-01`、`WORKBENCH-LOCK-HEARTBEAT-FAIL-01`、`WORKBENCH-SAVE-CAS-01`、`WORKBENCH-ROLLBACK-LOCK-01`。
+**自动化测试：** `ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`WORKBENCH-LOCK-RENEW-01`、`WORKBENCH-LOCK-HEARTBEAT-01`、`WORKBENCH-LOCK-HEARTBEAT-FAIL-01`、`WORKBENCH-SAVE-CAS-01`、`WORKBENCH-PREVIEW-AUDIT-01`、`WORKBENCH-ROLLBACK-LOCK-01`。
 
 **测试覆盖：**
 - 两个并发请求同时获取同一仓库锁，事务竞争后只能有一个成功。
@@ -383,7 +385,7 @@ npm test
 
 以下清单按当前分支测试源文件逐项核对。测试名称是验收映射依据；如代码中的测试名称变化，必须同步更新本文件。
 
-### 14.1 Node.js 工作台行为测试（42 项）
+### 14.1 Node.js 工作台行为测试（43 项）
 
 文件：`tests/workbench-acceptance.test.cjs`
 
@@ -393,14 +395,14 @@ npm test
 | 文件审核与重试回滚 | `ACCEPTANCE REVIEW-01`、`ACCEPTANCE RETRY-ROLLBACK-01`、`ACCEPTANCE MULTI-REVIEW-01`、`ACCEPTANCE MULTI-REVIEW-RECOVERY-01`、`ACCEPTANCE WORKBENCH-RENAME-DIFF-01` |
 | 权限与幂等 | `ACCEPTANCE PERMISSION-01`、`ACCEPTANCE IDEMPOTENCY-01`、`ACCEPTANCE IDEMPOTENCY-CONCURRENT-CREATE-01` |
 | 丢弃、失败清理与创建补偿 | `ACCEPTANCE CLEANUP-01`、`ACCEPTANCE LOCK-CLEANUP-01`、`ACCEPTANCE CREATE-CLEANUP-01` |
-| 仓库写锁与租约 | `ACCEPTANCE WORKBENCH-CONCURRENCY-01`、`ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01`、`ACCEPTANCE WORKBENCH-LOCK-SCOPE-01`、`ACCEPTANCE WORKBENCH-LOCK-CASE-01`、`ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`ACCEPTANCE WORKBENCH-LOCK-RENEW-01`、`ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-01`、`ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-FAIL-01`、`ACCEPTANCE WORKBENCH-SAVE-CAS-01`、`ACCEPTANCE WORKBENCH-ROLLBACK-LOCK-01` |
+| 仓库写锁与租约 | `ACCEPTANCE WORKBENCH-CONCURRENCY-01`、`ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01`、`ACCEPTANCE WORKBENCH-LOCK-SCOPE-01`、`ACCEPTANCE WORKBENCH-LOCK-CASE-01`、`ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`ACCEPTANCE WORKBENCH-LOCK-RENEW-01`、`ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-01`、`ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-FAIL-01`、`ACCEPTANCE WORKBENCH-SAVE-CAS-01`、`ACCEPTANCE WORKBENCH-PREVIEW-AUDIT-01`、`ACCEPTANCE WORKBENCH-ROLLBACK-LOCK-01` |
 | 审核拒绝路径与失败保护 | `ACCEPTANCE REVIEW-GUARD-01`、`ACCEPTANCE REVIEW-GUARD-02`、`ACCEPTANCE REVIEW-READ-01`、`ACCEPTANCE REVIEW-READ-02`、`ACCEPTANCE REVIEW-WRITE-01`、`ACCEPTANCE REVIEW-WRITE-02` |
 | 合并后恢复与清理 | `ACCEPTANCE MERGE-HISTORY-RECOVERY-01`、`ACCEPTANCE MERGE-CLEANUP-01`、`ACCEPTANCE MERGE-RECORD-CLEANUP-01` |
 | 合并 CAS 与 Git ref 边界 | `ACCEPTANCE MERGE-CAS-01`～`MERGE-CAS-07`、`ACCEPTANCE GIT-REF-WRITE-01`、`ACCEPTANCE WORKBENCH-CAS-CONFLICT-01` |
 
-**计数说明：** 上述分组对应文件内 42 个 `test(...)` 用例。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
+**计数说明：** 上述分组对应文件内 43 个 `test(...)` 用例。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
 
-### 14.2 Playwright UI E2E（8 个场景 × 2 个浏览器项目）
+### 14.2 Playwright UI E2E（9 个场景 × 2 个浏览器项目）
 
 文件：`tests/workbench-ui.spec.cjs`
 
@@ -414,6 +416,7 @@ npm test
 | 合并遇到 409 冲突时保留临时分支和已接受差异 | 独立执行 | 独立执行 |
 | 合并已成功但历史记录失败：刷新后可重试恢复，且不重复 GitHub 合并 | 独立执行 | 独立执行 |
 | 丢弃接口失败时保留活动分支并允许再次操作 | 独立执行 | 独立执行 |
+| 分支已删除但审计/状态清理失败：界面保留重试入口 | 独立执行 | 独立执行 |
 
 工作流命令：
 - `npx playwright test --project=chromium-iphone`
