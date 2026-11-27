@@ -6525,7 +6525,7 @@ async function runRemoteVerify(retryRecord) {
   const poll = async () => {
     if (stopped) return;
     if (Date.now() - started >= VERIFY_MAX_MS || polls >= VERIFY_MAX_POLLS) {
-      renderVerifyResult({state: "failure", error_lines: ["验证超时：10 分钟内未完成，请打开 Actions 查看运行记录。"]});
+      renderVerifyResult({state: "failure", deploy: retryingDeploy, error_lines: ["任务超时：10 分钟内未完成，请打开 Actions 查看运行记录。"]});
       finish("验证超时，已恢复按钮", true, "重新验证"); return;
     }
     polls++;
@@ -6534,19 +6534,19 @@ async function runRemoteVerify(retryRecord) {
     try {
       const r = await authFetch(GATEWAY + statusPath, {cache: "no-store", signal: ctl.signal}), d = await r.json().catch(() => ({}));
       if (!r.ok || d.ok === false) throw new Error(d.msg || "读取验证状态失败");
-      renderVerifyResult(d);
+      renderVerifyResult({...d, deploy: retryingDeploy || d.deploy});
       if (d.state === "success") { finish("验证通过", false, "运行 / 验证"); return; }
       if (d.state === "failure") { finish("验证失败，已显示报错行", true, "重新验证"); return; }
       if (Date.now() - started >= VERIFY_MAX_MS || polls >= VERIFY_MAX_POLLS) {
-        renderVerifyResult({...d, state: "failure", error_lines: ["验证超时：10 分钟内未完成，请打开 Actions 查看运行记录。"]});
+        renderVerifyResult({...d, state: "failure", deploy: retryingDeploy, error_lines: ["任务超时：10 分钟内未完成，请打开 Actions 查看运行记录。"]});
         finish("验证超时，已恢复按钮", true, "重新验证"); return;
       }
       verifyTimer = setTimeout(poll, 3500);
     } catch (e) {
       if (e.name === "AbortError" && Date.now() - started < VERIFY_MAX_MS && !stopped) {
-        renderVerifyResult({state: "failure", error_lines: ["读取验证状态超时，请稍后重试。"]});
+        renderVerifyResult({state: "failure", deploy: retryingDeploy, error_lines: ["读取任务状态超时，请稍后重试。"]});
       } else if (!stopped) {
-        renderVerifyResult({state: "failure", error_lines: [e.message || String(e)]});
+        renderVerifyResult({state: "failure", deploy: retryingDeploy, error_lines: [e.message || String(e)]});
       }
       if (!stopped) finish(e.name === "AbortError" ? "读取验证状态超时，已恢复按钮" : "验证状态读取失败，已恢复按钮", true, "重新验证");
     } finally { clearTimeout(timeout); if (verifyAbort === ctl) verifyAbort = null; }
@@ -6558,9 +6558,9 @@ async function runRemoteVerify(retryRecord) {
         ? await authFetch(GATEWAY + "/api/code/retry", {method: "POST", headers: {"Content-Type": "application/json", "Accept": "application/json"}, body: JSON.stringify({run_id: String(retryRecord.run_id), kind: retryKind}), signal: ctl.signal})
         : await authFetch(GATEWAY + "/api/code/verify", {method: "POST", headers: {"Content-Type": "application/json", "Accept": "application/json"}, body: JSON.stringify({ref: REPO.branch}), signal: ctl.signal});
       const first = await start.json().catch(() => ({})); if (!start.ok || first.ok === false) throw new Error(first.msg || "无法启动验证");
-      renderVerifyResult(first); say("验证已排队，正在等待 GitHub Actions …"); verifyTimer = setTimeout(poll, 2500);
+      renderVerifyResult({...first, deploy: retryingDeploy}); say(retryingDeploy ? "已请求重跑原部署任务，正在等待 GitHub Actions …" : "验证已排队，正在等待 GitHub Actions …"); verifyTimer = setTimeout(poll, 2500);
     } finally { clearTimeout(timeout); if (verifyAbort === ctl) verifyAbort = null; }
-  } catch (e) { renderVerifyResult({state: "failure", error_lines: [e.message || String(e)]}); finish("验证启动失败，已恢复按钮", true); }
+  } catch (e) { renderVerifyResult({state: "failure", deploy: retryingDeploy, error_lines: [e.message || String(e)]}); finish("任务启动/重试失败，已恢复按钮", true); }
 }
 async function runRemoteDeploy() {
   const btn = g("wb-deploy"); if (!authToken) { toast("请先登录"); return; }
