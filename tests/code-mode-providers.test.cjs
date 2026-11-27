@@ -267,6 +267,15 @@ test('workbench branch APIs persist project isolation, reject files on branch, a
   assert.match(workerSource, /path === "\/api\/code\/branch\/discard"/);
 });
 
+test('workbench change review exposes per-file patches and guards branch mutations', () => {
+  assert.match(frontendSource, /function renderWorkbenchChanges\(/);
+  assert.match(frontendSource, /file\.patch/);
+  assert.match(frontendSource, /\/api\/code\/branch\/reject-file/);
+  assert.match(frontendSource, /accepted_paths: accepted/);
+  assert.match(workerSource, /codePushGuard\(env, user, repo, path\)/);
+  assert.match(workerSource, /codePushGuard\(env, user, repo, "frontend\/index\.html"\)/);
+});
+
 test('web workbench: exposes the local preview control', () => {
   const previewButtons = [...frontendSource.matchAll(/<button\b(?=[^>]*\bid="wb-local-preview")[^>]*>/g)];
   assert.equal(previewButtons.length, 1);
