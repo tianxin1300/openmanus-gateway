@@ -17,7 +17,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,6 +37,63 @@ jobs:
 
       - name: Build checks
         run: npm run build
+
+      - name: Install Playwright and Wrangler
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
+        run: npm install --no-save --no-package-lock --no-audit --no-fund @playwright/test@1.56.1 wrangler@4
+
+      - name: Install Chromium and WebKit for iPhone emulation
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Deploy isolated Cloudflare Pages PR preview
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          PREVIEW_BRANCH="pr32-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          test "$PREVIEW_BRANCH" != "main"
+          echo "PREVIEW_BRANCH=$PREVIEW_BRANCH" >> "$GITHUB_ENV"
+          npx wrangler pages deploy . --project-name zhineng --branch "$PREVIEW_BRANCH" --commit-dirty=true 2>&1 | tee /tmp/pages-preview-deploy.log
+          PREVIEW_URL="$(grep -Eo 'https://[^[:space:]]+\.pages\.dev' /tmp/pages-preview-deploy.log | grep -F "$PREVIEW_BRANCH" | tail -n 1 || true)"
+          if [ -z "$PREVIEW_URL" ]; then PREVIEW_URL="https://${PREVIEW_BRANCH}.zhineng.pages.dev"; fi
+          echo "PLAYWRIGHT_BASE_URL=$PREVIEW_URL" >> "$GITHUB_ENV"
+          echo "Preview branch: $PREVIEW_BRANCH"
+          echo "Preview URL: $PREVIEW_URL"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error "$PREVIEW_URL" -o /dev/null; then
+              echo "Preview returned HTTP 200."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Preview did not become available: $PREVIEW_URL" >&2
+          exit 1
+
+      - name: Playwright UI E2E · Chromium · iPhone 14
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
+        run: npx playwright test --project=chromium-iphone
+
+      - name: Playwright UI E2E · WebKit · iPhone 14
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
+        run: npx playwright test --project=webkit-iphone
+
+      - name: Upload Playwright reports and screenshots
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-')
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-playwright-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            test-results/
+            playwright-report/
+            /tmp/pages-preview-deploy.log
+          if-no-files-found: warn
+          retention-days: 7
+
 
       # A disposable GitHub API integration test. It is intentionally limited
       # to same-repository PRs and never targets main. The generated PR's own
