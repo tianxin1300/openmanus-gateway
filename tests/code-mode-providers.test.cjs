@@ -221,7 +221,11 @@ test('temporary branch preview is built from the staged branch and uses the Page
   assert.match(workerSource, /claim\.pending\.staged_on_branch/);
   assert.match(workerSource, /OpenManus: reject/);
   assert.match(workerSource, /codeTempPreview\(branch, repo\)/);
-  assert.match(workerSource, /\.zhineng\.pages\.dev/);
+  assert.match(workerSource, /zhineng-et5\.pages\.dev\/branch-/);
+  const previewMiddleware = fs.readFileSync(path.join(root, "frontend/functions/_middleware.js"), "utf8");
+  assert.match(previewMiddleware, /branch-\(code-\[a-z0-9-\]\+\)/);
+  assert.match(previewMiddleware, /branchAlias \+ "\.zhineng\.pages\.dev"/);
+  assert.match(previewMiddleware, /context\.next\(\)/);
   const deployWorkflow = fs.readFileSync(path.join(root, '.github/workflows/deploy-project.yml'), 'utf8');
   assert.match(deployWorkflow, /--branch "\$DEPLOY_REF"/);
 });
