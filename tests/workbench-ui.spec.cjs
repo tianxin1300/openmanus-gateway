@@ -11,6 +11,9 @@ function fixtures() {
       { path: "frontend/studio.js", status: "modified", additions: 3, deletions: 1, patch: "@@ -1 +1 @@\n-old\n+new" },
       { path: "README.md", status: "modified", additions: 2, deletions: 0, patch: "@@ -1 +1 @@\n-old\n+new" }
     ],
+    rejectFailuresRemaining: 0,
+    mergeFailure: false,
+    discardFailure: false,
     history: [],
     rejected: [],
     mergePayload: null,
@@ -29,8 +32,8 @@ async function installApiFixtures(page, state) {
     const path = url.pathname;
     const method = req.method();
     const body = method === "POST" ? (req.postDataJSON() || {}) : {};
-    const json = data => route.fulfill({
-      status: 200,
+    const json = (data, status = 200) => route.fulfill({
+      status,
       contentType: "application/json",
       headers: { "access-control-allow-origin": "*" },
       body: JSON.stringify(data)
@@ -53,6 +56,10 @@ async function installApiFixtures(page, state) {
       return json({ ok: true, files: state.changes });
     }
     if (path.endsWith("/branch/reject-file") && method === "POST") {
+      if (state.rejectFailuresRemaining > 0) {
+        state.rejectFailuresRemaining--;
+        return json({ ok: false, msg: "simulated rejection failure" }, 500);
+      }
       state.rejected.push(body.path);
       state.changes = state.changes.filter(file => file.path !== body.path);
       return json({ ok: true, rejected: body.path });
@@ -62,6 +69,9 @@ async function installApiFixtures(page, state) {
     }
     if (path.endsWith("/branch/merge") && method === "POST") {
       state.mergePayload = body;
+      if (state.mergeFailure) {
+        return json({ ok: false, msg: "main advanced during review", conflict: true, files: ["README.md"] }, 409);
+      }
       state.active = false;
       state.history.unshift({
         id: "history-after-push",
@@ -75,6 +85,9 @@ async function installApiFixtures(page, state) {
     }
     if (path.endsWith("/branch/discard") && method === "POST") {
       state.discardPayload = body;
+      if (state.discardFailure) {
+        return json({ ok: false, msg: "simulated branch deletion failure" }, 503);
+      }
       state.active = false;
       return json({ ok: true, main_untouched: true, reply: "临时分支已删除，main 未改变。" });
     }
@@ -207,6 +220,56 @@ test("terminal and run-log tabs switch exclusively and follow mobile viewport re
 
   await page.setViewportSize({ width: 390, height: 640 });
   await expect.poll(viewportMatchesLayout).toBe(true);
+});
+
+test("failed file rejection keeps the diff visible and allows a successful retry", async ({ page }) => {
+  const state = fixtures();
+  state.rejectFailuresRemaining = 1;
+  await installApiFixtures(page, state);
+  await openWorkbench(page);
+
+  const row = page.locator(".wb-change-row").filter({ hasText: "frontend/studio.js" });
+  const reject = row.getByRole("button", { name: "拒绝" });
+  await reject.click();
+  await expect(row).toBeVisible();
+  await expect(reject).toBeEnabled();
+  expect(state.rejected).toEqual([]);
+
+  await reject.click();
+  await expect.poll(() => state.rejected).toEqual(["frontend/studio.js"]);
+  await expect(row).toHaveCount(0);
+  await expect(page.locator("#wb-branch")).toContainText("code/");
+});
+
+test("merge conflict keeps the temporary branch and accepted diff available", async ({ page }) => {
+  const state = fixtures();
+  state.mergeFailure = true;
+  await installApiFixtures(page, state);
+  await openWorkbench(page);
+
+  const acceptedRow = page.locator(".wb-change-row").filter({ hasText: "README.md" });
+  await acceptedRow.getByRole("button", { name: "接受" }).click();
+  await page.locator("#wb-push").click();
+
+  await expect.poll(() => state.mergePayload).not.toBeNull();
+  expect(state.mergePayload.accepted_paths).toEqual(["README.md"]);
+  await expect(page.getByText("合并冲突：临时分支已保留")).toBeVisible();
+  await expect(page.locator("#wb-branch")).toContainText("code/");
+  await expect(page.locator("#wb-push")).toBeEnabled();
+  await expect(page.locator(".wb-change-row").filter({ hasText: "README.md" })).toBeVisible();
+});
+
+test("failed discard keeps the active branch and permits another attempt", async ({ page }) => {
+  const state = fixtures();
+  state.discardFailure = true;
+  await installApiFixtures(page, state);
+  await openWorkbench(page);
+
+  await page.locator("#wb-discard").click();
+  await expect.poll(() => state.discardPayload).not.toBeNull();
+  await expect(page.locator("#wb-branch")).toContainText("code/");
+  await expect(page.locator("#wb-discard")).toBeEnabled();
+  expect(state.active).toBe(true);
 });
 
 test("discard preserves main, then history rollback creates a new active branch", async ({ page }) => {
