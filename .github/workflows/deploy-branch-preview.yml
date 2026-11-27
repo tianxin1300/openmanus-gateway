@@ -34,11 +34,11 @@ jobs:
           import os, re
           ref = os.environ["DEPLOY_REF"]
           request_id = os.environ["DEPLOY_REQUEST_ID"]
-          if not 1 <= len(ref) <= 120 or ref != ref.strip() or any(c in ref for c in ["\\r", "\\n", '"', "'", ";", "]", "\\\\", "$", "(", "&"]):
+          if not 1 <= len(ref) <= 120 or ref != ref.strip() or any(c in ref for c in ["\r", "\n", '"', "'", ";", "]", "\\", "$", "(", "&"]):
               raise SystemExit("Invalid ref")
           if not re.fullmatch(r"(?:[0-9a-fA-F]{7,64}|[A-Za-z0-9._/-]+)", ref) or any(p in ("", ".", "..") for p in ref.split("/")):
               raise SystemExit("Ref must be a branch name or commit SHA")
-          if len(request_id) > 160 or "\\r" in request_id or "\\n" in request_id:
+          if len(request_id) > 160 or "\r" in request_id or "\n" in request_id:
               raise SystemExit("Invalid request id")
           PY
       - name: Checkout temporary branch
