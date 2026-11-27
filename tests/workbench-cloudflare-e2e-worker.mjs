@@ -1,6 +1,6 @@
-import app, { CodeClaimDO, CodeRunnerDO } from "../worker.js";
+import app, { CodeClaimDO } from "../worker.js";
 
-export { CodeClaimDO, CodeRunnerDO };
+export { CodeClaimDO };
 
 const json = (value, status = 200) => new Response(JSON.stringify(value), {
   status,
