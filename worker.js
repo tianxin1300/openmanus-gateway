@@ -9436,11 +9436,11 @@ export class CodeClaimDO {
   async alarm() {
     const value = await this.storage.get("claim");
     if (!value) return;
-    const createdAt = (value.pending && value.pending.created_at) || value.created_at || 0;
+    const p = value.pending;
+    const createdAt = (p && p.created_at) || value.created_at || 0;
     const expiresAt = value.expires_at || (createdAt ? createdAt + CODE_PENDING_TTL_MS : 0);
     if (p && p.status === "verification_pending" && p.verify_expires_at > Date.now()) { await this.storage.setAlarm(Math.min(p.verify_expires_at, Date.now() + 60000)); return; }
     if (expiresAt && expiresAt > Date.now()) { await this.storage.setAlarm(expiresAt); return; }
-    const p = value.pending;
     if (p && ["applying", "discarding"].includes(p.status)) {
       await this.storage.setAlarm(Date.now() + 60000);
       return;
