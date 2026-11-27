@@ -13,6 +13,10 @@ function fixtures() {
     ],
     rejectFailuresRemaining: 0,
     mergeFailure: false,
+    mergePartialFailure: "",
+    mergeCalls: 0,
+    actualGitHubMergeCount: 0,
+    branchStatus: "active",
     discardFailure: false,
     history: [],
     rejected: [],
@@ -42,7 +46,7 @@ async function installApiFixtures(page, state) {
 
     if (path.endsWith("/branch/current")) {
       return json(state.active
-        ? { ok: true, active: true, repo: REPO, branch: BRANCH, baseBranch: "main", baseCommit: "base-sha", project: "openmanus-gateway" }
+        ? { ok: true, active: true, repo: REPO, branch: BRANCH, baseBranch: "main", baseCommit: "base-sha", project: "openmanus-gateway", status: state.branchStatus }
         : { ok: true, active: false });
     }
     if (path.endsWith("/branch/create") && method === "POST") {
@@ -71,10 +75,25 @@ async function installApiFixtures(page, state) {
     }
     if (path.endsWith("/branch/merge") && method === "POST") {
       state.mergePayload = body;
+      state.mergeCalls++;
       if (state.mergeFailure) {
         return json({ ok: false, msg: "main advanced during review", conflict: true, files: ["README.md"] }, 409);
       }
+      if (state.mergePartialFailure && state.mergeCalls === 1) {
+        state.actualGitHubMergeCount++;
+        state.branchStatus = state.mergePartialFailure;
+        return json({
+          ok: false,
+          merged: true,
+          branch_deleted: false,
+          history_saved: state.mergePartialFailure !== "merged_history_failed",
+          msg: state.mergePartialFailure === "merged_history_failed"
+            ? "GitHub 已合并，但历史记录保存失败；临时分支已保留"
+            : "已合并到 main，但删除临时分支失败"
+        }, 400);
+      }
       state.active = false;
+      if (!state.mergePartialFailure) state.actualGitHubMergeCount++;
       state.history.unshift({
         id: "history-after-push",
         repo: REPO,
@@ -246,6 +265,29 @@ test("terminal and run-log tabs switch exclusively and follow mobile viewport re
 
   await page.setViewportSize({ width: 390, height: 640 });
   await expect.poll(viewportMatchesLayout).toBe(true);
+});
+
+test("merged history recovery remains retryable after reload without a second GitHub merge", async ({ page }) => {
+  const state = fixtures();
+  state.mergePartialFailure = "merged_history_failed";
+  await installApiFixtures(page, state);
+  await openWorkbench(page);
+
+  const acceptedRow = page.locator(".wb-change-row").filter({ hasText: "README.md" });
+  await acceptedRow.getByRole("button", { name: "接受" }).click();
+  await page.locator("#wb-push").click();
+  await expect.poll(() => state.mergeCalls).toBe(1);
+  await expect(page.getByText("已合并到 main，恢复处理待完成")).toBeVisible();
+  await expect(page.locator("#wb-branch")).toContainText("code/");
+  expect(state.actualGitHubMergeCount).toBe(1);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await openWorkbench(page);
+  await expect(page.locator("#wb-branch")).toContainText("code/");
+  await page.locator("#wb-push").click();
+  await expect.poll(() => state.mergeCalls).toBe(2);
+  await expect(page.locator("#wb-branch")).toContainText("无活动临时分支");
+  expect(state.actualGitHubMergeCount).toBe(1);
 });
 
 test("failed file rejection keeps the diff visible and allows a successful retry", async ({ page }) => {
