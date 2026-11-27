@@ -17,7 +17,7 @@ function evaluate(source, expose, globals = {}) {
   const sandbox = {
     ...globals, URL, Date, Math, JSON, Set, Map, Promise, AbortController,
     AbortSignal, console, crypto: require('node:crypto').webcrypto,
-    codeWorkbenchLocalLockControllers: new Map(),
+    codeWorkbenchLocalLockControllers: new Map(), rand: () => '12345678',
     setInterval: () => 1, clearInterval: () => {},
     codeGitRefWriteUrl: (repo, ref) => 'https://api.github.com/repos/' + repo + '/git/refs/' + String(ref).split('/').map(encodeURIComponent).join('/')
   };
