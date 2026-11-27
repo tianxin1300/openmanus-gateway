@@ -268,6 +268,7 @@ test('workbench branch APIs persist project isolation, reject files on branch, a
   assert.match(workerSource, /codeWorkbenchBranchMerge/);
   assert.match(workerSource, /codeWorkbenchBranchRejectFile/);
   assert.match(workerSource, /accepted_paths/);
+  assert.match(workerSource, /for \(const path of files\) \{[\s\S]{0,180}codePushGuard\(env, user, repo, path\)/);
   assert.match(workerSource, /previousSha !== record\.baseCommit/);
   assert.match(workerSource, /base_advanced: true/);
   assert.match(workerSource, /为防止旧基线覆盖新修改，已阻止合并/);
