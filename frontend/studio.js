@@ -419,7 +419,8 @@
         if (j.conflicts && j.conflicts.length) renderConflicts(j.conflicts);
         return api("/api/code/pending", { cache: "no-store" }).then(function (r) { return r.json(); }).catch(function () { return null; }).then(function (pj) {
           var still = !!(pj && pj.ok && pj.pending && pj.pending.edits && pj.pending.edits.length);
-          if (!still && j.ok) currentPending = null;
+          if (still) currentPending = pj.pending;
+          else if (j.ok) currentPending = null;
           showResult(message, !!j.ok, still, !yes);
         });
       })
