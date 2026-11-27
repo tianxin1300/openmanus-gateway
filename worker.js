@@ -503,8 +503,8 @@ function codeTempBranch(project) {
   return "code/" + tag + "-" + Date.now().toString(36) + "-" + rand(8);
 }
 function codeTempPreview(branch) {
-  const id = String(branch || "").replace(/^code\//, "").replace(/[^A-Za-z0-9._-]+/g, "-");
-  return id ? "https://zhineng-et5.pages.dev/branch-" + id : "";
+  const slug = String(branch || "").replace(/\//g, "-").replace(/[^A-Za-z0-9-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase();
+  return slug ? "https://" + slug + ".zhineng.pages.dev" : "";
 }
 async function codeCreateTempBranch(env, repo, project, base = "main") {
   const safeBase = codeVerifyRef(base);
@@ -1189,7 +1189,20 @@ async function codeProject(env, user, proj, req, history, ui) {
   const temp = await codeCreateTempBranch(env, proj.repo, tag, branch);
   if (!temp.ok) return { ok: false, reply: "❌ 不能为「" + tag + "」创建独立临时分支：" + temp.msg };
   const pendingId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(36).slice(2));
-  const pending = { id: pendingId, project: tag, repo: proj.repo, branch: temp.branch, baseBranch: temp.base, baseCommit: temp.sha, preview_url: codeTempPreview(temp.branch), status: "awaiting_approval", edits: good.map((g, i) => ({ path: final.done[i] ? final.done[i].path : g.path, line: final.done[i] ? final.done[i].line : 0, old: g.old, new: g.new })), baseSha, summary, warn, at: Date.now(), updatedAt: Date.now(), created_at: Date.now() };
+  const stagedPaths = [...new Set(final.done.map((d) => d.path))];
+  for (const path of stagedPaths) {
+    const current = await codeGetFile(env, proj.repo, path, temp.branch);
+    if (!current.ok || !current.exists) { await codeDeleteBranch(env, proj.repo, temp.branch); return { ok: false, reply: "❌ 临时分支暂存失败，无法读取 " + path + "；临时分支已清理。" }; }
+    const staged = await codeUpdateFile(env, proj.repo, path, final.out[path], "OpenManus preview: " + summary, temp.branch, current.sha);
+    if (!staged.ok) { await codeDeleteBranch(env, proj.repo, temp.branch); return { ok: false, reply: "❌ 临时分支暂存失败：" + path + "：" + staged.msg + "；临时分支已清理。" }; }
+  }
+  const previewRequestId = "preview-" + pendingId.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 100);
+  const previewDispatch = await codeGhApi(env, "https://api.github.com/repos/" + proj.repo + "/actions/workflows/deploy-project.yml/dispatches", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ref: temp.branch, inputs: { request_id: previewRequestId, ref: temp.branch } })
+  });
+  const previewUrl = previewDispatch.ok ? codeTempPreview(temp.branch) : "";
+  const pending = { id: pendingId, project: tag, repo: proj.repo, branch: temp.branch, baseBranch: temp.base, baseCommit: temp.sha, staged_on_branch: true, preview_url: previewUrl, preview_error: previewDispatch.ok ? "" : previewDispatch.msg, preview_request_id: previewRequestId, status: "awaiting_approval", edits: good.map((g, i) => ({ path: final.done[i] ? final.done[i].path : g.path, line: final.done[i] ? final.done[i].line : 0, old: g.old, new: g.new })), baseSha, summary, warn: previewDispatch.ok ? warn : [...warn, "临时预览构建未能启动：" + previewDispatch.msg], at: Date.now(), updatedAt: Date.now(), created_at: Date.now() };
   const created = await codePendingCreate(env, user, pending);
   if (!created.ok) { await codeDeleteBranch(env, proj.repo, temp.branch); return { ok: false, pending: !!created.pending, reply: created.msg || "已有待推送修改，请先处理完成" }; }
   const explain = String(last).replace(new RegExp(CODE_BLOCK_RE.source, "g"), "").replace(/```[^\n]*\n?/g, "").trim();
@@ -1239,6 +1252,41 @@ async function codeConfirm(env, user, yes, input = {}) {
     let editsForApply = pend.edits;
     const resolutions = input.conflict_resolutions && typeof input.conflict_resolutions === "object" ? input.conflict_resolutions : {};
     const resolved = new Set();
+    if (claim.pending.staged_on_branch) {
+      const allPaths = [...new Set(claim.pending.edits.map((e) => e.path))];
+      const accepted = new Set(pend.edits.map((e) => e.path));
+      for (const path of allPaths.filter((p) => !accepted.has(p))) {
+        const base = await codeGetFile(env, pend.repo, path, pend.baseCommit || pend.baseBranch);
+        const current = await codeGetFile(env, pend.repo, path, pend.branch);
+        if (!base.ok || !base.exists || !current.ok || !current.exists) return await finish("failed", { ok: false, pending: true, reply: "拒绝文件 " + path + " 时无法安全恢复基线内容，临时分支仍保留。" }, claim.pending.edits);
+        const restored = await codeUpdateFile(env, pend.repo, path, base.text, "OpenManus: reject " + path, pend.branch, current.sha);
+        if (!restored.ok) return await finish("failed", { ok: false, pending: true, reply: "恢复被拒绝文件失败：" + path + "：" + restored.msg }, claim.pending.edits);
+      }
+      const conflicts = [];
+      for (const path of paths) {
+        const base = await codeGetFile(env, pend.repo, path, pend.baseCommit || pend.baseBranch);
+        const current = await codeGetFile(env, pend.repo, path, pend.branch);
+        const mine = base.ok && base.exists ? codeApply({ [path]: base.text }, claim.pending.edits.filter((e) => e.path === path)) : { errs: [{ msg: "无法读取基线" }] };
+        if (!current.ok || !current.exists || mine.errs.length || current.text !== mine.out[path]) {
+          conflicts.push({ path, mine: mine.errs.length ? "" : codeCut(mine.out[path], 12000), theirs: current.ok ? codeCut(current.text || "", 12000) : "", merge: "" });
+        }
+      }
+      const unresolved = conflicts.filter((c) => !resolutions[c.path]);
+      if (unresolved.length) return await finish("conflict", { ok: false, pending: true, conflict: true, conflicts, reply: "临时分支内容与生成预览不一致，请逐文件选择我的版本、对方版本或手动合并。" }, claim.pending.edits);
+      for (const c of conflicts) {
+        const choice = resolutions[c.path];
+        if (choice.choice === "theirs") continue;
+        const current = await codeGetFile(env, pend.repo, c.path, pend.branch);
+        let content = "";
+        if (choice.choice === "merge") content = String(choice.content || "");
+        else if (choice.choice === "mine") content = c.mine;
+        if (!content) return await finish("conflict", { ok: false, pending: true, conflict: true, reply: "文件 " + c.path + " 的合并内容为空，请重新选择。" }, claim.pending.edits);
+        const up = await codeUpdateFile(env, pend.repo, c.path, content, "OpenManus: resolve " + c.path, pend.branch, current.sha);
+        if (!up.ok) return await finish("conflict", { ok: false, pending: true, conflict: true, reply: "文件 " + c.path + " 写入临时分支失败：" + up.msg }, claim.pending.edits);
+      }
+      editsForApply = [];
+      paths = [];
+    }
     for (const path of paths) {
       const choice = resolutions[path];
       if (!choice || typeof choice !== "object") continue;
