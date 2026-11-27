@@ -125,7 +125,7 @@ jobs:
                   core.error(`Failed to close disposable PR #${pullNumber}: ${error.message}`);
                 }
               }
-              for (const [branch, created] of [[headBranch, headCreated], [baseBranch, baseCreated]]) {
+              for (const [branch, created] of [[headBranch, headCreated], [baseBranch, baseCreated], [casHeadBranch, casHeadCreated], [casBaseBranch, casBaseCreated]]) {
                 if (!created) continue;
                 try {
                   await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` });
@@ -165,11 +165,19 @@ jobs:
             const repo = context.repo.repo;
             const baseBranch = `e2e-workbench-merge-${runKey}-base`;
             const headBranch = `code/e2e-workbench-merge-${runKey}-head`;
+            const casBaseBranch = `e2e-workbench-cas-${runKey}-base`;
+            const casHeadBranch = `code/e2e-workbench-cas-${runKey}-head`;
             const filePath = `e2e-workbench-merge-${runKey}.txt`;
+            const casFilePath = `e2e-workbench-cas-${runKey}.txt`;
+            const raceFilePath = `e2e-workbench-race-${runKey}.txt`;
             const baseSha = context.payload.pull_request.head.sha;
             const mainBefore = (await github.rest.git.getRef({ owner, repo, ref: 'heads/main' })).data.object.sha;
             let baseCreated = false;
             let headCreated = false;
+            let casBaseCreated = false;
+            let casHeadCreated = false;
+            let injectRace = false;
+            let raceCommitSha = "";
             let failure = null;
             let result = null;
             const worker = fs.readFileSync('worker.js', 'utf8');
@@ -178,6 +186,22 @@ jobs:
             if (start < 0 || end <= start) throw new Error('Could not isolate Worker Git helper source');
             const ghApi = async (_env, url, options = {}) => {
               try {
+                if (injectRace && options.method === 'PATCH' && url.endsWith(`/git/refs/heads/${casBaseBranch}`)) {
+                  injectRace = false;
+                  const source = await github.rest.git.getCommit({ owner, repo, commit_sha: baseSha });
+                  const blob = await github.rest.git.createBlob({ owner, repo, content: `concurrent base advance ${runKey}\\n`, encoding: 'utf-8' });
+                  const tree = await github.rest.git.createTree({
+                    owner, repo, base_tree: source.data.tree.sha,
+                    tree: [{ path: raceFilePath, mode: '100644', type: 'blob', sha: blob.data.sha }]
+                  });
+                  const raceCommit = await github.rest.git.createCommit({
+                    owner, repo, message: `test: simulate concurrent base advance ${runKey}`,
+                    tree: tree.data.sha, parents: [baseSha]
+                  });
+                  raceCommitSha = raceCommit.data.sha;
+                  await github.rest.git.updateRef({ owner, repo, ref: `heads/${casBaseBranch}`, sha: raceCommitSha, force: false });
+                  core.info(`Injected competing base commit ${raceCommitSha} before the Worker CAS update.`);
+                }
                 const response = await github.request({
                   method: options.method || 'GET',
                   url,
@@ -229,6 +253,32 @@ jobs:
               const mergedTree = await github.rest.git.getTree({ owner, repo, tree_sha: mergedCommit.data.tree.sha, recursive: '1' });
               if (!(mergedTree.data.tree || []).some(entry => entry.path === filePath)) throw new Error('Merged tree is missing the staged test file');
               core.info(`PASS: exact Worker merge helper created ${result.data.sha} on disposable target ${baseBranch}; two parents and merged file verified.`);
+
+              await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${casBaseBranch}`, sha: baseSha });
+              casBaseCreated = true;
+              await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${casHeadBranch}`, sha: baseSha });
+              casHeadCreated = true;
+              const casBlob = await github.rest.git.createBlob({ owner, repo, content: `CAS head change ${runKey}\\n`, encoding: 'utf-8' });
+              const casTree = await github.rest.git.createTree({
+                owner, repo, base_tree: source.data.tree.sha,
+                tree: [{ path: casFilePath, mode: '100644', type: 'blob', sha: casBlob.data.sha }]
+              });
+              const casHeadCommit = await github.rest.git.createCommit({
+                owner, repo, message: `test: Worker CAS head ${runKey}`,
+                tree: casTree.data.sha, parents: [baseSha]
+              });
+              await github.rest.git.updateRef({ owner, repo, ref: `heads/${casHeadBranch}`, sha: casHeadCommit.data.sha, force: false });
+              injectRace = true;
+              const casResult = await sandbox.__merge(
+                {}, `${owner}/${repo}`, casHeadBranch, casBaseBranch,
+                `real Worker CAS E2E ${runKey}`, baseSha, casHeadCommit.data.sha
+              );
+              if (casResult.ok || !casResult.cas_rejected || !casResult.conflict) {
+                throw new Error(`Worker failed to reject concurrent base advance: ${JSON.stringify(casResult)}`);
+              }
+              const casTarget = await github.rest.git.getRef({ owner, repo, ref: `heads/${casBaseBranch}` });
+              if (casTarget.data.object.sha !== raceCommitSha) throw new Error('CAS failure overwrote the competing base commit');
+              core.info(`PASS: exact Worker merge helper rejected non-fast-forward CAS and preserved competing commit ${raceCommitSha}.`);
             } catch (error) {
               failure = error;
             } finally {
