@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件定义原有 10 项交付状态/界面自动验收，以及新增 5 项开发工作台行为验收。所有项目均由 npm test 执行；不包含人工设备操作或人工证据收集步骤。
+> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 78 个测试用例，`workbench-acceptance.test.cjs` 有 39 个测试用例；Playwright UI 文件有 2 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行。数量以对应文件当前实际内容为准。
 
 ## 1. 唯一执行入口与判定规则
 
@@ -10,7 +10,7 @@
 npm test
 ```
 
-该命令运行 node --test tests/*.test.cjs，包括原有 code-mode-providers.test.cjs 与新增 workbench-acceptance.test.cjs。原有 10 项和新增 5 项分别判定；任一专属测试失败、跳过、未执行或测试进程异常退出，对应项即未通过。禁止使用“基本通过”等中间结论。
+该命令运行 `node --test tests/*.test.cjs`，包括 `tests/code-mode-providers.test.cjs` 与 `tests/workbench-acceptance.test.cjs`。它不运行 `tests/workbench-ui.spec.cjs`；UI E2E 由 PR 工作流分别执行 Chromium 与 WebKit 的 iPhone 14 项目。AUTO-01～03、CHAIN-01～06 有专属测试；AUTO-04 当前没有专属行为测试，且代码中有防止将其误标为已验收的自检。WORKBENCH-01～15 的验收映射见下文。任何已声明专属测试失败、跳过、未执行或测试进程异常退出，对应项均不得判为通过。
 
 - **通过**：该项对应的专属 Node.js 自动化测试本次执行成功。
 - **未通过**：该项测试失败、被跳过、未执行，或测试无法完成。
@@ -18,7 +18,7 @@ npm test
 - 每项测试必须直接验证对应源代码行为/逻辑，不以文档文字、Actions 绿灯或其他项目的测试结果替代。
 - Actions 负责自动执行同一条 `npm test` 命令并保存日志；Actions 状态不能把失败测试改成通过。
 
-## 2. 自动验收项目（10 项）
+## 2. 自动验收项目（9 项有专属测试，1 项待补）
 
 ### AUTO-01 — 独立预览从当前编辑器内容生成
 
@@ -65,7 +65,7 @@ npm test
 
 ### AUTO-04 — 终端与可展开运行日志互斥且视口自适应
 
-**自动化测试：** `ACCEPTANCE AUTO-04: terminal and expandable run logs are mutually exclusive and viewport-aware`
+**自动化测试：** 当前无专属测试。现有自检明确要求文档不得将 AUTO-04 标为已通过。
 
 **测试覆盖：**
 - 终端与运行日志使用独立标签页及正确的 ARIA 关联。
@@ -73,9 +73,9 @@ npm test
 - 收起/切回终端时终端面板恢复，不存在旧的日志扩高覆盖逻辑。
 - 视口 resize/scroll 监听同步布局高度与偏移量。
 
-**通过条件：** 对应测试通过。
+**通过条件：** 补齐并运行专属测试，覆盖上述全部行为后方可判为通过。
 
-**失败条件：** 面板可能同时叠加、标签关联错误、收起不能恢复终端，或视口同步代码缺失。
+**当前状态：** 待补专属自动化测试；不得因其他测试通过或 Actions 绿灯而判为通过。
 
 ### CHAIN-01 — 已生成状态与后续阶段隔离
 
@@ -163,14 +163,14 @@ npm test
 
 ## 4. 范围边界
 
-本文件只负责代码自动化验收。其他独立的人工确认流程不属于本文件，也不参与这 10 项的计数和判定。
+本文件只负责代码自动化验收索引。Playwright UI E2E 单独计数；人工设备操作、真实账号权限和生产环境验证不因本文件中的模拟测试通过而自动通过。
 
 ## 5. 最终交付结论
 
-- **代码自动验收：** 10 项专属测试全部通过 = 通过；任一失败/跳过/未执行 = 未通过。
+- **代码自动验收：** 当前 9 项有专属测试的 AUTO/CHAIN 项逐项判定；AUTO-04 待补专属测试。WORKBENCH-01～15 按各自列出的专属测试判定。不得将待补、未执行或失败项计为通过。
 - **最终交付：** 代码自动验收通过后，仍需按项目流程完成部署。
 
-## 6. 开发工作台行为验收（新增 5 项）
+## 6. 开发工作台行为验收（WORKBENCH-01～05）
 
 新增测试文件：tests/workbench-acceptance.test.cjs。这 5 项调用实际 Worker 函数，并以隔离的 GitHub API/KV 模拟器检查分支指针、请求参数、提交树和最终文件差异；不会写入真实 GitHub 仓库或真实 main。它们是自动化行为测试，不等同于真实 GitHub 账号/权限/网络条件下的端到端验收。
 
@@ -225,7 +225,7 @@ npm test
 | WORKBENCH-05 | 并发修改冲突保护 | 旧基线触发冲突，main 不被覆盖 |
 
 
-## 7. 权限、幂等、多文件审核与失败清理（新增 4 项）
+## 7. 权限、幂等、多文件审核与失败清理（WORKBENCH-06～09）
 
 新增测试位于 `tests/workbench-acceptance.test.cjs`。这些测试执行 Worker 中的实际工作台函数，GitHub/KV 操作使用隔离模拟，不修改真实仓库。
 
@@ -283,7 +283,7 @@ npm test
 **边界：** 当前自动测试覆盖分支记录与审核状态清理；真实 Durable Object 锁在断网、进程中断和过期告警下的恢复仍需单独端到端验收。
 
 
-## 8. 工作台写操作并发互斥（新增）
+## 8. 工作台写操作并发互斥（WORKBENCH-10）
  
 ### WORKBENCH-10 — 同一项目写操作互斥与无锁失败关闭
 
@@ -301,7 +301,7 @@ npm test
 **边界：** 当前自动测试模拟 Durable Object storage 与请求互斥；Cloudflare 生产 Durable Object 在部署配置、真实并发网络请求和进程中断场景仍需部署后 E2E 验收。
 
 
-## 9. 分支创建记录持久化失败清理（新增）
+## 9. 分支创建记录持久化失败清理（WORKBENCH-11）
 
 ### WORKBENCH-11 — 创建分支后记录保存失败的补偿清理
 
@@ -315,7 +315,7 @@ npm test
 **通过条件：** 记录持久化失败不能返回创建成功；补偿清理结果必须如实返回，不得隐藏遗留分支。
 
 
-## 10. 文件审核拒绝路径与失败边界（新增）
+## 10. 文件审核拒绝路径与失败边界（WORKBENCH-12）
 
 ### WORKBENCH-12 — 文件审核的路径、权限、读取和写入失败保护
 
@@ -329,7 +329,7 @@ npm test
 **通过条件：** 失败路径均返回失败；不得在信息不完整或写入失败时误报审核成功。
 
 
-## 11. 合并成功后的历史与清理恢复（新增）
+## 11. 合并成功后的历史与清理恢复（WORKBENCH-13）
 
 ### WORKBENCH-13 — 合并后部分失败的可恢复状态
 
@@ -343,7 +343,7 @@ npm test
 **通过条件：** 合并成功后的历史写入、分支删除和 KV 清理分别可恢复；重复请求不得生成第二次合并。
 
 
-## 12. 仓库锁原子性与租约续期（新增）
+## 12. 仓库锁原子性与租约续期（WORKBENCH-14）
 
 ### WORKBENCH-14 — Durable Object 仓库锁必须原子获取并支持续期
 
@@ -357,7 +357,7 @@ npm test
 
 **通过条件：** 锁获取/续期/释放全部在 Durable Object storage transaction 中完成；不能再用分离的 get/put 作为互斥依据。
 
-## 13. main 合并基线的 compare-and-swap（新增）
+## 13. main 合并基线的 compare-and-swap（WORKBENCH-15）
 
 ### WORKBENCH-15 — 合并必须绑定审核时的 base SHA 与 head SHA
 
@@ -373,3 +373,48 @@ npm test
 - 隔离分支创建失败时，不执行后续 merge commit 创建或目标分支更新。
 
 **通过条件：** main 在合并计算期间推进时，最终 ref 更新失败；只有目标分支仍处于预期基线时才可提交合并。
+
+
+## 14. 实际测试文件与用例清单（核对基准）
+
+以下清单按当前分支测试源文件逐项核对。测试名称是验收映射依据；如代码中的测试名称变化，必须同步更新本文件。
+
+### 14.1 Node.js 工作台行为测试（39 项）
+
+文件：`tests/workbench-acceptance.test.cjs`
+
+| 分组 | 专属测试名称 |
+|---|---|
+| 分支隔离与写入保护 | `ACCEPTANCE BRANCH-01`、`ACCEPTANCE MAIN-01`、`ACCEPTANCE CONFLICT-01` |
+| 文件审核与重试回滚 | `ACCEPTANCE REVIEW-01`、`ACCEPTANCE RETRY-ROLLBACK-01`、`ACCEPTANCE MULTI-REVIEW-01`、`ACCEPTANCE MULTI-REVIEW-RECOVERY-01` |
+| 权限与幂等 | `ACCEPTANCE PERMISSION-01`、`ACCEPTANCE IDEMPOTENCY-01`、`ACCEPTANCE IDEMPOTENCY-CONCURRENT-CREATE-01` |
+| 丢弃、失败清理与创建补偿 | `ACCEPTANCE CLEANUP-01`、`ACCEPTANCE LOCK-CLEANUP-01`、`ACCEPTANCE CREATE-CLEANUP-01` |
+| 仓库写锁与租约 | `ACCEPTANCE WORKBENCH-CONCURRENCY-01`、`ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01`、`ACCEPTANCE WORKBENCH-LOCK-SCOPE-01`、`ACCEPTANCE WORKBENCH-LOCK-CASE-01`、`ACCEPTANCE WORKBENCH-LOCK-ATOMIC-01`、`ACCEPTANCE WORKBENCH-LOCK-RENEW-01`、`ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-01`、`ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-FAIL-01` |
+| 审核拒绝路径与失败保护 | `ACCEPTANCE REVIEW-GUARD-01`、`ACCEPTANCE REVIEW-GUARD-02`、`ACCEPTANCE REVIEW-READ-01`、`ACCEPTANCE REVIEW-READ-02`、`ACCEPTANCE REVIEW-WRITE-01`、`ACCEPTANCE REVIEW-WRITE-02` |
+| 合并后恢复与清理 | `ACCEPTANCE MERGE-HISTORY-RECOVERY-01`、`ACCEPTANCE MERGE-CLEANUP-01`、`ACCEPTANCE MERGE-RECORD-CLEANUP-01` |
+| 合并 CAS 与 Git ref 边界 | `ACCEPTANCE MERGE-CAS-01`～`MERGE-CAS-07`、`ACCEPTANCE GIT-REF-WRITE-01`、`ACCEPTANCE WORKBENCH-CAS-CONFLICT-01` |
+
+**计数说明：** 上述分组对应文件内 39 个 `test(...)` 用例。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
+
+### 14.2 Playwright UI E2E（2 个场景 × 2 个浏览器项目）
+
+文件：`tests/workbench-ui.spec.cjs`
+
+| 场景 | Chromium · iPhone 14 | WebKit · iPhone 14 |
+|---|---|---|
+| 文件审核：拒绝一个文件、接受另一个文件，只推送接受路径 | 独立执行 | 独立执行 |
+| 丢弃保持 main 不变；历史回滚创建新的活动分支 | 独立执行 | 独立执行 |
+
+工作流命令：
+- `npx playwright test --project=chromium-iphone`
+- `npx playwright test --project=webkit-iphone`
+
+这 2 个场景使用 Playwright API fixtures 模拟后端响应，验证前端交互与请求载荷；它们不是对真实 GitHub 仓库执行分支创建、合并或回滚的生产端到端测试。浏览器项目成功只代表该项目下的 UI 用例通过。
+
+### 14.3 当前自动化覆盖边界
+
+- `npm test` 不包含 Playwright UI E2E。
+- Node.js Worker 行为测试使用隔离 GitHub API/KV/ Durable Object 模拟器，不会修改真实 main。
+- UI E2E 使用浏览器路由 fixtures 模拟 API，不会真实调用后端写操作。
+- 真实 GitHub 权限、真实 Durable Object 部署配置、真实网络故障恢复和生产 Pages/Worker 健康仍需独立环境验收。
+- AUTO-04 当前无专属测试，不能列入已通过项。
