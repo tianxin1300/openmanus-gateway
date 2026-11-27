@@ -1704,3 +1704,22 @@ test('codeLLM: exhausted model pool ends after one pass without retrying candida
   assert.deepEqual(calls, ['or-model-a', 'or-model-b', 'groq-model-a', 'nvidia-model-a']);
   assert.equal(result.tried.length, 4);
 });
+
+test('Cron Issue Agent: exhausted model pool restores bot:ready and logs the retry message', async () => {
+  const agent = fs.readFileSync(path.join(root, '.github/scripts/issue-agent.mjs'), 'utf8');
+  const start = agent.indexOf('async function requeueForModelPool(');
+  const end = agent.indexOf('async function main()', start);
+  assert.ok(start >= 0 && end > start, 'requeue helper source must exist');
+  const calls = [], events = [];
+  const sandbox = {
+    labels: async (...args) => calls.push(args),
+    log: (event, details) => events.push({event, details})
+  };
+  vm.runInNewContext(agent.slice(start, end) + '\nglobalThis.testRequeue = requeueForModelPool;', sandbox);
+  await sandbox.testRequeue(314, 'model_pool_exhausted', {detail: 'all providers exhausted'});
+  assert.deepEqual(calls, [[314, ['bot:ready'], ['bot:running', 'bot:failed']]]);
+  assert.equal(events[0].event, 'model_pool_exhausted');
+  assert.equal(events[0].details.message, '全部限流超时，下一轮再试');
+  assert.equal(events[1].event, 'issue_requeued');
+  assert.equal(events[1].details.reason, 'model_pool_exhausted');
+});
