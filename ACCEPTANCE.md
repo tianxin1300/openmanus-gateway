@@ -291,11 +291,11 @@ npm test
 **自动化测试：** `ACCEPTANCE WORKBENCH-CONCURRENCY-01`、`ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01`、`ACCEPTANCE WORKBENCH-SAVE-CAS-01`、`ACCEPTANCE WORKBENCH-LOCK-SCOPE-01`、`ACCEPTANCE WORKBENCH-LOCK-CASE-01`，并由 `ACCEPTANCE LOCK-CLEANUP-01` 检查 Durable Object 锁释放。
 
 **测试覆盖：**
-- 同一仓库跨授权用户的分支创建、编辑器保存、文件审核、合并、丢弃和历史回滚共用同一把 Durable Object 锁；仓库名大小写变体映射到同一锁身份。
-- 创建期间发起合并，第二个操作必须返回 busy，不得进入 GitHub 写操作；编辑器保存、文件审核、丢弃和回滚也必须经过同一把锁。
+- 同一仓库跨授权用户的分支创建、编辑器保存、文件审核、合并、丢弃、预览触发和历史回滚共用同一把 Durable Object 锁；仓库名大小写变体映射到同一锁身份。
+- 创建期间发起合并，第二个操作必须返回 busy，不得进入 GitHub 写操作；编辑器保存、文件审核、预览触发、丢弃和回滚也必须经过同一把锁。
 - 锁只能由持有正确 token 的操作释放。
 - 操作结束释放锁，后续操作可重新获取。
-- 未绑定 `CODE_CLAIMS` 时，创建、编辑器保存和合并均失败关闭，不得退回 KV/MCP 无锁写入。
+- 未绑定 `CODE_CLAIMS` 时，创建、编辑器保存、预览触发和合并均失败关闭，不得退回 KV/MCP 无锁写入。
 
 **通过条件：** 并发写操作最多一个进入临界区；错误 token 不能解锁；缺少 Durable Object 绑定时不执行 GitHub 写操作。
 
@@ -357,7 +357,7 @@ npm test
 - 工作台长操作每 60 秒续租，结束时清除心跳并释放锁。
 - 续租失败时不误报成功，而是返回不确定状态与 GitHub 核验提示。
 - 编辑器保存必须经 Worker 锁入口执行，并以当前文件 SHA 做 compare-before-write；旧 SHA 返回冲突，不得覆盖新内容。
-- 历史回滚属于写操作，必须与创建、保存、审核、合并、丢弃共用同一仓库锁，避免回滚与其他写入同时推进目标分支。
+- 历史回滚和预览部署触发属于项目状态写操作，必须与创建、保存、审核、合并、丢弃共用同一仓库锁，避免回滚与其他写入同时推进目标分支。
 
 **通过条件：** 锁获取/续期/释放全部在 Durable Object storage transaction 中完成；不能再用分离的 get/put 作为互斥依据。
 
