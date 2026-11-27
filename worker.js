@@ -1013,7 +1013,8 @@ async function codeRollback(env, user, body) {
   const rows = await codeHistoryLoad(env, user);
   const item = rows.find((x) => x.id === String(body && body.id || "")) || rows[Number(body && body.index)];
   if (!item || !item.repo) return { ok: false, msg: "没有可回滚的历史记录" };
-  return codeWorkbenchWithLock(env, user, item.repo, "rollback", () => codeRollbackUnlocked(env, user, body));
+  const resolvedBody = { ...(body || {}), id: item.id };
+  return codeWorkbenchWithLock(env, user, item.repo, "rollback", () => codeRollbackUnlocked(env, user, resolvedBody));
 }
 const CODE_DEPLOY_WORKFLOW = "deploy-project.yml";
 const CODE_WORKER_DEPLOY_WORKFLOW = "deploy-worker.yml";
