@@ -1634,7 +1634,7 @@ test('Cron Issue Agent: codeLLM rotates existing providers with 60-second per-mo
   assert.ok(agent.includes('code_budget_ms: 420000'));
   assert.ok(agent.includes('signal: AbortSignal.timeout(8 * 60 * 1000)'));
   assert.ok(agent.includes('全部限流超时，下一轮再试'));
-  assert.ok(agent.includes('labels(issue.number, ["bot:ready"], ["bot:running", "bot:failed"])'));
+  assert.ok(agent.includes('await labels(issueNumber, ["bot:ready"], ["bot:running", "bot:failed"])'));
   assert.ok(agent.includes('per_page=1'));
   assert.ok(workflow.includes('timeout-minutes: 10'));
   assert.ok(docs.includes('Schedule: every 30 minutes'));
