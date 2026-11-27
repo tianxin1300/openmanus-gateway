@@ -23,6 +23,7 @@ function fixtures() {
     history: [],
     rejected: [],
     rejectedPayloads: [],
+    rejectAttempts: [],
     mergePayload: null,
     discardPayload: null,
     rollbackPayload: null,
@@ -63,10 +64,13 @@ async function installApiFixtures(page, state) {
       return json({ ok: true, files: state.changes });
     }
     if (path.endsWith("/branch/reject-file") && method === "POST") {
+      state.rejectAttempts.push(body);
       if (state.rejectFailuresRemaining > 0) {
         state.rejectFailuresRemaining--;
-        return json({ ok: false, msg: "simulated rejection failure" }, 500);
+        if (body.previous_path) state.renameSourceRestored = true;
+        return json({ ok: false, msg: "simulated destination deletion failure after source restoration" }, 500);
       }
+      if (body.previous_path) state.renameDestinationDeleted = true;
       state.rejected.push(body.path);
       state.rejectedPayloads.push(body);
       state.changes = state.changes.filter(file => file.path !== body.path);
@@ -232,6 +236,46 @@ test("rejecting a renamed file sends the previous filename so the source path ca
     previous_path: "old-name.js",
     branch: BRANCH
   });
+  await expect(row).toHaveCount(0);
+});
+
+test("failed renamed-file rejection keeps the row retryable after restoring its source path", async ({ page }) => {
+  const state = fixtures();
+  state.rejectFailuresRemaining = 1;
+  state.changes = [{
+    path: "new-name.js",
+    previous_path: "old-name.js",
+    status: "renamed",
+    additions: 1,
+    deletions: 1,
+    patch: "@@ rename"
+  }];
+  await installApiFixtures(page, state);
+  await openWorkbench(page);
+
+  const row = page.locator(".wb-change-row").filter({ hasText: "new-name.js" });
+  const reject = row.getByRole("button", { name: "拒绝" });
+  await reject.click();
+
+  await expect.poll(() => state.rejectAttempts.length).toBe(1);
+  expect(state.rejectAttempts[0]).toMatchObject({
+    path: "new-name.js",
+    previous_path: "old-name.js",
+    branch: BRANCH
+  });
+  expect(state.renameSourceRestored).toBe(true);
+  expect(state.renameDestinationDeleted).toBeUndefined();
+  await expect(row).toBeVisible();
+  await expect(reject).toBeEnabled();
+
+  await reject.click();
+  await expect.poll(() => state.rejectAttempts.length).toBe(2);
+  expect(state.rejectAttempts[1]).toMatchObject({
+    path: "new-name.js",
+    previous_path: "old-name.js",
+    branch: BRANCH
+  });
+  await expect.poll(() => state.renameDestinationDeleted).toBe(true);
   await expect(row).toHaveCount(0);
 });
 
