@@ -225,7 +225,7 @@ test('ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restore
 });
   
 test('ACCEPTANCE WORKBENCH-PREVIEW-AUDIT-01: preview dispatch records the authenticated actor', async () => {
-  const record = { ok: true, repo: 'owner/repo', branch: 'code/preview', baseBranch: 'main', active: true };
+  const record = { ok: true, repo: 'tianxin1300/openmanus-gateway', branch: 'code/preview', baseBranch: 'main', active: true };
   const preview = runFunction(sourceOf('async function codeWorkbenchBranchPreviewUnlocked(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchPreviewUnlocked', {
     codePushGuard: () => '',
     codeWorkbenchBranchCurrent: async () => record,
@@ -234,7 +234,7 @@ test('ACCEPTANCE WORKBENCH-PREVIEW-AUDIT-01: preview dispatch records the authen
     codeGhApi: async () => ({ ok: true }),
   });
   const env = { KV: { put: async (_key, value) => Object.assign(record, JSON.parse(value)) } };
-  const result = await preview(env, 'owner', 'owner/repo');
+  const result = await preview(env, 'owner', 'tianxin1300/openmanus-gateway');
   assert.equal(result.ok, true);
   assert.equal(record.preview_started_by, 'owner');
   assert.equal(record.preview_events[0].actor, 'owner');
@@ -244,7 +244,7 @@ test('ACCEPTANCE WORKBENCH-PREVIEW-AUDIT-01: preview dispatch records the authen
 test('ACCEPTANCE WORKBENCH-SAVE-CAS-01: editor saves share the repository lock and reject stale file SHA', async () => {
   let currentSha = 'a'.repeat(40), writes = 0;
   const lockOperations = [];
-  const save = runFunction(sourceOf('async function codeWorkbenchBranchSaveFile(', 'async function codeWorkbenchBranchPreviewUnlocked('), 'codeWorkbenchBranchSaveFile', {
+  const save = runFunction(sourceOf('async function codeWorkbenchBranchSaveFileUnlocked(', 'async function codeWorkbenchBranchPreviewUnlocked('), 'codeWorkbenchBranchSaveFile', {
     codeWorkbenchWithLock: async (_env, _user, _repo, operation, run) => {
       lockOperations.push(operation);
       return run();
@@ -751,7 +751,7 @@ test('ACCEPTANCE WORKBENCH-LOCK-SCOPE-01: save, review, discard and preview also
     codeWorkbenchWithLock: lock,
     codeWorkbenchBranchDiscardUnlocked: async () => ({ ok: true, discarded: true })
   });
-  const save = runFunction(sourceOf('async function codeWorkbenchBranchSaveFileUnlocked(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchSaveFile', {
+  const save = runFunction(sourceOf('async function codeWorkbenchBranchSaveFile(', 'async function codeWorkbenchBranchPreviewUnlocked('), 'codeWorkbenchBranchSaveFile', {
     codeWorkbenchWithLock: lock,
     codeWorkbenchBranchSaveFileUnlocked: async () => ({ ok: true, saved: true })
   });
