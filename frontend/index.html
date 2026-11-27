@@ -6160,6 +6160,7 @@ async function mcpGet(path) {
   return parseFile(await callTool(t, mkArgs(t, {owner: REPO.owner, repo: REPO.repo, path, branch: REPO.branch})));
 }
 async function mcpPut(path, content, message, sha) {
+  if (!activeBranchRecord || REPO.branch !== activeBranchRecord.branch || !/^code\//.test(REPO.branch)) throw new Error("已阻止直接写入 main：请先创建并使用当前项目的临时分支。");
   const tools = await mcpTools(), t = pickTool(tools, "update_file", /(update|write|put)_?file|create_or_update/i);
   if (!t) throw new Error("MCP 里没有 update_file（现有工具：" + tools.map(x => x.name).join("、") + "）");
   return callTool(t, mkArgs(t, {owner: REPO.owner, repo: REPO.repo, path, branch: REPO.branch, content, message, sha}));
@@ -6305,7 +6306,7 @@ async function loadWorkbenchVersions() {
           const result = await wbApi("/api/code/rollback", { method: "POST", body: JSON.stringify({ id: row.id }) });
           say(result.reply || "回滚提交已创建");
           await Promise.all([loadWorkbenchVersions(), loadWorkbenchTree()]);
-          await ensureWorkbenchBranch(); await loadFile();
+          await ensureWorkbenchBranch(); await Promise.all([loadWorkbenchTree(), loadWorkbenchChanges(), loadFile()]);
         } catch (error) { rollback.disabled = false; say("回滚失败：" + (error.message || String(error)), true); }
       });
       item.appendChild(rollback); host.appendChild(item);
@@ -6323,7 +6324,7 @@ async function mergeWorkbenchBranch() {
     say(result.reply || (result.merged ? "已合并到 main" : "没有待合并改动"));
     activeBranchRecord = null; REPO.branch = "main"; updateWorkbenchBranchUI();
     workbenchChanges = []; Object.keys(workbenchDecisions).forEach(key => delete workbenchDecisions[key]);
-    await Promise.all([loadWorkbenchTree(), loadWorkbenchVersions(), loadFile()]);
+    await Promise.all([loadWorkbenchTree(), loadWorkbenchChanges(), loadWorkbenchVersions(), loadFile()]);
   } catch (error) {
     const details = error.data && Array.isArray(error.data.files) ? error.data.files.join("\n") : "";
     if (error.status === 409 || (error.data && error.data.conflict)) {
@@ -6952,10 +6953,11 @@ async function runBoth() {
 /* ---------------- 打开 / 关闭 ---------------- */
 async function openWb() {
   document.body.classList.add("wb-open"); g("wb").setAttribute("aria-hidden", "false"); amdOn();
-  if (inited) return;
-  inited = true; say("正在加载编辑器 …");
-  await initEditor();
-  await loadFile();
+  if (!inited) { inited = true; say("正在加载编辑器 …"); await initEditor(); }
+  try {
+    await ensureWorkbenchBranch();
+    await Promise.all([loadFile(), loadWorkbenchTree(), loadWorkbenchChanges(), loadWorkbenchVersions()]);
+  } catch (error) { say("开发台初始化失败：" + (error.message || String(error)), true); }
 }
 function closeWb() { document.body.classList.remove("wb-open"); g("wb").setAttribute("aria-hidden", "true"); amdOff(); }
 g("wb-open").addEventListener("click", openWb);
