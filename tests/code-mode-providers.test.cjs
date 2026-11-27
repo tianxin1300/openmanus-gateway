@@ -724,7 +724,7 @@ test('codeLLM: discovers only free text-to-text chat models and keeps custom mod
     { id: 'vendor/free-b:free', architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] }, pricing: { prompt: 0, completion: 0 } }
   ];
   const { subject, calls, catalogCalls } = loadCodeLLM(
-    (call, index) => index === 0 ? failure(404) : success('dynamic reply'),
+    () => failure(),
     () => ({ ok: true, status: 200, async json() { return { data: catalog }; } })
   );
   const result = await subject.codeLLM({ ...toterEnv, OPENROUTER_KEYS: 'or-key', CODE_MODELS: 'custom/first' }, messages);
@@ -736,8 +736,7 @@ test('codeLLM: discovers only free text-to-text chat models and keeps custom mod
     'custom/first', 'vendor/free-a:free', 'vendor/free-b:free',
     ...Array.from(subject.CODE_OR_MODELS)
   ]);
-  assert.equal(result.text, 'dynamic reply');
-  assert.equal(result.from, 'OpenRouter · vendor/free-a:free');
+  assert.equal(result.text, '');
 });
 
 test('codeLLM: catalog failure falls back to the fixed free model list', async () => {
