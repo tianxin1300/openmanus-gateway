@@ -176,10 +176,13 @@ test('project isolation: code edits use a temporary branch before merging to the
 });
 
 test('rollback creates a new commit and never force-moves the base branch', () => {
-  const start = workerSource.indexOf('async function codeRollback(');
-  const end = workerSource.indexOf('const CODE_DEPLOY_WORKFLOW', start);
-  assert.ok(start >= 0 && end > start);
-  const rollback = workerSource.slice(start, end);
+  const wrapperStart = workerSource.indexOf('async function codeRollback(');
+  const implementationStart = workerSource.indexOf('async function codeRollbackUnlocked(');
+  const end = workerSource.indexOf('const CODE_DEPLOY_WORKFLOW', implementationStart);
+  assert.ok(wrapperStart >= 0 && implementationStart > wrapperStart && end > implementationStart);
+  const wrapper = workerSource.slice(wrapperStart, implementationStart);
+  assert.match(wrapper, /codeWorkbenchWithLock/);
+  const rollback = workerSource.slice(implementationStart, end);
   assert.match(rollback, /\/git\/commits\//);
   assert.match(rollback, /method: "POST"/);
   assert.match(rollback, /parents: \[currentSha\]/);
