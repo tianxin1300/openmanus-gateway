@@ -500,7 +500,7 @@ function codeGitRefUrl(repo, ref) {
 }
 function codeTempBranch(project) {
   const tag = String(project || "project").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "project";
-  return "code/" + tag + "-" + Date.now().toString(36) + "-" + rand(8);
+  return "code/" + tag + "-" + Date.now() + "-" + rand(8);
 }
 function codeTempPreview(branch, repo) {
   if (String(repo || "") !== "tianxin1300/openmanus-gateway") return "";
@@ -1329,7 +1329,7 @@ async function codeProject(env, user, proj, req, history, ui) {
   if (!good.length) return { ok: false, reply: "❌ 这次没能生成可用的修改：" + (res.errs.map((e) => e.msg).join("；") || "模型没有给出修改块") + "。换个说法再试一次。" };
   const final = codeApply(files, good), summary = req.replace(/\s+/g, " ").slice(0, 60);
   const warn = [...new Set(final.done.map((d) => d.path))].flatMap((p) => codeBalanceWarn(files[p], final.out[p]).map((w) => p + " 的 " + w + " 数量和原来不一致"));
-  const temp = await codeCreateTempBranch(env, proj.repo, tag, branch);
+  const temp = await codeCreateTempBranch(env, proj.repo, proj.repo.split("/").pop(), branch);
   if (!temp.ok) return { ok: false, reply: "❌ 不能为「" + tag + "」创建独立临时分支：" + temp.msg };
   const pendingId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(36).slice(2));
   const stagedPaths = [...new Set(final.done.map((d) => d.path))];
