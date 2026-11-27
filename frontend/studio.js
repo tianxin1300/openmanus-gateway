@@ -98,7 +98,20 @@
     "#om-both-start{height:30px;padding:0 12px;border:1px solid #d8cfee;border-radius:13px;background:#f2effb;color:#5d4a9b;font:inherit;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer}",
     "#om-both-start:disabled{opacity:.55;cursor:wait}",
     "#om-both-status{flex:1 1 100%;min-width:0;font-size:11px;color:var(--muted,#71867a);white-space:pre-wrap;overflow-wrap:anywhere}",
-    "#om-both-status a{color:inherit;text-decoration:underline}"
+    "#om-both-status a{color:inherit;text-decoration:underline}",
+    ".om-file-actions{display:flex;gap:6px;padding:7px 10px;border-top:1px solid var(--line,#dfe9df)}",
+    ".om-file-actions button,.om-history button{height:28px;padding:0 10px;border:1px solid var(--line,#dfe9df);border-radius:7px;background:#fff;color:#58725e;font-size:11px;cursor:pointer}",
+    ".om-file-actions button.om-picked{background:#e3f3e5;color:#1f6b33;border-color:#9fd0a6}",
+    ".om-file-actions button.om-rejected{background:#fbeeee;color:#8a1f1f;border-color:#e5b5b5}",
+    ".om-layout{display:flex;min-height:0;flex:1;overflow:hidden}",
+    ".om-tree{width:190px;flex:none;border-right:1px solid var(--line,#dfe9df);overflow:auto;padding:8px;background:#fbfdf9}",
+    ".om-tree input{width:100%;height:30px;border:1px solid var(--line,#dfe9df);border-radius:7px;padding:0 7px;font-size:12px}",
+    ".om-tree button{display:block;width:100%;padding:7px 5px;text-align:left;border:0;background:transparent;color:#4d6653;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}",
+    ".om-tree button:hover{background:#edf5e8}",
+    ".om-history{border-top:1px solid var(--line,#dfe9df);padding:8px 10px;max-height:160px;overflow:auto;font-size:11px}",
+    ".om-history-row{display:flex;gap:8px;align-items:center;padding:5px 0}",
+    ".om-history-row span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+    ".om-preview-link{color:#287447;font-size:11px;text-decoration:underline;white-space:nowrap}"
   ].join("\n");
   (document.head || document.documentElement).appendChild(css);
 
@@ -133,6 +146,7 @@
     hintEl = el("span", "om-hint", "改完先预览，点「推」才推");
     var bothBtn = el("button", "", "同时启动"); bothBtn.id = "om-both-start"; bothBtn.type = "button";
     var bothStatus = el("span", ""); bothStatus.id = "om-both-status"; bothStatus.setAttribute("role", "status"); bothStatus.setAttribute("aria-live", "polite");
+    var historyBtn = el("button", "om-refresh", "历史版本"); historyBtn.type = "button"; historyBtn.addEventListener("click", showHistory);
     bothBtn.addEventListener("click", startBoth);
     sel.addEventListener("change", function () { state.project = sel.value; ls(KEY_PROJ, state.project); toast("代码模式：现在改「" + state.project + "」"); });
     box.addEventListener("click", function () {
@@ -142,7 +156,7 @@
     });
     var inner = document.getElementById("composer-inner");
     if (inner) {
-      var bar = el("div"); bar.id = "om-code-bar"; bar.appendChild(box); bar.appendChild(sel); bar.appendChild(hintEl); bar.appendChild(bothBtn); bar.appendChild(bothStatus);
+      var bar = el("div"); bar.id = "om-code-bar"; bar.appendChild(box); bar.appendChild(sel); bar.appendChild(hintEl); bar.appendChild(bothBtn); bar.appendChild(historyBtn); bar.appendChild(bothStatus);
       inner.insertBefore(bar, inner.firstChild);   // 放在输入框区域最上面；输入框收起时它也跟着收起
     } else { box.classList.add("om-float"); document.body.appendChild(box); document.body.appendChild(sel); sel.style.cssText = "position:fixed;left:130px;bottom:94px;z-index:999"; }   // 页面上没有输入框区域时的备用位置
     syncToggle();
@@ -268,47 +282,115 @@
     String(nw).split("\n").forEach(function (l) { pre.appendChild(el("div", "om-add", "+ " + l)); });
     return pre;
   }
+  var fileDecision = {}, conflictChoices = {};
+  function selectedPaths() { return Object.keys(fileDecision).filter(function (p) { return fileDecision[p] !== false; }); }
+  function loadHistory(host) {
+    api("/api/code/history", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
+      clear(host);
+      (j.history || []).filter(function (h) { return h && h.commit_sha; }).slice(0, 30).forEach(function (h) {
+        var row = el("div", "om-history-row");
+        row.appendChild(el("span", "", (h.commit_sha || "").slice(0, 12) + " · " + (h.at || "时间未知") + " · " + (h.summary || "代码修改") + " · " + (h.files || []).join(", ")));
+        var b = el("button", "", "回滚"); b.type = "button";
+        b.addEventListener("click", function () {
+          if (!window.confirm("确定创建新回滚提交，恢复到这个版本之前的文件内容？不会重写或删除 main 历史。")) return;
+          b.disabled = true;
+          api("/api/code/rollback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: h.id }) })
+            .then(function (x) { return x.json(); }).then(function (d) { toast(d.reply || d.msg || (d.ok ? "回滚提交已创建" : "回滚失败")); if (d.ok) loadHistory(host); else b.disabled = false; })
+            .catch(function () { b.disabled = false; toast("回滚请求失败，结果未确认"); });
+        });
+        row.appendChild(b); host.appendChild(row);
+      });
+      if (!(j.history || []).some(function (h) { return h && h.commit_sha; })) host.appendChild(el("div", "om-meta", "暂无已推送版本"));
+    }).catch(function () { clear(host); host.appendChild(el("div", "om-meta", "历史版本读取失败")); });
+  }
+  function showHistory() {
+    var root = ensurePanel(); clear(root); panelState = "history";
+    var head = el("div", "om-ph"); head.appendChild(el("strong", "", "历史版本"));
+    var close = el("button", "om-x", "×"); close.type = "button"; close.addEventListener("click", hide); head.appendChild(close); root.appendChild(head);
+    var list = el("div", "om-history"); list.style.maxHeight = "60vh"; root.appendChild(list); loadHistory(list); root.hidden = false;
+  }
+  function loadTree(host, p, body) {
+    var search = el("input"); search.placeholder = "搜索文件…"; search.setAttribute("aria-label", "搜索文件"); host.appendChild(search);
+    var list = el("div"); host.appendChild(list); var files = [];
+    api("/api/code/tree?repo=" + encodeURIComponent(p.repo || "") + "&ref=" + encodeURIComponent(p.branch || p.baseBranch || "main"), { cache: "no-store" })
+      .then(function (r) { return r.json(); }).then(function (j) { if (!j || !j.ok) throw new Error(j && j.msg || "读取失败"); files = j.files || []; paint(); })
+      .catch(function () { list.appendChild(el("div", "om-meta", "文件树读取失败")); });
+    function paint() {
+      clear(list); var q = search.value.trim().toLowerCase();
+      files.filter(function (x) { return !q || x.toLowerCase().indexOf(q) >= 0; }).slice(0, 500).forEach(function (f) {
+        var b = el("button", "", "▸ " + f); b.type = "button";
+        b.addEventListener("click", function () {
+          var cards = body.querySelectorAll(".om-edit"), target = null;
+          Array.prototype.forEach.call(cards, function (card) { if (card.dataset.file === f) target = card; });
+          if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+        list.appendChild(b);
+      });
+    }
+    search.addEventListener("input", paint);
+  }
+  function renderConflicts(items) {
+    var root = ensurePanel(), old = root.querySelector(".om-conflicts"); if (old) old.remove();
+    var box = el("div", "om-history om-conflicts"); box.appendChild(el("strong", "", "冲突合并"));
+    (items || []).forEach(function (c) {
+      var row = el("div", "om-history-row"); row.appendChild(el("span", "", c.path));
+      ["mine", "theirs", "merge"].forEach(function (choice) {
+        var b = el("button", conflictChoices[c.path] && conflictChoices[c.path].choice === choice ? "om-picked" : "", choice === "mine" ? "我的" : choice === "theirs" ? "对方版本" : "手动合并");
+        b.type = "button";
+        b.addEventListener("click", function () {
+          var content = choice === "merge" ? window.prompt("请输入该文件完整的合并内容", c.merge || c.mine || c.theirs || "") : "";
+          if (choice === "merge" && content === null) return;
+          conflictChoices[c.path] = { choice: choice, content: content || "" }; renderConflicts(items);
+        });
+        row.appendChild(b);
+      });
+      box.appendChild(row);
+    });
+    root.appendChild(box);
+  }
   function render(p) {
     clearTimeout(closeTimer); clearTimeout(expTimer);
-    currentPending = p; var root = ensurePanel(); clear(root); panelState = "pending";
+    currentPending = p; fileDecision = {}; (p.edits || []).forEach(function (e) { fileDecision[e.path] = true; });
+    var root = ensurePanel(); clear(root); panelState = "pending";
     var head = el("div", "om-ph");
     head.appendChild(el("strong", "", "改动预览"));
-    head.appendChild(el("span", "om-meta", state.project + " · 共 " + p.edits.length + " 处 · 推到 " + p.repo + "@" + p.branch));
-    var refreshBtn = el("button", "om-refresh", "刷新 ↻"); refreshBtn.type = "button"; refreshBtn.title = "重新读取服务器上的待处理改动"; refreshBtn.addEventListener("click", function () { refreshPending(false); }); head.appendChild(refreshBtn);
+    head.appendChild(el("span", "om-meta", (p.project || state.project) + " · " + p.branch + " · " + p.edits.length + " 处"));
+    if (p.preview_url) { var pl = el("a", "om-preview-link", "临时预览"); pl.href = p.preview_url; pl.target = "_blank"; pl.rel = "noopener noreferrer"; head.appendChild(pl); }
+    var refreshBtn = el("button", "om-refresh", "刷新 ↻"); refreshBtn.type = "button"; refreshBtn.addEventListener("click", function () { refreshPending(false); }); head.appendChild(refreshBtn);
     var touchY = null; head.addEventListener("touchstart", function (ev) { if (ev.touches && ev.touches.length === 1) touchY = ev.touches[0].clientY; }, {passive:true});
     head.addEventListener("touchend", function (ev) { if (touchY == null || !ev.changedTouches || !ev.changedTouches.length) return; var dy = ev.changedTouches[0].clientY - touchY; touchY = null; if (Math.abs(dy) > 42) refreshPending(false); }, {passive:true});
-    fcBtn = el("button", "om-fc", "强制清空"); fcBtn.type = "button"; fcBtn.title = "清掉待处理的改动（服务器里的暂存），面板消失；不用去 GitHub 删";
-    fcBtn.addEventListener("click", forceClear); head.appendChild(fcBtn);
-    var x = el("button", "om-x", "×"); x.type = "button"; x.setAttribute("aria-label", "关闭预览（修改仍保留，10 分钟后自动丢弃）");
-    x.addEventListener("click", collapse); head.appendChild(x); root.appendChild(head);
-    var body = el("div", "om-pb");
+    fcBtn = el("button", "om-fc", "强制清空"); fcBtn.type = "button"; fcBtn.title = "删除本次临时分支并清除待处理记录"; fcBtn.addEventListener("click", forceClear); head.appendChild(fcBtn);
+    var x = el("button", "om-x", "×"); x.type = "button"; x.setAttribute("aria-label", "收起改动预览"); x.addEventListener("click", collapse); head.appendChild(x); root.appendChild(head);
+    var layout = el("div", "om-layout"), tree = el("aside", "om-tree"), body = el("div", "om-pb");
+    loadTree(tree, p, body); layout.appendChild(tree);
     if (p.summary) { var s = el("div", "om-meta", "需求：" + p.summary); s.style.marginBottom = "8px"; s.style.whiteSpace = "normal"; body.appendChild(s); }
-    (p.warn || []).forEach(function (w) { body.appendChild(el("div", "om-warn", "⚠️ " + w + "（可能是括号写漏了，推之前请留意）")); });
-    p.edits.forEach(function (e) {
-      var card = el("div", "om-edit");
+    (p.warn || []).forEach(function (w) { body.appendChild(el("div", "om-warn", "⚠️ " + w)); });
+    (p.edits || []).forEach(function (e) {
+      var card = el("div", "om-edit"); card.dataset.file = e.path;
       card.appendChild(el("div", "om-file", e.path + (e.line ? " · 第 " + e.line + " 行" : "")));
-      card.appendChild(diffBox(e.old, e.new)); body.appendChild(card);
+      card.appendChild(diffBox(e.old, e.new));
+      var actions = el("div", "om-file-actions");
+      var accept = el("button", "om-picked", "接受"), reject = el("button", "", "拒绝"); accept.type = reject.type = "button";
+      accept.addEventListener("click", function () { fileDecision[e.path] = true; accept.className = "om-picked"; reject.className = ""; });
+      reject.addEventListener("click", function () { fileDecision[e.path] = false; reject.className = "om-rejected"; accept.className = ""; });
+      actions.appendChild(accept); actions.appendChild(reject); card.appendChild(actions); body.appendChild(card);
     });
-    root.appendChild(body);
-    footer = el("div", "om-pf"); stEl = el("div", "om-st", "10 分钟内点「推」或「不推」，超时自动丢弃。推到 " + p.branch + " 后，Cloudflare 会自动重新部署。");
-    noBtn = el("button", "om-btn om-no", "不推"); noBtn.type = "button";
-    yesBtn = el("button", "om-btn om-yes", "推"); yesBtn.type = "button";
-    noBtn.addEventListener("click", function () { decide(false); });
-    yesBtn.addEventListener("click", function () { decide(true); });
+    layout.appendChild(body); root.appendChild(layout);
+    var hist = el("div", "om-history"); hist.appendChild(el("strong", "", "历史版本")); var histRows = el("div"); hist.appendChild(histRows); root.appendChild(hist); loadHistory(histRows);
+    footer = el("div", "om-pf"); stEl = el("div", "om-st", "修改只写入临时分支；点推送后才合并到 main。");
+    noBtn = el("button", "om-btn om-no", "丢弃"); noBtn.type = "button";
+    yesBtn = el("button", "om-btn om-yes", "推送已接受文件"); yesBtn.type = "button";
+    noBtn.addEventListener("click", function () { decide(false); }); yesBtn.addEventListener("click", function () { decide(true); });
     footer.appendChild(stEl); footer.appendChild(noBtn); footer.appendChild(yesBtn); root.appendChild(footer);
     root.hidden = !!panelCollapsed; if (reopenBtn) reopenBtn.classList.toggle("on", !!panelCollapsed); body.scrollTop = 0;
-    var left = typeof p.left === "number" ? p.left : 10 * 60 * 1000;   // v108：到点自动收面板 + 清掉服务器里的暂存
-    expTimer = setTimeout(function () {
-      if (panelState !== "pending") return;
-      hide(); toast("预览超过 10 分钟没处理，已自动丢弃");
-      clearOnServer().catch(function () {});
-    }, Math.max(1000, left));
+    var left = typeof p.left === "number" ? p.left : 10 * 60 * 1000;
+    expTimer = setTimeout(function () { if (panelState !== "pending") return; hide(); toast("预览超过 10 分钟未处理，已自动丢弃"); clearOnServer().catch(function () {}); }, Math.max(1000, left));
   }
   function busy(b) { if (yesBtn) yesBtn.disabled = b; if (noBtn) noBtn.disabled = b; if (fcBtn) fcBtn.disabled = b; }
   function say(text, cls) { if (!stEl) return; stEl.className = "om-st" + (cls ? " " + cls : ""); linkify(stEl, text); }
   function showResult(text, ok, still, wasNo) {
     say(text, ok ? "om-okc" : "om-errc");
-    if (still) { busy(false); panelState = "pending"; return; }   // 修改还在（比如被拦下没推成），按钮留着
+    if (still) { busy(false); if (yesBtn) yesBtn.textContent = "重试"; if (noBtn) noBtn.textContent = "丢弃临时分支"; panelState = "pending"; return; }   // 失败后保留分支和剩余修改，可直接重试
     clearTimeout(expTimer); panelState = "result";
     if (yesBtn) yesBtn.remove(); if (noBtn) noBtn.remove(); if (fcBtn) fcBtn.remove();
     var c = el("button", "om-btn", "关闭"); c.type = "button"; c.addEventListener("click", hide); footer.appendChild(c);
@@ -325,13 +407,16 @@
       pending_id: String(p.pending_id || p.id),
       version: Number(p.version),
       project: String(p.project),
-      operation_id: operationId
+      operation_id: operationId,
+      accepted_paths: yes ? selectedPaths() : null,
+      conflict_resolutions: conflictChoices
     };
     busy(true); say(yes ? "正在接受并合并到 " + (p.baseBranch || "main") + "…" : "正在拒绝并删除临时修改…");
     api("/api/code/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       .then(function (r) { return r.json().catch(function () { return { ok: false, reply: "服务器返回的不是 JSON（HTTP " + r.status + "）" }; }); })
       .then(function (j) {
         var message = j.reply || j.msg || (j.ok ? "操作完成" : "操作失败");
+        if (j.conflicts && j.conflicts.length) renderConflicts(j.conflicts);
         return api("/api/code/pending", { cache: "no-store" }).then(function (r) { return r.json(); }).catch(function () { return null; }).then(function (pj) {
           var still = !!(pj && pj.ok && pj.pending && pj.pending.edits && pj.pending.edits.length);
           if (!still && j.ok) currentPending = null;
