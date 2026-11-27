@@ -64,7 +64,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         working-directory: frontend 
-        run: npx wrangler pages deploy . --project-name zhineng --branch "$DEPLOY_REF" --commit-dirty=true 
+        run: npx wrangler pages deploy . --project-name zhineng --branch main --commit-dirty=true 
         
       - name: Return CODE_PREVIEW_URL
         if: always()
