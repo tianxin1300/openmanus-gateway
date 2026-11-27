@@ -99,7 +99,7 @@
     "#om-both-start:disabled{opacity:.55;cursor:wait}",
     "#om-both-status{flex:1 1 100%;min-width:0;font-size:11px;color:var(--muted,#71867a);white-space:pre-wrap;overflow-wrap:anywhere}",
     "#om-both-status a{color:inherit;text-decoration:underline}"
-  ].join("\\n");
+  ].join("\n");
   (document.head || document.documentElement).appendChild(css);
 
   /* ---------- 小提示 ---------- */
