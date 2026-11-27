@@ -61,6 +61,12 @@ async function comment(issueNumber, body) {
     method: "POST", body: JSON.stringify({ body })
   });
 }
+async function requeueForModelPool(issueNumber, reason, detail = {}) {
+  const retryMessage = "全部限流超时，下一轮再试";
+  log("model_pool_exhausted", { issue: issueNumber, message: retryMessage, ...detail });
+  await labels(issueNumber, ["bot:ready"], ["bot:running", "bot:failed"]);
+  log("issue_requeued", { issue: issueNumber, reason });
+}
 async function main() {
   if (!repository || !token || !backend || !userToken) throw new Error("Missing required environment configuration");
   await fs.mkdir(logDir, { recursive: true });
@@ -131,10 +137,7 @@ async function main() {
     const answer = String(payload?.choices?.[0]?.message?.content || payload?.reply || "").trim();
     if (!answer) throw new Error("OpenManus code mode returned an empty response");
     if (/代码模型都没接上|没有可用的 OPENROUTER_KEYS|全部限流超时/.test(answer)) {
-      const retryMessage = "全部限流超时，下一轮再试";
-      log("model_pool_exhausted", { issue: issue.number, message: retryMessage, detail: answer.slice(0, 1400) });
-      await labels(issue.number, ["bot:ready"], ["bot:running", "bot:failed"]);
-      log("issue_requeued", { issue: issue.number, reason: "model_pool_exhausted" });
+      await requeueForModelPool(issue.number, "model_pool_exhausted", { detail: answer.slice(0, 1400) });
       return;
     }
     log("model_completed", { issue: issue.number, chars: answer.length });
@@ -154,10 +157,7 @@ async function main() {
     const message = String(error?.message || error).slice(0, 1800);
     const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError" || /timeout|timed out|aborted/i.test(message);
     if (timedOut) {
-      const retryMessage = "全部限流超时，下一轮再试";
-      log("model_pool_exhausted", { issue: issue.number, message: retryMessage, error: message });
-      await labels(issue.number, ["bot:ready"], ["bot:running", "bot:failed"]);
-      log("issue_requeued", { issue: issue.number, reason: "model_timeout" });
+      await requeueForModelPool(issue.number, "model_timeout", { error: message });
       return;
     }
     log("issue_failed", { issue: issue.number, error: message });
