@@ -9507,7 +9507,7 @@ export class CodeClaimDO {
       const conclusion = String(body.conclusion || "success");
       p.verify_run_id = runId; p.verify_run_url = String(body.run_url || p.verify_run_url || "");
       p.status = conclusion === "success" && actualSha === expectedSha ? "verification_passed" : "verification_failed";
-      p.verify_conclusion = conclusion; p.verify_head_sha = actualSha; p.verify_completed_at = now; p.verify_error_lines = Array.isArray(body.error_lines) ? body.error_lines.slice(0, 60) : []; p.verify_failed_step = String(body.failed_step || "").slice(0, 160); p.updatedAt = now; current.version = Number(current.version || 0) + 1;
+      p.verify_conclusion = conclusion; p.verify_head_sha = actualSha; p.verify_completed_at = now; p.verify_error_lines = Array.isArray(body.error_lines) ? body.error_lines.slice(0, 60) : []; p.verify_failed_step = String(body.failed_step || "").slice(0, 160); p.created_at = now; current.created_at = now; current.expires_at = now + CODE_PENDING_TTL_MS; p.updatedAt = now; current.version = Number(current.version || 0) + 1; await this.storage.setAlarm(current.expires_at);
       await this.save(current);
       return this.response({ ok: true, pending: p, version: current.version });
     }
@@ -9516,7 +9516,7 @@ export class CodeClaimDO {
       const pendingId = String(body.pending_id || ""), version = Number(body.version);
       if (!current || !p || !pendingId || p.id !== pendingId || !Number.isInteger(version) || Number(current.version) !== version) return this.response({ ok: false, conflict: true, msg: "待处理内容已变化，拒绝丢弃" }, 409);
       if (p.status === "applying" || Object.keys(current.claims || {}).length) return this.response({ ok: false, busy: true, msg: "这项修改正在执行接受操作，不能自动丢弃" }, 409);
-      if (!["awaiting_approval", "partial", "conflict", "failed"].includes(p.status || "awaiting_approval")) return this.response({ ok: false, busy: true, msg: "当前状态不允许丢弃：" + p.status }, 409);
+      if (!["awaiting_approval", "partial", "conflict", "failed", "verification_failed", "verification_passed"].includes(p.status || "awaiting_approval")) return this.response({ ok: false, busy: true, msg: "当前状态不允许丢弃：" + p.status }, 409);
       p.discard_previous_status = p.status || "awaiting_approval";
       p.status = "discarding"; p.updatedAt = now;
       await this.save(current);
