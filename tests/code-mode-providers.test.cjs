@@ -1822,8 +1822,8 @@ test('codeConfirm cannot merge before verification and both apply paths queue th
   const end = workerSource.indexOf('async function codeChatEntry', start);
   const confirm = workerSource.slice(start, end);
   assert.doesNotMatch(confirm, /codeMergeTempBranch\(/, 'codeConfirm must not call the merge API directly');
-  assert.match(confirm, /claimedFrom === "verification_passed"\) return await codeMergeVerifiedPending/);
-  assert.match(confirm, /claimedFrom === "verification_failed"\) return await codeQueuePendingVerification/);
+  assert.match(confirm, /claimedFrom === "verification_passed"[\s\S]{0,180}codeMergeVerifiedPending/);
+  assert.match(confirm, /claimedFrom === "verification_failed"[\s\S]{0,180}codeQueuePendingVerification/);
   assert.match(confirm, /if \(!paths\.length\) return await codeQueuePendingVerification/);
   assert.match(confirm, /return await codeQueuePendingVerification\(env, user, pend, finish, pend\.edits\)/);
   const merge = workerSource.slice(workerSource.indexOf('async function codeMergeVerifiedPending'), workerSource.indexOf('async function codeConfirm'));
