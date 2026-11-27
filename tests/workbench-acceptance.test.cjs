@@ -50,6 +50,7 @@ function makeMergeHarness(options = {}) {
     codeGhApi: async (_env, url) => {
       if (url.includes('/compare/')) return { ok: true, data: { files: [{ filename: 'app.js' }] } };
       if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: 'base-sha' } } };
+      if (url.includes('/heads/code/')) return { ok: true, data: { object: { sha: 'b'.repeat(40) } } };
       throw new Error('unexpected merge API ' + url);
     },
     codeGitRefUrl: (_repo, ref) => 'https://api.github.com/repos/owner/repo/git/ref/' + ref,
@@ -116,6 +117,7 @@ test('ACCEPTANCE REVIEW-01: rejected file is absent from the final merge diff', 
     codeGhApi: async (_env, url) => {
       if (url.includes('/compare/')) return { ok: true, data: { files: Object.keys(branch).filter(k => branch[k] !== main[k]).map(filename => ({ filename })) } };
       if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: 'base-sha' } } };
+      if (url.includes('/heads/code/')) return { ok: true, data: { object: { sha: 'b'.repeat(40) } } };
       throw new Error('unexpected API ' + url);
     },
     codeWorkbenchBranchRejectFileUnlocked: async (_env, _user, body) => { branch[body.path] = main[body.path]; return { ok: true }; },
@@ -269,6 +271,7 @@ test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, review, o
     codeGhApi: async (_env, url) => {
       if (url.includes('/compare/')) return { ok: true, data: { files: [{ filename: 'a.js' }] } };
       if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: 'base' } } };
+      if (url.includes('/heads/code/')) return { ok: true, data: { object: { sha: 'b'.repeat(40) } } };
       throw new Error('unexpected ' + url);
     },
     codeMergeTempBranch: async () => ({ ok: true, data: { sha: 'merged-sha' } }),
@@ -1133,6 +1136,7 @@ test('ACCEPTANCE WORKBENCH-CAS-CONFLICT-01: GitHub 422 non-fast-forward is surfa
     codeGhApi: async (_env, url) => {
       if (url.includes('/compare/')) return { ok: true, data: { files: [{ filename: 'app.js' }] } };
       if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: 'a'.repeat(40) } } };
+      if (url.includes('/heads/code/')) return { ok: true, data: { object: { sha: 'b'.repeat(40) } } };
       throw new Error('unexpected API ' + url);
     },
     codeMergeTempBranch: async () => ({ ok: false, status: 422, conflict: true, cas_rejected: true, msg: 'Update is not a fast forward' }),
