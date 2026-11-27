@@ -457,7 +457,7 @@ async function codeLLM(env, msgs, budgetMs) {
     for (const key of t.keys) {
       const left = budget - (Date.now() - t0); if (left < 8000) return { text: "", tried };
       try {
-        const r = await fetch(t.url, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + key }, body: JSON.stringify({ model: t.model, messages: msgs, temperature: 0.2, max_tokens: 16000 }), signal: T(Math.min(70000, left)) });
+        const r = await fetch(t.url, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + key }, body: JSON.stringify({ model: t.model, messages: msgs, temperature: 0.2, max_tokens: 16000 }), signal: T(Math.min(60000, left)) });
         if (!r.ok) { tried.push(t.name + "·" + t.model + " HTTP " + r.status); if (r.status === 404) break; continue; }
         const j = await r.json().catch(() => null), c = j && j.choices && j.choices[0];
         const text = c && c.message && typeof c.message.content === "string" ? c.message.content.trim() : "";
@@ -866,7 +866,7 @@ function codeParse(raw) {
   return { text: t.trim(), repo, path, push };
 }
 function codeBlocks(text) { const out = [], re = /```[^\n`]*\n([\s\S]*?)```/g; let m; while ((m = re.exec(String(text)))) out.push({ code: m[1] }); return out; }
-async function codeAssist(env, user, raw, history) {
+async function codeAssist(env, user, raw, history, budgetMs) {
   const d = codeParse(raw), notes = [], branch = String(env.CODE_PUSH_BRANCH || "main");
   if (!d.text) return { ok: false, reply: "请告诉我要写什么代码。" };
   if (CODE_CONFIRM_RE.test(d.text)) await codeMemoryAppend(env, user, { action: "用户", text: /不推|别推|取消/.test(d.text) ? "用户拒绝了推送（含删 worker.js 的改动）" : "用户接受了推送" }).catch(() => {});
@@ -882,7 +882,7 @@ async function codeAssist(env, user, raw, history) {
   }
   const hist = (Array.isArray(history) ? history : []).filter((m) => m && (m.role === "user" || m.role === "assistant")).map((m) => ({ role: m.role, content: textOf(m.content).slice(0, 12000) })).filter((m) => m.content);
   while (hist.length && hist[hist.length - 1].role === "user") hist.pop();   // 最后一条用户话用去掉口令后的 d.text 替代
-  const r = await codeLLM(env, [{ role: "system", content: sys }, ...hist.slice(-10), { role: "user", content: d.text }]);
+  const r = await codeLLM(env, [{ role: "system", content: sys }, ...hist.slice(-10), { role: "user", content: d.text }], budgetMs);
   if (!r.text) return { ok: false, reply: "❌ 代码模型都没接上：" + (r.tried.join("；") || "没有可用的 OPENROUTER_KEYS / GROQ_KEYS") };
   let pushed = false;
   if (d.push) {
@@ -1267,7 +1267,7 @@ async function codeChatEntry(env, user, text, history, o) {   // 返回 {ok, rep
     const req = String(text).replace(CODE_TRIGGER_RE, " ").replace(/^[\s,，:：、]+/, "").trim();
     return await codeProject(env, user, proj, req, history, !!o.ui);
   }
-  return inCode ? await codeAssist(env, user, text, history) : null;
+  return inCode ? await codeAssist(env, user, text, history, o.budgetMs) : null;
 }
 // 前端带 stream:true → SSE 流式(每 5 秒心跳)；老前端不带 → 一整段 JSON(等待时发空格保活)
 // 需要：KV 绑定(变量名 KV)、REG_TOKEN；可选：GROQ_KEYS / OPENROUTER_KEYS / GEMINI_KEYS(逗号分隔)、AGG_URL、
@@ -9127,7 +9127,7 @@ async function handle(request, env, ctx) {
               const cu = await userFromReq(request, env, url, String(b.token || ""));
               if (!cu) { if (codeForced || codeIn || codeKind === "edit") { await emit("请先登录后再用代码助手。"); handled = true; } }
               else {
-                const cr = await codeChatEntry(env, cu, (codeForced || codeKind) ? rawMsg : lastText, msgs, { inCode: codeIn || codeForced, forced: codeForced, project: String(b.code_project || ""), ui: codeForced });
+                const cr = await codeChatEntry(env, cu, (codeForced || codeKind) ? rawMsg : lastText, msgs, { inCode: codeIn || codeForced, forced: codeForced, project: String(b.code_project || ""), ui: codeForced, budgetMs: Math.min(420000, Math.max(15000, Number(b.code_budget_ms) || 110000)) });
                 if (cr) { await emit(cr.reply); handled = true; }
               }
             } catch (e) { await emit("代码助手出错：" + String(e && e.message || e).slice(0, 200)); handled = true; }
