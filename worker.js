@@ -471,7 +471,8 @@ async function codeLLM(env, msgs, budgetMs) {
 // GitHub 读写：用 REST（Worker 里不能用 MCP），等价于 MCP 的 get_file / update_file，用你已有的 GH_PAT（要有 Contents 写权限才能推送）
 const codeGhHeaders = (env) => ({ Authorization: "Bearer " + env.GH_PAT, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "openmanus-gateway" });
 const codeGhUrl = (repo, path) => "https://api.github.com/repos/" + repo + "/contents/" + path.split("/").map(encodeURIComponent).join("/");
-const codeRepoOk = (env, repo) => /^[A-Za-z0-9_.\-]+\/[A-Za-z0-9_.\-]+$/.test(String(repo)) && getKeys(env.CODE_REPOS || "tianxin1300/openmanus-gateway,tianxin1300/jiuyibanlv").map((x) => x.toLowerCase()).includes(String(repo).toLowerCase());
+const codeRepoList = (env) => [...new Map(getKeys(env && env.CODE_REPOS).filter((repo) => /^[A-Za-z0-9_.\\-]+\\/[A-Za-z0-9_.\\-]+$/.test(repo)).map((repo) => [repo.toLowerCase(), repo])).values()];
+const codeRepoOk = (env, repo) => /^[A-Za-z0-9_.\\-]+\\/[A-Za-z0-9_.\\-]+$/.test(String(repo)) && codeRepoList(env).some((allowed) => allowed.toLowerCase() === String(repo).toLowerCase());
 const codePathOk = (p) => /^[A-Za-z0-9._\-\/]{1,200}$/.test(String(p)) && !String(p).split("/").some((s) => s === "" || s === "." || s === "..");
 const CODE_VERIFY_WORKFLOW = "verify-project.yml";
 const codeVerifyRepo = (env) => String(env.CODE_REPO || "tianxin1300/openmanus-gateway").trim();
@@ -9455,6 +9456,15 @@ async function handle(request, env, ctx) {
     }
 
     // ---- v100/v101：代码助手 HTTP 接口（要登录）：POST /api/code {text, token?, history?}（text 可以直接写“改聚合体 …”/“推”/“不推”）；GET /api/code/file?repo=&path=&ref= ----
+    if (path === "/api/code/repos" && request.method === "GET") {
+      const user = await userFromReq(request, env, url, "");
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      const items = codeRepoList(env).map((full_name) => {
+        const parts = full_name.split("/");
+        return { full_name, owner: parts[0], repo: parts[1], label: parts[1] };
+      });
+      return json({ ok: true, items, source: "CODE_REPOS" });
+    }
     if (path === "/api/code" && request.method === "POST") {
       const b = await request.json().catch(() => ({}));
       const user = await userFromReq(request, env, url, String(b.token || ""));
