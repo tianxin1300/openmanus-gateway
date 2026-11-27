@@ -6295,14 +6295,15 @@ async function loadWorkbenchVersions() {
   host.textContent = "正在读取历史版本…";
   try {
     const data = await wbApi("/api/code/history", { cache: "no-store" });
-    const rows = (data.history || []).filter(row => row && row.commit_sha && row.repo === workbenchRepoFull()).slice(0, 20);
+    const rows = (data.history || []).filter(row => row && row.repo === workbenchRepoFull() && (row.commit_sha || row.kind === "workbench_discard")).slice(0, 20);
     host.innerHTML = "";
     if (!rows.length) { host.textContent = "暂无已合并版本"; return; }
     rows.forEach(row => {
       const item = document.createElement("div"); item.className = "wb-version-row";
-      const title = document.createElement("div"); title.className = "wb-change-path"; title.textContent = String(row.commit_sha); item.appendChild(title);
+      const title = document.createElement("div"); title.className = "wb-change-path"; title.textContent = row.commit_sha ? String(row.commit_sha) : ("操作记录：" + String(row.action || row.kind || "workbench")); item.appendChild(title);
       const meta = document.createElement("div"); meta.className = "wb-change-meta"; meta.textContent = (row.at || "时间未知") + (row.actor ? " · 操作者 " + row.actor : "") + " · " + (row.summary || (row.kind === "workbench_discard" ? "丢弃临时分支" : "代码提交")); item.appendChild(meta);
-      const files = document.createElement("div"); files.className = "wb-change-meta"; files.textContent = (row.files || []).join(", "); item.appendChild(files);
+      const files = document.createElement("div"); files.className = "wb-change-meta"; files.textContent = (row.files || []).join(", ") || (row.branch ? "分支 " + row.branch : ""); item.appendChild(files);
+      if (!row.commit_sha) { const audit = document.createElement("div"); audit.className = "wb-change-meta"; audit.textContent = "不可回滚的操作者审计记录"; item.appendChild(audit); host.appendChild(item); return; }
       const rollback = document.createElement("button"); rollback.type = "button"; rollback.textContent = "回滚"; rollback.disabled = !!activeBranchRecord;
       rollback.title = activeBranchRecord ? "请先推送或丢弃当前临时分支，再回滚历史版本" : "创建一个新回滚提交，不重写历史";
       rollback.addEventListener("click", async () => {
