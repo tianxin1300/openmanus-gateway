@@ -224,6 +224,23 @@ test('ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restore
   assert.equal(rolled.actor, 'owner', 'rollback history records the authenticated actor');
 });
   
+test('ACCEPTANCE WORKBENCH-PREVIEW-AUDIT-01: preview dispatch records the authenticated actor', async () => {
+  const record = { repo: 'owner/repo', branch: 'code/preview', baseBranch: 'main', active: true };
+  const preview = runFunction(sourceOf('async function codeWorkbenchBranchPreviewUnlocked(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchPreviewUnlocked', {
+    codePushGuard: () => '',
+    codeWorkbenchBranchCurrent: async () => record,
+    codeTempPreview: () => 'https://preview.example.test',
+    codeWorkbenchBranchKey: () => 'key',
+    codeGhApi: async () => ({ ok: true }),
+  });
+  const env = { KV: { put: async (_key, value) => Object.assign(record, JSON.parse(value)) } };
+  const result = await preview(env, 'owner', 'owner/repo');
+  assert.equal(result.ok, true);
+  assert.equal(record.preview_started_by, 'owner');
+  assert.equal(record.preview_events[0].actor, 'owner');
+  assert.equal(record.preview_url, 'https://preview.example.test');
+});
+
 test('ACCEPTANCE WORKBENCH-SAVE-CAS-01: editor saves share the repository lock and reject stale file SHA', async () => {
   let currentSha = 'a'.repeat(40), writes = 0;
   const lockOperations = [];
