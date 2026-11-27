@@ -552,6 +552,52 @@ test('ACCEPTANCE CLEANUP-01: failed deletion retains recoverable state; successf
 });
 
 
+test('ACCEPTANCE DISCARD-AUDIT-RECOVERY-01: deleted branches retain a durable audit-retry record across current-state reads', async () => {
+  const repo = 'owner/repo';
+  let record = { repo, branch: 'code/discard-audit', project: 'p', status: 'active' };
+  const history = [];
+  let auditFails = true, deletes = 0;
+  const kv = {
+    async get() { return record; },
+    async put(_key, value) { record = JSON.parse(value); },
+    async delete() { record = null; }
+  };
+  const env = { KV: kv };
+  const discard = runFunction(sourceOf('async function codeWorkbenchBranchDiscardUnlocked(', 'async function codeWorkbenchBranchDiscard('), 'codeWorkbenchBranchDiscardUnlocked', {
+    codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
+    codeDeleteBranch: async () => { deletes++; return deletes === 1 ? { ok: true } : { ok: false, status: 404 }; },
+    codeHistoryLoad: async () => history,
+    codeHistorySave: async (_env, _user, rows) => {
+      if (auditFails) { auditFails = false; throw new Error('simulated history outage'); }
+      history.splice(0, history.length, ...rows);
+    }
+  });
+  const current = runFunction(sourceOf('async function codeWorkbenchBranchCurrent(', 'async function codeWorkbenchBranchCreateUnlocked('), 'codeWorkbenchBranchCurrent', {
+    codeRepoOk: () => true, codeWorkbenchBranchKey: () => 'key',
+    codeGitRefUrl: () => 'https://api.github.com/git/ref/code/discard-audit',
+    codeGhApi: async () => ({ ok: false, status: 404 })
+  });
+
+  const failed = await discard(env, 'owner', { repo, branch: record.branch });
+  assert.equal(failed.ok, false);
+  assert.equal(failed.discarded, true);
+  assert.equal(failed.branch_deleted, true);
+  assert.equal(record.status, 'discard_history_failed');
+
+  const snapshot = await current(env, 'owner', repo);
+  assert.equal(snapshot.active, true);
+  assert.equal(snapshot.discard_recovery, true);
+  assert.equal(snapshot.branch_deleted, true);
+  assert.equal(record.status, 'discard_history_failed', 'a 404 current-state probe must not erase audit recovery state');
+
+  const retried = await discard(env, 'owner', { repo, branch: record.branch });
+  assert.equal(retried.ok, true);
+  assert.equal(record, null);
+  assert.equal(history[0].kind, 'workbench_discard');
+  assert.equal(history[0].actor, 'owner');
+  assert.equal(deletes, 2);
+});
+
 test('ACCEPTANCE LOCK-CLEANUP-01: failed or cancelled claim releases its operation lock and permits the next task', async () => {
   const claimSource = sourceOf('class CodeClaimDO {', 'export class CodeRunnerDO');
   const Claim = runFunction(claimSource, 'CodeClaimDO', {
