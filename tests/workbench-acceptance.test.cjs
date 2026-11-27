@@ -568,12 +568,13 @@ test('ACCEPTANCE MULTI-REVIEW-RECOVERY-01: failed rename rejection preserves a r
 
 
 test('ACCEPTANCE CREATE-CLEANUP-01: KV persistence failure cleans the new branch or reports an orphan', async () => {
-  const makeCreate = cleanupOk => runFunction(sourceOf('async function codeWorkbenchBranchCreateUnlocked(', 'async function codeWorkbenchBranchCreate('), 'codeWorkbenchBranchCreateUnlocked', {
+  const makeCreate = (cleanupOk, cleanupThrows = false) => runFunction(sourceOf('async function codeWorkbenchBranchCreateUnlocked(', 'async function codeWorkbenchBranchCreate('), 'codeWorkbenchBranchCreateUnlocked', {
     codeVerifyRef: x => x, codeRepoOk: () => true, codePushGuard: () => '',
     codeWorkbenchBranchKey: () => 'branch-key', codeTempPreview: () => '',
     codeCreateTempBranch: async () => ({ ok: true, branch: 'code/persist-failure', base: 'main', sha: 'base-sha' }),
     codeDeleteBranch: async (_env, _repo, branch) => {
       assert.equal(branch, 'code/persist-failure');
+      if (cleanupThrows) throw new Error('network dropped');
       return cleanupOk ? { ok: true } : { ok: false, status: 500, msg: 'GitHub unavailable' };
     }
   });
@@ -587,4 +588,8 @@ test('ACCEPTANCE CREATE-CLEANUP-01: KV persistence failure cleans the new branch
   assert.equal(orphaned.orphaned, true);
   assert.equal(orphaned.branch, 'code/persist-failure');
   assert.match(orphaned.msg, /清理失败/);
+  const thrown = await makeCreate(false, true)(env, 'owner', { repo: 'owner/repo', project: 'p' });
+  assert.equal(thrown.ok, false);
+  assert.equal(thrown.orphaned, true);
+  assert.match(thrown.msg, /network dropped/);
 });
