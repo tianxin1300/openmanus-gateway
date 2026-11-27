@@ -56,6 +56,7 @@ jobs:
           WORKER_TEST_TOKEN="$(openssl rand -hex 32)"
           WORKBENCH_E2E_SECRET="$(openssl rand -hex 32)"
           export WORKER_TEST_TOKEN
+          echo "::add-mask::$WORKBENCH_E2E_SECRET"
           echo "WORKER_NAME=$WORKER_NAME" >> "$GITHUB_ENV"
           echo "KV_NAMESPACE_ID=$KV_NAMESPACE_ID" >> "$GITHUB_ENV"
           echo "WORKER_TEST_TOKEN=$WORKER_TEST_TOKEN" >> "$GITHUB_ENV"
@@ -71,6 +72,7 @@ jobs:
           [vars]
           CODE_OWNER = "workbench-e2e"
           CODE_REPOS = "$GITHUB_REPOSITORY"
+          WORKBENCH_E2E_SECRET = "$WORKBENCH_E2E_SECRET"
 
           [[kv_namespaces]]
           binding = "KV"
@@ -93,7 +95,6 @@ jobs:
           npx --yes wrangler@4 deploy --config wrangler.e2e.toml 2>&1 | tee /tmp/wrangler-e2e-deploy.log
           echo "DO_PROVISIONED=true" >> "$GITHUB_ENV"
           printf '%s' "$GITHUB_TOKEN" | npx --yes wrangler@4 secret put GH_PAT --config wrangler.e2e.toml
-          printf '%s' "$WORKBENCH_E2E_SECRET" | npx --yes wrangler@4 secret put WORKBENCH_E2E_SECRET --config wrangler.e2e.toml
           WORKER_URL="$(grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' /tmp/wrangler-e2e-deploy.log | tail -n 1)"
           test -n "$WORKER_URL" || { echo "::error::Could not determine isolated workers.dev URL"; exit 1; }
           echo "WORKER_URL=$WORKER_URL" >> "$GITHUB_ENV"
