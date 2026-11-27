@@ -503,7 +503,7 @@ async function codeLLM(env, msgs, budgetMs) {
         if (!text) { tried.push(t.name + "·" + t.model + " 空回复"); continue; }
         return { text, from: t.name + " · " + t.model, truncated: c.finish_reason === "length", tried };
       } catch (e) {
-        const timedOut = e && e.name === "TimeoutError";
+        const timedOut = e && (e.name === "TimeoutError" || e.name === "AbortError");
         tried.push(t.name + "·" + t.model + " " + (timedOut ? "超时" : String(e && e.message || e).slice(0, 60)));
         if (timedOut) break; // A model timeout skips its remaining keys and advances to the next model.
       }
