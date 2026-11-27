@@ -6352,7 +6352,7 @@ async function discardWorkbenchBranch() {
     activeBranchRecord = null; REPO.branch = "main"; dirty = false; curSha = null;
     updateWorkbenchBranchUI(); say(result.main_untouched ? "临时分支已删除，main 未改变。" : "临时分支已清理。");
     workbenchChanges = []; Object.keys(workbenchDecisions).forEach(key => delete workbenchDecisions[key]);
-    await Promise.all([loadWorkbenchTree(), loadWorkbenchChanges(), loadFile()]);
+    await Promise.all([loadWorkbenchTree(), loadWorkbenchChanges(), loadWorkbenchVersions(), loadFile()]);
   } catch (error) { say("删除临时分支失败，记录保留：" + (error.message || String(error)), true); }
   finally { if (button) button.disabled = !activeBranchRecord; }
 }
