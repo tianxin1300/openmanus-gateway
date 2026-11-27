@@ -93,7 +93,7 @@ function loadCodeRepairHelper(stubs = {}) {
     codeQueuePendingVerification: async () => ({ ok: true, pending: true, verification_pending: true }),
     Date, String, Array, Set, Object, Math, Promise
   }, stubs);
-  vm.runInNewContext(source + '\\n' + 'globalThis.runCodeRepair = codeRepairPendingFromVerification;', sandbox);
+  vm.runInNewContext(source + String.fromCharCode(10) + 'globalThis.runCodeRepair = codeRepairPendingFromVerification;', sandbox);
   return sandbox;
 }
 
