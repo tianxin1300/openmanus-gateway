@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 81 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，按当前源码预计 Node TAP 展开为 83 项。`workbench-acceptance.test.cjs` 有 42 个静态测试声明，因此按源码预计 `npm test` 共 125 项；最终数量以本次 TAP 输出为准。Playwright UI 文件另有 7 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
+> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 81 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，按当前源码预计 Node TAP 展开为 83 项。`workbench-acceptance.test.cjs` 有 42 个静态测试声明，因此按源码预计 `npm test` 共 125 项；最终数量以本次 TAP 输出为准。Playwright UI 文件另有 8 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
 
 ## 1. 唯一执行入口与判定规则
 
@@ -334,12 +334,13 @@ npm test
 
 ### WORKBENCH-13 — 合并后部分失败的可恢复状态
 
-**自动化测试：** `ACCEPTANCE MERGE-HISTORY-RECOVERY-01`、`MERGE-CLEANUP-01`、`MERGE-RECORD-CLEANUP-01`。
+**自动化测试：** `ACCEPTANCE MERGE-HISTORY-RECOVERY-01`、`MERGE-CLEANUP-01`、`MERGE-RECORD-CLEANUP-01`；Playwright `merged history recovery remains retryable after reload without a second GitHub merge`。
 
 **测试覆盖：**
 - GitHub 合并已成功但历史记录写入失败：保留临时分支和可恢复记录；重试先补写历史，不得再次调用合并。
 - 历史保存成功但临时分支删除失败：记录 `merged_cleanup_failed`；重试只清理分支，不重复合并。
 - 分支删除成功但 KV 记录删除失败：记录 `merged_record_cleanup_failed`；重试只完成状态清理，不重复合并。
+- UI 必须把 `merged: true` 的部分失败识别为“已合并、待恢复”，不能显示普通推送失败；刷新后仍允许对 `merged_history_failed` / `merged_cleanup_failed` 状态执行恢复重试。
 
 **通过条件：** 合并成功后的历史写入、分支删除和 KV 清理分别可恢复；重复请求不得生成第二次合并。
 
@@ -397,9 +398,9 @@ npm test
 | 合并后恢复与清理 | `ACCEPTANCE MERGE-HISTORY-RECOVERY-01`、`ACCEPTANCE MERGE-CLEANUP-01`、`ACCEPTANCE MERGE-RECORD-CLEANUP-01` |
 | 合并 CAS 与 Git ref 边界 | `ACCEPTANCE MERGE-CAS-01`～`MERGE-CAS-07`、`ACCEPTANCE GIT-REF-WRITE-01`、`ACCEPTANCE WORKBENCH-CAS-CONFLICT-01` |
 
-**计数说明：** 上述分组对应文件内 39 个 `test(...)` 用例。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
+**计数说明：** 上述分组对应文件内 42 个 `test(...)` 用例。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
 
-### 14.2 Playwright UI E2E（7 个场景 × 2 个浏览器项目）
+### 14.2 Playwright UI E2E（8 个场景 × 2 个浏览器项目）
 
 文件：`tests/workbench-ui.spec.cjs`
 
@@ -411,6 +412,7 @@ npm test
 | 终端/运行日志标签页互斥切换；检查移动视口尺寸变化后的布局变量 | 独立执行 | 独立执行 |
 | 文件拒绝接口首次失败后，改动仍保留并允许重试 | 独立执行 | 独立执行 |
 | 合并遇到 409 冲突时保留临时分支和已接受差异 | 独立执行 | 独立执行 |
+| 合并已成功但历史记录失败：刷新后可重试恢复，且不重复 GitHub 合并 | 独立执行 | 独立执行 |
 | 丢弃接口失败时保留活动分支并允许再次操作 | 独立执行 | 独立执行 |
 
 工作流命令：
