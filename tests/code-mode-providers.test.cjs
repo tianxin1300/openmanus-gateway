@@ -87,7 +87,7 @@ function loadCodeVerifySweep(stubs = {}) {
 }
 
 function loadCodeRepairHelper(stubs = {}) {
-  const start = workerSource.indexOf('async function codeRepairPendingFromVerification');
+  const start = workerSource.indexOf('function codeRepairSourceContext');
   const end = workerSource.indexOf('async function codeVerifyStatus', start);
   assert.ok(start >= 0 && end > start, 'automatic repair helper must exist');
   const source = workerSource.slice(start, end);
@@ -2048,12 +2048,30 @@ test('CodeClaimDO alarm releases a stalled model repair without deleting its bra
   assert.equal(deleted, false, 'stalled repair must keep the temporary branch and pending record');
 });
 
+test('codeRepairSourceContext finds relevant identifiers deep in large source files', () => {
+  const start = workerSource.indexOf('function codeRepairSourceContext');
+  const end = workerSource.indexOf('async function codeRepairPendingFromVerification', start);
+  assert.ok(start >= 0 && end > start);
+  const sandbox = {};
+  vm.runInNewContext(workerSource.slice(start, end) + String.fromCharCode(10) + 'globalThis.pickRepairContext = codeRepairSourceContext;', sandbox);
+  const lines = Array.from({ length: 600 }, (_, i) => 'unrelated source line ' + (i + 1));
+  lines[479] = 'const codeRepairSmokeProbe = (value) => value === "repair-me" ? "broken" : value;';
+  lines[480] = 'function nearbyRepairAssertion() { return codeRepairSmokeProbe("repair-me"); }';
+  const context = sandbox.pickRepairContext('worker.js', lines.join(String.fromCharCode(10)), [
+    { path: 'worker.js', old: '', new: 'const codeRepairSmokeProbe = (value) => value === "repair-me" ? "broken" : value;' }
+  ], ['worker.js:481:1']);
+  assert.match(context, /codeRepairSmokeProbe/);
+  assert.match(context, /nearbyRepairAssertion/);
+  assert.doesNotMatch(context, /unrelated source line 1\s/);
+});
+
 test('automatic repair uses real Actions logs, source patches and a fresh verification dispatch', () => {
   const start = workerSource.indexOf('async function codeRepairPendingFromVerification');
   const end = workerSource.indexOf('async function codeVerifyStatus', start);
   const repair = workerSource.slice(start, end);
   assert.match(repair, /"repair-claim"/);
   assert.match(repair, /codeLLM\(/);
+  assert.match(repair, /codeRepairSourceContext\(path, files\[path\], pend\.edits \|\| \[\], logs\)/);
   assert.match(repair, /codeParseEdits\(/);
   assert.match(repair, /codeApply\(/);
   assert.match(repair, /codePushGuard\(/);
