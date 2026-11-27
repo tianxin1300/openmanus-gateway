@@ -840,6 +840,23 @@ function assertOpenRouterCalls(calls) {
   }
 }
 
+test('codeLLM: each model attempt is capped at 60 seconds and a timeout advances to the next model', async () => {
+  const { subject, calls, timeouts } = loadCodeLLM((call, index) => {
+    if (index === 0) {
+      const error = new Error('request timed out');
+      error.name = 'TimeoutError';
+      throw error;
+    }
+    return success('fallback after timeout');
+  });
+  const result = await subject.codeLLM({ OPENROUTER_KEYS: 'or-key' }, messages, 110000);
+  assert.ok(calls.length >= 2, 'the next model must be attempted after a timeout');
+  assert.equal(timeouts.length, calls.length, 'every model request must receive a timeout signal');
+  assert.ok(timeouts.every(ms => ms > 0 && ms <= 60000), 'no model request may exceed 60 seconds');
+  assert.equal(timeouts[0], 60000, 'the first model receives the full 60-second allowance');
+  assert.equal(result.text, 'fallback after timeout');
+});
+
 test('codeLLM: only Toter keys produce no fetch calls and no usable reply', async () => {
   const { subject, calls, timeouts } = loadCodeLLM();
   const result = await subject.codeLLM(toterEnv, messages);
