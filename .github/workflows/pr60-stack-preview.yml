@@ -52,8 +52,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes wrangler@4 kv namespace create "openmanus-gateway-pr60-preview" --json > /tmp/preview-kv.json
-          KV_ID="$(python3 -c 'import json; d=json.load(open("/tmp/preview-kv.json")); print(d["id"])')"
+          npx --yes wrangler@4 kv namespace create "openmanus-gateway-pr60-preview" 2>&1 | tee /tmp/preview-kv.log
+          KV_ID="$(python3 -c 'import re; s=open("/tmp/preview-kv.log").read(); m=re.search(r"""id\\s*=\\s*["']([0-9a-fA-F]+)["']""", s); print(m.group(1) if m else "")')"
           test -n "$KV_ID"
           echo "kv_id=$KV_ID" >> "$GITHUB_OUTPUT"
 
