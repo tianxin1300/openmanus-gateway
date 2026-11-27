@@ -229,7 +229,7 @@ npm test
 
 ### WORKBENCH-06 — 权限边界与操作者审计
 
-**自动化测试：** `ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, save, review, merge, discard, preview, or roll back; authorized actions are attributed`
+**自动化测试：** `ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, save, review, merge, discard, preview, or roll back; authorized actions are attributed`；`ACCEPTANCE WORKBENCH-AUTH-ROUTE-01: workbench HTTP routes reject missing, invalid and expired tokens before dispatch`
 
 **测试覆盖：**
 - 非授权用户及自动化身份尝试创建临时分支、编辑器保存、审核文件、合并推送、丢弃分支、触发预览和历史回滚。
@@ -242,7 +242,7 @@ npm test
 
 **通过条件：** 未授权操作没有 GitHub 写调用；授权操作的创建、审核和合并历史均可追溯到认证用户。
 
-**边界：** 当前权限测试直接调用工作台函数并注入身份，不模拟 `userFromReq` 的真实 token 验证、失效 token 或 HTTP 路由；这些仍需独立 API 集成验收。
+**边界：** HTTP 路由测试执行 Worker 中真实的 `userFromReq` 与工作台路由分支，覆盖缺失、无效、过期和有效 Bearer token；GitHub/KV 仍使用隔离模拟，不代表真实 Cloudflare 网络、真实登录账号或 GitHub 权限的生产端到端验收。
 
 ### WORKBENCH-07 — 重复执行与幂等性
 
