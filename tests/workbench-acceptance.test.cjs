@@ -176,7 +176,7 @@ test('ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restore
 
 test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, review, or merge; authorized actions are attributed', async () => {
   const repo = 'tianxin1300/openmanus-gateway';
-  const guard = runFunction(sourceOf('function codePushGuard(', '// 口令:'), 'codePushGuard', {
+  const guard = runFunction(sourceOf('function codePushGuard(', 'function codeParse('), 'codePushGuard', {
     codeRepoOk: () => true, codePathOk: () => true, codePathProtected: () => false
   });
   const env = { GH_PAT: 'test-token', CODE_OWNER: 'owner', CODE_REPOS: repo, KV: {
@@ -272,8 +272,9 @@ test('ACCEPTANCE IDEMPOTENCY-01: repeated create reuses one branch and repeated 
     codeVerifyRef: x => x, codePathOk: () => true
   });
   const mergeEnv = { KV: kv };
-  const one = await merge(mergeEnv, 'owner', { repo, branch: record.branch });
-  const two = await merge(mergeEnv, 'owner', { repo, branch: record.branch });
+  const branchName = record.branch;
+  const one = await merge(mergeEnv, 'owner', { repo, branch: branchName });
+  const two = await merge(mergeEnv, 'owner', { repo, branch: branchName });
   assert.equal(one.ok, true);
   assert.equal(two.ok, false, 'a completed merge replay must not be accepted as a second merge');
   assert.equal(mergeCalls, 1);
@@ -296,6 +297,7 @@ test('ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rej
     codeRepoOk: () => true, codePathOk: () => true, codePushGuard: () => '',
     codeWorkbenchBranchCurrent: async () => ({ ok: true, active: true, ...record }),
     codeWorkbenchBranchKey: () => 'key',
+    codeGhUrl: (r, p) => 'https://api.github.com/repos/' + r + '/contents/' + p,
     codeGetFile: async (_e, _r, p, ref) => {
       const row = files[p]; if (!row) return { ok: true, exists: false };
       const value = ref === 'base' ? row.base : row.branch;
