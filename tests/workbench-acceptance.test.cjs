@@ -889,6 +889,7 @@ test('ACCEPTANCE WORKBENCH-LOCK-RENEW-01: only the current unexpired owner can r
     return response.json();
   };
   const acquired = await call('branch-lock', 'owner');
+  await new Promise(resolve => setTimeout(resolve, 5));
   const renewed = await call('branch-renew', 'owner');
   assert.equal(renewed.renewed, true);
   assert.ok(renewed.expires_at > acquired.expires_at);
