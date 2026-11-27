@@ -553,11 +553,30 @@ async function codeRollback(env, user, body) {
   if (!item || !item.previous_sha) return { ok: false, msg: "没有可回滚的上一版本" };
   const repo = item.repo, base = codeVerifyRef(item.baseBranch || "main");
   if (!codeRepoOk(env, repo) || !base) return { ok: false, msg: "回滚目标不合法" };
-  const changed = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + base), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sha: item.previous_sha, force: true }) });
-  if (!changed.ok) return { ok: false, msg: "回滚失败：" + changed.msg };
-  const rec = { id: "rollback-" + Date.now().toString(36), repo, baseBranch: base, commit_sha: item.previous_sha, previous_sha: item.commit_sha, summary: "回滚：" + item.summary, at: new Date().toISOString(), rollback: true };
+
+  // 回滚不移动/重写历史指针：用目标旧版本的 tree 创建一个以当前 HEAD 为父提交的新 commit。
+  const head = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + base));
+  const currentSha = String(head.data && head.data.object && head.data.object.sha || "");
+  if (!head.ok || !currentSha) return { ok: false, msg: "读取当前分支失败：" + (head.msg || "没有 commit SHA") };
+  const target = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/commits/" + encodeURIComponent(item.previous_sha));
+  const targetTree = String(target.data && target.data.tree && target.data.tree.sha || "");
+  if (!target.ok || !targetTree) return { ok: false, msg: "读取回滚目标版本失败：" + (target.msg || "没有 tree SHA") };
+  const created = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/commits", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "Rollback: " + String(item.summary || item.id || "previous version").slice(0, 140), tree: targetTree, parents: [currentSha] })
+  });
+  const newSha = String(created.data && created.data.sha || "");
+  if (!created.ok || !newSha) return { ok: false, msg: "创建回滚提交失败：" + (created.msg || "GitHub 没有返回 commit SHA") };
+  const moved = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + base), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sha: newSha, force: false })
+  });
+  if (!moved.ok) return { ok: false, msg: "回滚提交已创建，但分支未更新（可能有并发提交）：" + moved.msg };
+  const rec = { id: "rollback-" + Date.now().toString(36), repo, project: item.project, baseBranch: base, commit_sha: newSha, previous_sha: currentSha, target_sha: item.previous_sha, summary: "回滚：" + item.summary, files: item.files || [], at: new Date().toISOString(), rollback: true };
   await codeHistorySave(env, user, [rec, ...rows]);
-  return { ok: true, ...rec, reply: "已回滚到 " + item.previous_sha.slice(0, 12) };
+  return { ok: true, ...rec, reply: "已创建回滚提交并恢复到目标版本内容：" + newSha.slice(0, 12) };
 }
 const CODE_DEPLOY_WORKFLOW = "deploy-project.yml";
 const CODE_WORKER_DEPLOY_WORKFLOW = "deploy-worker.yml";
