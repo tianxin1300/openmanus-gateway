@@ -96,8 +96,8 @@ try {
     method: "POST",
     body: { repo, project: `runtime-e2e-${runId}`, base: baseBranch }
   });
+  tempBranch = created.branch || "";
   assert.equal(created.ok, true, `real branch/create route failed: ${created.msg || ""}`);
-  tempBranch = created.branch;
   assert.ok(tempBranch.startsWith("code/"), "Worker must create a guarded code/ branch");
 
   // A second create call must return the same persisted branch, not create another one.
