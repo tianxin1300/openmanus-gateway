@@ -696,6 +696,7 @@ async function codeRollback(env, user, body) {
   if (!item || !item.previous_sha) return { ok: false, msg: "没有可回滚的上一版本" };
   const repo = item.repo, base = codeVerifyRef(item.baseBranch || "main");
   if (!codeRepoOk(env, repo) || !base) return { ok: false, msg: "回滚目标不合法" };
+  const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
 
   // 回滚不移动/重写历史指针：用目标旧版本的 tree 创建一个以当前 HEAD 为父提交的新 commit。
   const head = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + base));
