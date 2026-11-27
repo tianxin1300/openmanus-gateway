@@ -2,12 +2,15 @@ name: pr60-stack-preview
 run-name: PR #60 stack preview · ${{ github.event.pull_request.head.sha || github.sha }}
 
 on:
+  push:
+    branches: [code/cron-automation-token-20261128]
   pull_request:
     types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
-  pull-requests: write\n  issues: write
+  pull-requests: write
+  issues: write
 
 concurrency:
   group: pr60-stack-preview
@@ -134,12 +137,12 @@ jobs:
             const pages = new URL(process.env.PAGES_URL);
             pages.searchParams.set("gateway", process.env.WORKER_URL);
             const marker = "<!-- pr60-stack-preview -->";
-            const body = marker + "\\n## PR #60 前后端联动预览\\n" +
-              "- Commit: \`" + process.env.DEPLOY_SHA + "\`\\n" +
-              "- 前端 Pages 预览： " + pages.toString() + "\\n" +
-              "- Worker 预览 API： " + process.env.WORKER_URL + "\\n" +
-              "- 隔离 KV：独立预览命名空间，不连接正式用户数据\\n" +
-              "- API 验证：注册预览账号、读取状态、生成、检查权限隔离、撤销，全部通过。\\n" +
+            const body = marker + "\n## PR #60 前后端联动预览\n" +
+              "- Commit: \`" + process.env.DEPLOY_SHA + "\`\n" +
+              "- 前端 Pages 预览： " + pages.toString() + "\n" +
+              "- Worker 预览 API： " + process.env.WORKER_URL + "\n" +
+              "- 隔离 KV：独立预览命名空间，不连接正式用户数据\n" +
+              "- API 验证：注册预览账号、读取状态、生成、检查权限隔离、撤销，全部通过。\n" +
               "仅预览，不合并 main，不部署正式 Worker。";
             const { owner, repo } = context.repo;
             const issue_number = 60;
