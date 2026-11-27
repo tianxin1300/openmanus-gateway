@@ -37,3 +37,102 @@ jobs:
 
       - name: Build checks
         run: npm run build
+
+      # A disposable GitHub API integration test. It is intentionally limited
+      # to same-repository PRs and never targets main. The generated PR's own
+      # workflow run skips this step to prevent recursive test-PR creation.
+      - name: GitHub branch and pull-request lifecycle E2E
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-') }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const runKey = `${context.runId}-${context.runAttempt}`;
+            const baseBranch = `e2e/workbench-${runKey}-base`;
+            const headBranch = `e2e/workbench-${runKey}-head`;
+            const filePath = `e2e-workbench-${runKey}.txt`;
+            const baseSha = context.payload.pull_request.head.sha;
+            let baseCreated = false;
+            let headCreated = false;
+            let pullNumber = null;
+            let failure = null;
+            const mainBefore = (await github.rest.git.getRef({ owner, repo, ref: 'heads/main' })).data.object.sha;
+
+            try {
+              await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${baseBranch}`, sha: baseSha });
+              baseCreated = true;
+              await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${headBranch}`, sha: baseSha });
+              headCreated = true;
+
+              const sourceCommit = await github.rest.git.getCommit({ owner, repo, commit_sha: baseSha });
+              const blob = await github.rest.git.createBlob({
+                owner, repo,
+                content: `GitHub API lifecycle probe for Actions run ${runKey}\n`,
+                encoding: 'utf-8'
+              });
+              const tree = await github.rest.git.createTree({
+                owner, repo,
+                base_tree: sourceCommit.data.tree.sha,
+                tree: [{ path: filePath, mode: '100644', type: 'blob', sha: blob.data.sha }]
+              });
+              const commit = await github.rest.git.createCommit({
+                owner, repo,
+                message: `test: disposable workbench E2E ${runKey}`,
+                tree: tree.data.sha,
+                parents: [baseSha]
+              });
+              await github.rest.git.updateRef({
+                owner, repo, ref: `heads/${headBranch}`,
+                sha: commit.data.sha, force: false
+              });
+
+              const pull = await github.rest.pulls.create({
+                owner, repo,
+                title: `[E2E cleanup] workbench GitHub API ${runKey}`,
+                head: headBranch,
+                base: baseBranch,
+                body: 'Disposable integration-test PR. This PR is created and closed by the workflow; it must never be merged.'
+              });
+              pullNumber = pull.data.number;
+              core.info(`Created disposable PR #${pullNumber} between ${headBranch} and ${baseBranch}`);
+              const check = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+              if (check.data.state !== 'open' || check.data.merged) {
+                throw new Error('Disposable PR did not enter the expected open, unmerged state');
+              }
+            } catch (error) {
+              failure = error;
+            } finally {
+              if (pullNumber !== null) {
+                try {
+                  await github.rest.pulls.update({ owner, repo, pull_number: pullNumber, state: 'closed' });
+                  const closed = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+                  if (closed.data.state !== 'closed' || closed.data.merged) {
+                    throw new Error(`PR #${pullNumber} was not closed without merging`);
+                  }
+                } catch (error) {
+                  failure = failure || error;
+                  core.error(`Failed to close disposable PR #${pullNumber}: ${error.message}`);
+                }
+              }
+              for (const [branch, created] of [[headBranch, headCreated], [baseBranch, baseCreated]]) {
+                if (!created) continue;
+                try {
+                  await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` });
+                } catch (error) {
+                  failure = failure || error;
+                  core.error(`Failed to delete disposable branch ${branch}: ${error.message}`);
+                }
+              }
+              try {
+                const mainAfter = (await github.rest.git.getRef({ owner, repo, ref: 'heads/main' })).data.object.sha;
+                if (mainAfter !== mainBefore) {
+                  throw new Error(`main moved during E2E: before=${mainBefore}, after=${mainAfter}`);
+                }
+              } catch (error) {
+                failure = failure || error;
+              }
+            }
+
+            if (failure) throw failure;
+            core.info('PASS: disposable branches and PR were created, verified, closed, and deleted; main SHA remained unchanged.');
