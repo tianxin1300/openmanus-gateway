@@ -614,7 +614,7 @@ test('ACCEPTANCE WORKBENCH-CONCURRENCY-01: simultaneous branch operations are se
   assert.equal(held, false, 'lock is released after the operation finishes');
 });
 
-test('ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01: create and merge refuse to run without CODE_CLAIMS', async () => {
+test('ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01: create, save and merge refuse to run without CODE_CLAIMS', async () => {
   const helper = sourceOf('async function codeWorkbenchWithLock(', 'async function codeWorkbenchBranchCurrent(');
   const createWrapper = sourceOf('async function codeWorkbenchBranchCreate(', 'async function codeWorkbenchBranchDiff(');
   const mergeWrapper = sourceOf('async function codeWorkbenchBranchMerge(', 'async function codeMemoryAppend(');
@@ -635,7 +635,7 @@ test('ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01: create and merge refuse to run w
 });
 
 
-test('ACCEPTANCE WORKBENCH-LOCK-SCOPE-01: review and discard also acquire the repository write lock', async () => {
+test('ACCEPTANCE WORKBENCH-LOCK-SCOPE-01: save, review and discard also acquire the repository write lock', async () => {
   const calls = [];
   const lock = async (_env, _user, repo, operation, run) => {
     calls.push({ repo, operation });
