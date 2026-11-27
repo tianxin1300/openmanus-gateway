@@ -125,23 +125,38 @@ jobs:
           STATUS="$(curl --silent --output /tmp/automation-denied.json --write-out '%{http_code}' "$WORKER_URL/api/automation-token" -H "Authorization: Bearer $AUTOMATION_TOKEN")"
           test "$STATUS" = "401" || { echo "::error::Automation token unexpectedly accessed its management endpoint"; exit 1; }
 
-          # Exercise the actual codeLLM route with the freshly created isolated automation token.
-          PROMPT="这是 PR #60 隔离预览的只读模型连通性测试。请只回复固定文本 CRON_AGENT_PREVIEW_OK。不要读取仓库文件，不要调用工具，不要修改文件，不要创建 PR 或部署。"
+          # Ask the real model to perform a bounded review of codeLLM() from this exact checked-out commit.
+          CODE_LLM_SOURCE="$(sed -n '/^async function codeLLM(env, msgs, budgetMs)/,/^\/\/ GitHub 读写/p' worker.js | sed '$d')"
+          test -n "$CODE_LLM_SOURCE" || { echo "::error::Could not extract codeLLM() from the checked-out source"; exit 1; }
+          PROMPT="$(printf '%s\\n' \
+            '实际工程任务：审查下面从本次 PR commit 的 worker.js 原样提取的 codeLLM() 函数。请真正阅读代码并完成故障切换审查，不要只回复连通性标记。' \
+            '请用中文给出：' \
+            '1. 模型、Key 两层循环的实际执行顺序；' \
+            '2. HTTP 429、5xx、404 分别如何处理，是否会尝试下一个模型；' \
+            '3. TimeoutError 如何处理，60 秒 AbortSignal 超时后是否会继续；' \
+            '4. 结合代码指出一个真实边界风险或明确说明没有发现；' \
+            '5. 给出最小且可验证的测试建议。' \
+            '必须区分代码能证明的行为与无法从代码证明的线上行为，不要臆造模型供应商实测结果。' \
+            '' '待审查源码：' "$CODE_LLM_SOURCE")"
           BODY="$(jq -nc --arg prompt "$PROMPT" '{model:"claude-sonnet-4-5",provider:"OpenRouter",stream:false,message:$prompt,messages:[{role:"user",content:$prompt}],code_budget_ms:420000}')"
           MODEL_STATUS="$(curl --silent --show-error --max-time 480 --output /tmp/pr60-model-smoke.json --write-out '%{http_code}' "$WORKER_URL/v1/chat/completions" -H 'Content-Type: application/json' -H "Authorization: Bearer $AUTOMATION_TOKEN" --data "$BODY")"
           if [ "$MODEL_STATUS" != "200" ]; then
-            echo "::error::Isolated codeLLM smoke returned HTTP $MODEL_STATUS"
+            echo "::error::Isolated codeLLM engineering task returned HTTP $MODEL_STATUS"
             jq -r '.error // .choices[0].message.content // "No error details returned"' /tmp/pr60-model-smoke.json | head -c 1000
             exit 1
           fi
           ANSWER="$(jq -r '.choices[0].message.content // .reply // empty' /tmp/pr60-model-smoke.json)"
-          if [[ "$ANSWER" != *"CRON_AGENT_PREVIEW_OK"* ]]; then
-            echo "::error::No real model response marker; codeLLM may have exhausted its free model pool."
-            printf '%s' "$ANSWER" | head -c 1000
+          if [ "${#ANSWER}" -lt 180 ] || [[ "$ANSWER" != *"429"* ]] || [[ "$ANSWER" != *"404"* ]]; then
+            echo "::error::Model response did not complete the requested source-based engineering review."
+            printf '%s\\n' "$ANSWER" | head -c 3000
             exit 1
           fi
-          echo "PASS: real isolated codeLLM model call returned CRON_AGENT_PREVIEW_OK."
-          echo "Response characters: ${#ANSWER}; model response content was not printed."
+          echo "PASS: real codeLLM model completed the source-based engineering review."
+          echo "----- MODEL-GENERATED REVIEW (from this exact commit) -----"
+          printf '%s\\n' "$ANSWER" | head -c 6000
+          echo
+          echo "----- END MODEL-GENERATED REVIEW -----"
+          echo "Response characters: ${#ANSWER}"
 
           curl --fail-with-body --silent --show-error -X DELETE "$WORKER_URL/api/automation-token" "${AUTH[@]}" >/tmp/automation-revoke.json
           AFTER="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/automation-token" "${AUTH[@]}")"
