@@ -2008,6 +2008,7 @@ test('CodeClaimDO: automatic repair is single-flight, bounded and re-verifies af
   assert.equal(claimed.status, 200);
   assert.equal(storage.value.pending.status, 'repairing');
   assert.equal(storage.value.pending.repair_attempts, 1);
+  assert.ok(events.includes(storage.value.pending.repair_expires_at), 'repair expiry must be armed as a Durable Object alarm');
   const duplicate = await call('repair-claim', { pending_id: 'repair-1', request_id: 'req-1', run_id: 'run-1' });
   assert.equal(duplicate.status, 409);
   const finished = await call('repair-finish', {
