@@ -5958,6 +5958,7 @@ const bestPlace = (list, q) => {
     <div id="wb-runlogs" aria-label="Pages 与 Worker 运行日志" hidden>
       <div id="wb-runlogs-title" class="wb-runlogs-title">运行日志（历史记录 · Pages · Worker）</div>
       <div id="wb-history" aria-label="历史运行日志"></div>
+      <section id="wb-run-detail" class="wb-logbox" aria-live="polite" aria-label="任务最终状态"><div class="wb-logtitle">选择一条历史任务查看 Runner 最终状态</div><pre id="wb-run-detail-content">打开「运行日志」后会自动读取历史记录。选择「同时启动」任务可查看 Runner 对 Pages 和 Worker 的分别确认结果。</pre><div id="wb-run-detail-links"></div></section>
       <div class="wb-logbox"><div class="wb-logtitle">Pages 前端日志 · <a id="wb-pages-run-link" href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/45809262138" target="_blank" rel="noopener">打开 Pages Actions Run</a></div><pre id="wb-front-log"></pre></div>
       <div class="wb-logbox"><div class="wb-logtitle">Worker 后端日志 · <a id="wb-worker-run-link" href="https://github.com/tianxin1300/openmanus-gateway/actions/runs/45809265485" target="_blank" rel="noopener">打开 Worker Actions Run</a></div><pre id="wb-back-log"></pre></div>
     </div>
@@ -6302,20 +6303,64 @@ function verifyLink(label, href) {
   if (!href || !/^https?:\/\//i.test(String(href))) return null;
   const a = document.createElement("a"); a.href = href; a.target = "_blank"; a.rel = "noopener"; a.textContent = label; a.style.cssText = "display:inline-block;margin:8px 10px 0 0;color:#83d6a0;text-decoration:underline"; return a;
 }
+function runnerStateLabel(value) {
+  const state=String(value||"unknown").toLowerCase();
+  return ({success:"成功",failure:"失败",running:"运行中",queued:"排队中",in_progress:"运行中",completed:"已完成",unknown:"未知"}[state]||String(value||"未知"));
+}
+function renderBothRunnerDetail(record) {
+  const content=g("wb-run-detail-content"), links=g("wb-run-detail-links"), title=g("wb-run-detail")?.querySelector(".wb-logtitle");
+  if(!content||!links)return;
+  const id=String(record.run_id||record.request_id||"");
+  if(title)title.textContent="同时启动 · Runner 最终状态 · "+id;
+  const lines=[
+    "任务 ID："+(id||"未知"),
+    "Runner 状态："+runnerStateLabel(record.state),
+    "Runner 更新时间："+(record.watch_updated_at||record.updated_at||"尚无更新时间"),
+    "Runner 监控错误："+(record.watch_error||"无"),
+    "总状态："+runnerStateLabel(record.conclusion||record.state||record.status)
+  ];
+  (Array.isArray(record.runs)?record.runs:[]).forEach(run=>{
+    lines.push("",(run.kind==="worker"?"Worker":"Pages")+" 工作流："+(run.workflow||"未知"),"Actions 状态："+runnerStateLabel(run.conclusion||run.status),"Run ID："+(run.run_id||"尚未关联"),"派发错误："+(run.dispatch_error||"无"),"监控错误："+(run.watch_error||"无"));
+    if(run.failed_step)lines.push("失败步骤："+run.failed_step);
+    if(Array.isArray(run.error_lines)&&run.error_lines.length)lines.push("错误摘要："+run.error_lines.join("\n"));
+  });
+  content.textContent=lines.join("\n");
+  links.innerHTML="";
+  const mainLink=verifyLink("打开任务 Actions",record.run_url); if(mainLink)links.appendChild(mainLink);
+  (Array.isArray(record.runs)?record.runs:[]).forEach(run=>{const link=verifyLink((run.kind==="worker"?"Worker":"Pages")+" Actions",run.run_url);if(link)links.appendChild(link);});
+}
 async function loadRunHistory() {
+  const history=g("wb-history"), title=g("wb-runlogs-title");
+  if(!history)return;
+  history.textContent="正在读取历史任务…";
   try {
     const r=await authFetch(GATEWAY+"/api/code/runs",{cache:"no-store"}), d=await r.json().catch(()=>({}));
-    if(!r.ok||!d.ok)return;
-    const history=g("wb-history"); if(!history)return; history.innerHTML="";
-    (d.runs||[]).slice(0,20).forEach(x=>{
-      const b=document.createElement("button"); b.type="button"; b.className="sec";
-      b.textContent=(x.kind==="deploy"?"Pages":x.kind==="worker"?"Worker":"验证")+" · "+(x.state||x.status||"未知")+" · "+String(x.run_id||"").slice(-12);
-      b.onclick=async()=>{const q=await authFetch(GATEWAY+"/api/code/logs?run_id="+encodeURIComponent(x.run_id),{cache:"no-store"}),j=await q.json().catch(()=>({}));if(j.ok)renderVerifyResult({...j,state:j.state||x.state,fromHistory:true});else toast(j.msg||"读取日志失败");};
+    if(!r.ok||!d.ok)throw new Error(d.msg||("读取历史任务失败（HTTP "+r.status+"）"));
+    history.innerHTML="";
+    const runs=Array.isArray(d.runs)?d.runs:[];
+    runs.slice(0,50).forEach(x=>{
+      const id=String(x.run_id||x.request_id||"");
+      const kind=x.kind==="both"?"同时启动":x.kind==="deploy"?"Pages":x.kind==="worker"?"Worker":"验证";
+      const b=document.createElement("button"); b.type="button"; b.className="sec"; b.dataset.runId=id;
+      b.textContent=kind+" · "+runnerStateLabel(x.state||x.status||x.conclusion)+" · "+id;
+      b.style.cssText="display:block;width:100%;max-width:100%;margin:4px 0;text-align:left;overflow-wrap:anywhere;white-space:normal";
+      b.onclick=async()=>{
+        const detail=g("wb-run-detail-content"); if(detail)detail.textContent="正在读取任务 "+id+" 的持久化记录…";
+        try{
+          const q=await authFetch(GATEWAY+"/api/code/logs?run_id="+encodeURIComponent(id),{cache:"no-store"}),j=await q.json().catch(()=>({}));
+          if(!q.ok||!j.ok)throw new Error(j.msg||("读取任务记录失败（HTTP "+q.status+"）"));
+          if(x.kind==="both"||j.kind==="both")renderBothRunnerDetail({...j,run_id:j.run_id||id});
+          else renderVerifyResult({...j,state:j.state||x.state,fromHistory:true});
+        }catch(error){if(detail)detail.textContent="历史任务读取失败："+(error.message||String(error));}
+      };
       history.appendChild(b);
     });
-    const title=g("wb-runlogs-title");
-    if(title)title.textContent="运行日志（历史 "+Math.min((d.runs||[]).length,20)+" 条 · Pages · Worker）";
-  } catch (_) {}
+    if(!runs.length)history.textContent="当前账号暂无历史任务记录。";
+    if(title)title.textContent="运行日志（历史 "+Math.min(runs.length,50)+" 条 · Pages · Worker · 同时启动）";
+  } catch (error) {
+    history.textContent="历史记录加载失败："+(error.message||String(error));
+    if(title)title.textContent="运行日志（历史记录读取失败）";
+  }
 }
 let pagesHealthProbe = {run_id:"", state:"idle", status:null, error:"", promise:null};
 let latestParallelData = null;
@@ -6681,7 +6726,7 @@ function setTerminalPanel(panel) {
   g("wb-runlogs-tab").setAttribute("aria-selected", String(showLogs));
 }
 g("wb-terminal-tab").addEventListener("click", () => setTerminalPanel("terminal"));
-g("wb-runlogs-tab").addEventListener("click", () => setTerminalPanel("logs"));
+g("wb-runlogs-tab").addEventListener("click", () => { setTerminalPanel("logs"); loadRunHistory(); });
 function appendTerminalCommand(command) {
   const output = g("wb-terminal-output");
   if (!output) return;
