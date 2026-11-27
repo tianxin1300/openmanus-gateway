@@ -176,10 +176,11 @@ test('ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restore
 
   const rows = [{ id: 'history-1', repo: 'tianxin1300/openmanus-gateway', baseBranch: 'main', previous_sha: 'target-commit', files: ['app.js'], summary: 'change app' }];
   let createdCommit, movedRef;
-  const rollback = runFunction(sourceOf('async function codeRollback(', 'const CODE_DEPLOY_WORKFLOW'), 'codeRollback', {
+  const rollback = runFunction(sourceOf('async function codeRollbackUnlocked(', 'const CODE_DEPLOY_WORKFLOW'), 'codeRollback', {
     codeHistoryLoad: async () => rows,
     codeHistorySave: async (_env, _user, next) => { rows.splice(0, rows.length, ...next); },
     codeVerifyRef: x => x, codeRepoOk: () => true, codePushGuard: () => '',
+    codeWorkbenchWithLock: async (_env, _user, _repo, operation, run) => { assert.equal(operation, 'rollback'); return run(); },
     codePathOk: p => typeof p === 'string' && !!p && !p.includes('..') && !p.startsWith('/'),
     codeGitRefUrl: (repo, ref) => 'https://api.github.com/repos/' + repo + '/git/ref/' + ref,
     codeGhApi: async (_env, url, options = {}) => {
@@ -220,6 +221,35 @@ test('ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restore
   assert.equal(createdCommit.parents[0], 'current-commit');
   assert.equal(movedRef, 'rollback-commit');
 });
+  
+test('ACCEPTANCE WORKBENCH-ROLLBACK-LOCK-01: history rollback acquires the repository write lock', async () => {
+  const calls = [];
+  const rollback = runFunction(sourceOf('async function codeRollbackUnlocked(', 'const CODE_DEPLOY_WORKFLOW'), 'codeRollback', {
+    codeHistoryLoad: async () => [{ id: 'history-locked', repo: 'owner/repo', previous_sha: 'previous' }],
+    codeWorkbenchWithLock: async (_env, user, repo, operation, run) => {
+      calls.push({ user, repo, operation });
+      return { ok: true, locked: true };
+    }
+  });
+  const result = await rollback({}, 'owner', { id: 'history-locked' });
+  assert.equal(result.ok, true);
+  assert.equal(result.locked, true);
+  assert.deepEqual(calls, [{ user: 'owner', repo: 'owner/repo', operation: 'rollback' }]);
+});
+
+test('ACCEPTANCE WORKBENCH-RENAME-DIFF-01: branch diff preserves the previous filename for UI rejection', async () => {
+  const diff = runFunction(sourceOf('async function codeWorkbenchBranchDiff(', 'async function codeWorkbenchBranchRejectFileUnlocked('), 'codeWorkbenchBranchDiff', {
+    codeWorkbenchBranchCurrent: async () => ({ ok: true, active: true, branch: 'code/rename', baseBranch: 'main' }),
+    codeGhApi: async () => ({ ok: true, data: { files: [
+      { filename: 'new-name.js', previous_filename: 'old-name.js', status: 'renamed', additions: 1, deletions: 1, patch: '@@ rename' }
+    ] } })
+  });
+  const result = await diff({}, 'owner', 'owner/repo');
+  assert.equal(result.ok, true);
+  assert.equal(result.files[0].path, 'new-name.js');
+  assert.equal(result.files[0].previous_path, 'old-name.js');
+});
+
 
 
 test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, review, or merge; authorized actions are attributed', async () => {
