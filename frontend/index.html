@@ -6516,6 +6516,7 @@ async function runRemoteVerify(retryRecord) {
   if (verifyAbort) { verifyAbort.abort(); verifyAbort = null; }
   if (ciBtn) { ciBtn.disabled = true; ciBtn.textContent = retryingDeploy ? "部署重试中…" : "验证中…"; }
   const statusPath = retryRecord && retryRecord.run_id ? (retryKind === "deploy" ? "/api/code/deploy" : "/api/code/verify") : "/api/code/verify";
+  const timeoutLine = retryingDeploy ? "部署超时：10 分钟内未完成，请打开 Actions 查看运行记录。" : "验证超时：10 分钟内未完成，请打开 Actions 查看运行记录。";
   const started = Date.now(); let polls = 0; let stopped = false;
   const finish = (text, bad = false, label = retryingDeploy ? "部署" : "运行 / 验证") => {
     stopped = true; if (verifyTimer) { clearTimeout(verifyTimer); verifyTimer = null; }
@@ -6525,7 +6526,7 @@ async function runRemoteVerify(retryRecord) {
   const poll = async () => {
     if (stopped) return;
     if (Date.now() - started >= VERIFY_MAX_MS || polls >= VERIFY_MAX_POLLS) {
-      renderVerifyResult({state: "failure", deploy: retryingDeploy, error_lines: ["任务超时：10 分钟内未完成，请打开 Actions 查看运行记录。"]});
+      renderVerifyResult({state: "failure", deploy: retryingDeploy, error_lines: [timeoutLine]});
       finish("任务超时，已恢复按钮", true, retryingDeploy ? "部署" : "重新验证"); return;
     }
     polls++;
