@@ -124,6 +124,25 @@ jobs:
           test "$(printf '%s' "$ACTIVE" | jq -r '.active and (.last4 | length == 4)')" = "true"
           STATUS="$(curl --silent --output /tmp/automation-denied.json --write-out '%{http_code}' "$WORKER_URL/api/automation-token" -H "Authorization: Bearer $AUTOMATION_TOKEN")"
           test "$STATUS" = "401" || { echo "::error::Automation token unexpectedly accessed its management endpoint"; exit 1; }
+
+          # Exercise the actual codeLLM route with the freshly created isolated automation token.
+          PROMPT="这是 PR #60 隔离预览的只读模型连通性测试。请只回复固定文本 CRON_AGENT_PREVIEW_OK。不要读取仓库文件，不要调用工具，不要修改文件，不要创建 PR 或部署。"
+          BODY="$(jq -nc --arg prompt "$PROMPT" '{model:"claude-sonnet-4-5",provider:"OpenRouter",stream:false,message:$prompt,messages:[{role:"user",content:$prompt}],code_budget_ms:420000}')"
+          MODEL_STATUS="$(curl --silent --show-error --max-time 480 --output /tmp/pr60-model-smoke.json --write-out '%{http_code}' "$WORKER_URL/v1/chat/completions" -H 'Content-Type: application/json' -H "Authorization: Bearer $AUTOMATION_TOKEN" --data "$BODY")"
+          if [ "$MODEL_STATUS" != "200" ]; then
+            echo "::error::Isolated codeLLM smoke returned HTTP $MODEL_STATUS"
+            jq -r '.error // .choices[0].message.content // "No error details returned"' /tmp/pr60-model-smoke.json | head -c 1000
+            exit 1
+          fi
+          ANSWER="$(jq -r '.choices[0].message.content // .reply // empty' /tmp/pr60-model-smoke.json)"
+          if [[ "$ANSWER" != *"CRON_AGENT_PREVIEW_OK"* ]]; then
+            echo "::error::No real model response marker; codeLLM may have exhausted its free model pool."
+            printf '%s' "$ANSWER" | head -c 1000
+            exit 1
+          fi
+          echo "PASS: real isolated codeLLM model call returned CRON_AGENT_PREVIEW_OK."
+          echo "Response characters: ${#ANSWER}; model response content was not printed."
+
           curl --fail-with-body --silent --show-error -X DELETE "$WORKER_URL/api/automation-token" "${AUTH[@]}" >/tmp/automation-revoke.json
           AFTER="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/automation-token" "${AUTH[@]}")"
           test "$(printf '%s' "$AFTER" | jq -r '.ok and (.active == false)')" = "true"
