@@ -21,6 +21,8 @@ function fixtures() {
 }
 
 async function installApiFixtures(page, state) {
+  await page.route("**/api/history", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, history: [] }) }));
+
   await page.route("**/api/code/**", async route => {
     const req = route.request();
     const url = new URL(req.url());
@@ -127,6 +129,7 @@ async function openWorkbench(page) {
 }
 
 test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("openmanus_token", "playwright-ui-token"));
   page.on("dialog", dialog => dialog.accept());
 });
 
