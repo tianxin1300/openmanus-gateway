@@ -1615,6 +1615,10 @@ test('workbench history loads on tab open and exposes full both Runner state', (
   assert.ok(script.includes('x.kind==="both"?"同时启动"'));
   assert.ok(script.includes('record.watch_updated_at'));
   assert.ok(script.includes('run.watch_error'));
-  assert.ok(script.includes('renderBothRunnerDetail'));
+  assert.ok(script.includes('function renderRunnerRecordDetail(record)'));
+  assert.ok(script.includes('renderRunnerRecordDetail({...j,run_id:j.run_id||j.request_id||id})'));
+  assert.ok(script.includes('CodeRunnerDO Runner 持久化记录'));
+  assert.ok(script.includes('任务 KV 持久化记录'));
+  assert.ok(!script.includes('else renderVerifyResult({...j,state:j.state||x.state,fromHistory:true})'));
   assert.ok(script.includes('历史记录加载失败'));
 });
