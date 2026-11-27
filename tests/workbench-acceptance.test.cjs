@@ -897,3 +897,110 @@ test('ACCEPTANCE WORKBENCH-LOCK-RENEW-01: only the current unexpired owner can r
   assert.equal(stale.stale, true);
   assert.equal((await call('branch-unlock', 'owner')).released, true);
 });
+
+
+test('ACCEPTANCE MERGE-CAS-01: merge updates the target ref only from the exact reviewed base SHA', async () => {
+  const calls = [];
+  const baseSha = 'a'.repeat(40), headSha = 'b'.repeat(40), previewSha = 'c'.repeat(40), treeSha = 'd'.repeat(40), finalSha = 'e'.repeat(40);
+  const merge = runFunction(sourceOf('async function codeMergeTempBranch(', 'const codeHistoryKey ='), 'codeMergeTempBranch', {
+    codeVerifyRef: x => x,
+    codeGitRefUrl: (_repo, ref) => 'https://api.github.com/git/ref/' + ref,
+    codeTempBranch: () => 'code/merge-txn-test',
+    codeDeleteBranch: async (_env, _repo, branch) => { calls.push(['DELETE', branch]); return { ok: true }; },
+    codeGhApi: async (_env, url, options = {}) => {
+      const body = options.body ? JSON.parse(options.body) : {};
+      calls.push([options.method || 'GET', url, body]);
+      if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: baseSha } } };
+      if (url.endsWith('/heads/code/review')) return { ok: true, data: { object: { sha: headSha } } };
+      if (url.endsWith('/git/refs') && options.method === 'POST') return { ok: true, data: {} };
+      if (url.endsWith('/merges')) return { ok: true, data: { sha: previewSha, commit: { tree: { sha: treeSha } } } };
+      if (url.endsWith('/git/commits') && options.method === 'POST') return { ok: true, data: { sha: finalSha } };
+      if (url.endsWith('/heads/main') && options.method === 'PATCH') return { ok: true, data: {} };
+      if (url.includes('/git/ref/heads/main') && options.method === 'PATCH') return { ok: true, data: {} };
+      throw new Error('unexpected API call: ' + options.method + ' ' + url);
+    }
+  });
+  const result = await merge({}, 'owner/repo', 'code/review', 'main', 'test merge', baseSha, headSha);
+  assert.equal(result.ok, true);
+  assert.equal(result.cas, true);
+  assert.equal(result.data.sha, finalSha);
+  const commitCall = calls.find(x => x[0] === 'POST' && x[1].endsWith('/git/commits'));
+  assert.equal(commitCall[2].tree, treeSha);
+  assert.deepEqual(commitCall[2].parents, [baseSha, headSha]);
+  const deleteIndex = calls.findIndex(x => x[0] === 'DELETE');
+  const updateIndex = calls.findIndex(x => x[0] === 'PATCH' && x[1].includes('/git/ref/heads/main'));
+  assert.ok(deleteIndex >= 0 && updateIndex > deleteIndex, 'scratch ref is cleaned before target ref update');
+  assert.equal(calls[updateIndex][2].force, false, 'target ref update must be fast-forward only');
+});
+
+test('ACCEPTANCE MERGE-CAS-02: base advancement after merge calculation is rejected by non-fast-forward CAS', async () => {
+  const baseSha = 'a'.repeat(40), headSha = 'b'.repeat(40), treeSha = 'd'.repeat(40);
+  let patched = false;
+  const merge = runFunction(sourceOf('async function codeMergeTempBranch(', 'const codeHistoryKey ='), 'codeMergeTempBranch', {
+    codeVerifyRef: x => x, codeGitRefUrl: (_repo, ref) => 'https://api.github.com/git/ref/' + ref,
+    codeTempBranch: () => 'code/merge-txn-race',
+    codeDeleteBranch: async () => ({ ok: true }),
+    codeGhApi: async (_env, url, options = {}) => {
+      if (url.endsWith('/heads/main') && (!options.method || options.method === 'GET')) return { ok: true, data: { object: { sha: baseSha } } };
+      if (url.endsWith('/heads/code/review')) return { ok: true, data: { object: { sha: headSha } } };
+      if (url.endsWith('/git/refs')) return { ok: true, data: {} };
+      if (url.endsWith('/merges')) return { ok: true, data: { sha: 'c'.repeat(40), commit: { tree: { sha: treeSha } } } };
+      if (url.endsWith('/git/commits')) return { ok: true, data: { sha: 'e'.repeat(40) } };
+      if (url.includes('/git/ref/heads/main') && options.method === 'PATCH') {
+        patched = true;
+        return { ok: false, status: 422, msg: 'Update is not a fast forward' };
+      }
+      throw new Error('unexpected API call ' + options.method + ' ' + url);
+    }
+  });
+  const result = await merge({}, 'owner/repo', 'code/review', 'main', 'test race', baseSha, headSha);
+  assert.equal(patched, true);
+  assert.equal(result.ok, false);
+  assert.equal(result.cas_rejected, true);
+  assert.equal(result.conflict, true);
+});
+
+test('ACCEPTANCE MERGE-CAS-03: base or reviewed head drift is rejected before creating a scratch ref', async () => {
+  const baseSha = 'a'.repeat(40), headSha = 'b'.repeat(40);
+  for (const drift of ['base', 'head']) {
+    let scratchCreated = false;
+    const merge = runFunction(sourceOf('async function codeMergeTempBranch(', 'const codeHistoryKey ='), 'codeMergeTempBranch', {
+      codeVerifyRef: x => x, codeGitRefUrl: (_repo, ref) => 'https://api.github.com/git/ref/' + ref,
+      codeTempBranch: () => 'code/merge-txn-drift',
+      codeDeleteBranch: async () => ({ ok: true }),
+      codeGhApi: async (_env, url, options = {}) => {
+        if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: drift === 'base' ? 'f'.repeat(40) : baseSha } } };
+        if (url.endsWith('/heads/code/review')) return { ok: true, data: { object: { sha: drift === 'head' ? 'f'.repeat(40) : headSha } } };
+        if (url.endsWith('/git/refs')) { scratchCreated = true; return { ok: true, data: {} }; }
+        throw new Error('merge should stop before scratch creation');
+      }
+    });
+    const result = await merge({}, 'owner/repo', 'code/review', 'main', 'test drift', baseSha, headSha);
+    assert.equal(result.ok, false);
+    assert.equal(result.conflict, true);
+    assert.equal(scratchCreated, false);
+  }
+});
+
+test('ACCEPTANCE MERGE-CAS-04: failed scratch cleanup prevents target ref mutation', async () => {
+  const baseSha = 'a'.repeat(40), headSha = 'b'.repeat(40);
+  let targetPatch = false;
+  const merge = runFunction(sourceOf('async function codeMergeTempBranch(', 'const codeHistoryKey ='), 'codeMergeTempBranch', {
+    codeVerifyRef: x => x, codeGitRefUrl: (_repo, ref) => 'https://api.github.com/git/ref/' + ref,
+    codeTempBranch: () => 'code/merge-txn-orphan',
+    codeDeleteBranch: async () => ({ ok: false, status: 500, msg: 'delete denied' }),
+    codeGhApi: async (_env, url, options = {}) => {
+      if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: baseSha } } };
+      if (url.endsWith('/heads/code/review')) return { ok: true, data: { object: { sha: headSha } } };
+      if (url.endsWith('/git/refs')) return { ok: true, data: {} };
+      if (url.endsWith('/merges')) return { ok: true, data: { sha: 'c'.repeat(40), commit: { tree: { sha: 'd'.repeat(40) } } } };
+      if (url.includes('/git/ref/heads/main') && options.method === 'PATCH') targetPatch = true;
+      throw new Error('target branch must not be updated');
+    }
+  });
+  const result = await merge({}, 'owner/repo', 'code/review', 'main', 'test cleanup', baseSha, headSha);
+  assert.equal(result.ok, false);
+  assert.equal(result.scratch_cleanup_failed, true);
+  assert.equal(result.scratch_branch, 'code/merge-txn-orphan');
+  assert.equal(targetPatch, false);
+});
