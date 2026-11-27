@@ -1340,10 +1340,14 @@ async function codeConfirm(env, user, yes, input = {}) {
     return done.ok ? (done.result || result) : { ...result, ok: false, pending: true, reply: result.reply + "（状态写入失败，请刷新确认）" };
   };
   if (!yes) {
-    // v108：丢弃 = 删临时分支（尽力而为，删失败也不把记录留着卡死）→ 一定清掉待处理记录。
-    const removed = await codeDeleteBranch(env, pend.repo, pend.branch);
-    const note = removed.ok ? "临时分支已删除" : removed.status === 404 ? "临时分支本来就不存在" : "⚠️ 临时分支删除失败（" + removed.msg + "），可稍后在 GitHub 手动删 " + pend.branch;
-    return await finish("discarded", { ok: true, discarded: true, consumed: true, status: "discarded", branch_deleted: !!removed.ok, branch_already_gone: removed.status === 404, reply: "好，这次的修改已丢弃：" + note + "，没推到主分支。" }, pend.edits);
+    let removed;
+    try { removed = await codeDeleteBranch(env, pend.repo, pend.branch); }
+    catch (e) { removed = { ok: false, msg: String(e && e.message || e) }; }
+    if (!removed.ok && removed.status !== 404) {
+      return await finish("conflict", { ok: false, pending: true, conflict: true, status: "conflict", branch_deleted: false, reply: "GitHub 临时分支删除失败，待处理记录保留，不能报告丢弃成功：" + (removed.msg || "未知错误") + "。请重试删除。" }, pend.edits);
+    }
+    const alreadyGone = removed.status === 404;
+    return await finish("discarded", { ok: true, discarded: true, consumed: true, status: "discarded", branch_deleted: !!removed.ok, branch_already_gone: alreadyGone, reply: "好，这次的修改已丢弃：" + (removed.ok ? "临时分支已删除" : "临时分支本来就不存在") + "，没推到目标分支。" }, pend.edits);
   }
   const claimedFrom = String(claim.pending && claim.pending.claimed_from_status || "awaiting_approval");
   if (yes && claimedFrom === "verification_passed") {
