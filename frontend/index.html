@@ -6307,27 +6307,40 @@ function runnerStateLabel(value) {
   const state=String(value||"unknown").toLowerCase();
   return ({success:"成功",failure:"失败",running:"运行中",queued:"排队中",in_progress:"运行中",completed:"已完成",unknown:"未知"}[state]||String(value||"未知"));
 }
-function renderBothRunnerDetail(record) {
+function renderRunnerRecordDetail(record) {
   const content=g("wb-run-detail-content"), links=g("wb-run-detail-links"), title=g("wb-run-detail")?.querySelector(".wb-logtitle");
   if(!content||!links)return;
   const id=String(record.run_id||record.request_id||"");
-  if(title)title.textContent="同时启动 · Runner 最终状态 · "+id;
+  const kind=String(record.kind||"unknown");
+  const parallel=kind==="both"||Array.isArray(record.runs);
+  if(title)title.textContent=(kind==="both"?"同时启动":kind==="deploy"?"Pages 部署":kind==="worker"?"Worker 部署":kind==="verify"?"验证任务":"任务")+" · 持久化最终状态 · "+(id||"未知");
+  const updated=record.watch_updated_at||record.updated_at||record.started_at||"暂无更新时间";
   const lines=[
     "任务 ID："+(id||"未知"),
-    "Runner 状态："+runnerStateLabel(record.state),
-    "Runner 更新时间："+(record.watch_updated_at||record.updated_at||"尚无更新时间"),
+    "任务类型："+({both:"同时启动",deploy:"Pages 部署",worker:"Worker 部署",verify:"验证任务"}[kind]||kind),
+    "最终状态："+runnerStateLabel(record.conclusion||record.state||record.status),
+    "持久化记录更新时间："+updated,
+    "记录来源："+(parallel?"CodeRunnerDO Runner 持久化记录":"任务 KV 持久化记录（此类单工作流任务没有独立的并行 Runner 记录）"),
     "Runner 监控错误："+(record.watch_error||"无"),
-    "总状态："+runnerStateLabel(record.conclusion||record.state||record.status)
+    "任务说明："+(record.message||"无")
   ];
-  (Array.isArray(record.runs)?record.runs:[]).forEach(run=>{
-    lines.push("",(run.kind==="worker"?"Worker":"Pages")+" 工作流："+(run.workflow||"未知"),"Actions 状态："+runnerStateLabel(run.conclusion||run.status),"Run ID："+(run.run_id||"尚未关联"),"派发错误："+(run.dispatch_error||"无"),"监控错误："+(run.watch_error||"无"));
-    if(run.failed_step)lines.push("失败步骤："+run.failed_step);
-    if(Array.isArray(run.error_lines)&&run.error_lines.length)lines.push("错误摘要："+run.error_lines.join("\n"));
-  });
+  const childRuns=Array.isArray(record.runs)?record.runs:[];
+  if(childRuns.length){
+    childRuns.forEach(run=>{
+      const label=run.kind==="worker"?"Worker":"Pages";
+      lines.push("",label+" 最终状态："+runnerStateLabel(run.conclusion||run.state||run.status),"工作流："+(run.workflow||"未知"),"Actions 状态："+runnerStateLabel(run.conclusion||run.status),"Run ID："+(run.run_id||"尚未关联"),"派发错误："+(run.dispatch_error||"无"),"监控错误："+(run.watch_error||"无"));
+      if(run.failed_step)lines.push("失败步骤："+run.failed_step);
+      if(Array.isArray(run.error_lines)&&run.error_lines.length)lines.push("错误摘要："+run.error_lines.join("\n"));
+    });
+  }else{
+    const label=kind==="worker"?"Worker":kind==="deploy"?"Pages":kind==="verify"?"验证":"任务";
+    lines.push("",label+" 工作流："+(record.workflow||"未知"),"Actions 状态："+runnerStateLabel(record.conclusion||record.status),"Actions Run ID："+(record.run_id&&!/^verify-|^deploy-/.test(String(record.run_id))?record.run_id:"尚未关联"),"失败步骤："+(record.failed_step||"无"),"错误："+(record.dispatch_error||record.watch_error||"无"));
+    if(Array.isArray(record.error_lines)&&record.error_lines.length)lines.push("错误摘要："+record.error_lines.join("\n"));
+  }
   content.textContent=lines.join("\n");
   links.innerHTML="";
-  const mainLink=verifyLink("打开任务 Actions",record.run_url); if(mainLink)links.appendChild(mainLink);
-  (Array.isArray(record.runs)?record.runs:[]).forEach(run=>{const link=verifyLink((run.kind==="worker"?"Worker":"Pages")+" Actions",run.run_url);if(link)links.appendChild(link);});
+  const mainLink=verifyLink("打开任务 Actions",record.run_url||record.actions_url); if(mainLink)links.appendChild(mainLink);
+  childRuns.forEach(run=>{const link=verifyLink((run.kind==="worker"?"Worker":"Pages")+" Actions",run.run_url);if(link)links.appendChild(link);});
 }
 async function loadRunHistory() {
   const history=g("wb-history"), title=g("wb-runlogs-title");
@@ -6349,8 +6362,7 @@ async function loadRunHistory() {
         try{
           const q=await authFetch(GATEWAY+"/api/code/logs?run_id="+encodeURIComponent(id),{cache:"no-store"}),j=await q.json().catch(()=>({}));
           if(!q.ok||!j.ok)throw new Error(j.msg||("读取任务记录失败（HTTP "+q.status+"）"));
-          if(x.kind==="both"||j.kind==="both")renderBothRunnerDetail({...j,run_id:j.run_id||id});
-          else renderVerifyResult({...j,state:j.state||x.state,fromHistory:true});
+          renderRunnerRecordDetail({...j,run_id:j.run_id||j.request_id||id});
         }catch(error){if(detail)detail.textContent="历史任务读取失败："+(error.message||String(error));}
       };
       history.appendChild(b);
