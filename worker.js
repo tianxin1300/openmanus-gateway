@@ -583,7 +583,15 @@ async function codeWorkbenchBranchCreateUnlocked(env, user, body = {}) {
   const made = await codeCreateTempBranch(env, repo, project, base);
   if (!made.ok) return made;
   const record = { project, repo, branch: made.branch, baseBranch: made.base, baseCommit: made.sha, created_by: String(user), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), status: "active", preview_url: codeTempPreview(made.branch, repo) };
-  await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 });
+  try {
+    await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 });
+  } catch (error) {
+    const cleanup = await codeDeleteBranch(env, repo, made.branch);
+    if (!cleanup.ok && cleanup.status !== 404) {
+      return { ok: false, orphaned: true, branch: made.branch, msg: "临时分支已创建，但本地记录保存失败且 GitHub 清理失败；分支名已保留，请重试清理：" + (cleanup.msg || "未知错误") };
+    }
+    return { ok: false, orphaned: false, branch: made.branch, msg: "临时分支记录保存失败，已清理刚创建的 GitHub 分支：" + (error && error.message || "KV 写入失败") };
+  }
   return { ok: true, active: true, ...record };
 }
 async function codeWorkbenchBranchCreate(env, user, body = {}) {
