@@ -1936,3 +1936,22 @@ test('workbench history loads on tab open and exposes full both Runner state', (
   assert.ok(!script.includes('else renderVerifyResult({...j,state:j.state||x.state,fromHistory:true})'));
   assert.ok(script.includes('历史记录加载失败'));
 });
+
+test('dynamic workbench repository registry is sourced only from CODE_REPOS and fails closed', () => {
+  const start = workerSource.indexOf('const codeRepoList = (env) =>');
+  const end = workerSource.indexOf('const codePathOk =', start);
+  assert.ok(start >= 0 && end > start, 'CODE_REPOS registry guard exists');
+  const source = workerSource.slice(start, end);
+  const sandbox = { getKeys: value => String(value || '').split(',').map(x => x.trim()).filter(Boolean) };
+  vm.runInNewContext(source + '\nglobalThis.testRepoList = codeRepoList; globalThis.testRepoOk = codeRepoOk;', sandbox);
+  assert.deepEqual(Array.from(sandbox.testRepoList({})), [], 'missing CODE_REPOS returns no authorized repositories');
+  assert.equal(sandbox.testRepoOk({}, 'tianxin1300/openmanus-gateway'), false, 'missing CODE_REPOS denies access');
+  const env = { CODE_REPOS: 'tianxin1300/openmanus-gateway, other/second-repo, tianxin1300/openmanus-gateway, invalid' };
+  assert.deepEqual(Array.from(sandbox.testRepoList(env)), ['tianxin1300/openmanus-gateway', 'other/second-repo']);
+  assert.equal(sandbox.testRepoOk(env, 'OTHER/SECOND-REPO'), true, 'repository matching is case-insensitive');
+  assert.equal(sandbox.testRepoOk(env, 'other/not-authorized'), false, 'unlisted repository is denied');
+  assert.match(workerSource, /path === "\/api\/code\/repos"/, 'authenticated repository-list endpoint exists');
+  assert.match(frontendSource, /wbApi\("\/api\/code\/repos"/, 'Workbench loads its project list from the Worker');
+  assert.match(frontendSource, /const WORKBENCH_PROJECTS = Object\.create\(null\)/, 'Workbench does not maintain a second hard-coded allowlist');
+  assert.doesNotMatch(frontendSource, /const WORKBENCH_PROJECTS = \{\s*"openmanus-gateway"/, 'static project allowlist is removed');
+});
