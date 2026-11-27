@@ -910,7 +910,7 @@ test('ACCEPTANCE MERGE-CAS-01: merge updates the target ref only from the exact 
     codeGhApi: async (_env, url, options = {}) => {
       const body = options.body ? JSON.parse(options.body) : {};
       calls.push([options.method || 'GET', url, body]);
-      if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: baseSha } } };
+      if (url.endsWith('/heads/main') && (!options.method || options.method === 'GET')) return { ok: true, data: { object: { sha: baseSha } } };
       if (url.endsWith('/heads/code/review')) return { ok: true, data: { object: { sha: headSha } } };
       if (url.endsWith('/git/refs') && options.method === 'POST') return { ok: true, data: {} };
       if (url.endsWith('/merges')) return { ok: true, data: { sha: previewSha, commit: { tree: { sha: treeSha } } } };
