@@ -522,11 +522,70 @@ async function codeDeleteBranch(env, repo, branch) {
   if (!/^code\/[A-Za-z0-9._\/-]+$/.test(String(branch || ""))) return { ok: false, msg: "只允许删除代码模式创建的临时分支" };
   return await codeGhApi(env, codeGitRefUrl(repo, "heads/" + branch), { method: "DELETE" });
 }
-async function codeMergeTempBranch(env, repo, branch, base, message) {
+async function codeMergeTempBranch(env, repo, branch, base, message, expectedBaseSha, expectedHeadSha) {
   if (!/^code\/[A-Za-z0-9._\/-]+$/.test(String(branch || ""))) return { ok: false, msg: "临时分支名不合法" };
   const safeBase = codeVerifyRef(base);
-  if (!safeBase) return { ok: false, msg: "目标分支名不合法" };
-  return await codeGhApi(env, "https://api.github.com/repos/" + repo + "/merges", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ base: safeBase, head: branch, commit_message: String(message || "OpenManus code change").slice(0, 200) }) });
+  if (!safeBase || !/^[0-9a-f]{40}$/i.test(String(expectedBaseSha || "")) || !/^[0-9a-f]{40}$/i.test(String(expectedHeadSha || ""))) {
+    return { ok: false, msg: "目标分支或预期 base/head SHA 不合法，拒绝无基线合并" };
+  }
+  const baseRef = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + safeBase));
+  const currentBaseSha = String(baseRef.data && baseRef.data.object && baseRef.data.object.sha || "");
+  if (!baseRef.ok || currentBaseSha !== expectedBaseSha) {
+    return { ok: false, status: 409, conflict: true, msg: "合并前 base 已变化，拒绝继续：" + (baseRef.msg || currentBaseSha || "无法读取 base SHA") };
+  }
+  const headRef = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + branch));
+  const currentHeadSha = String(headRef.data && headRef.data.object && headRef.data.object.sha || "");
+  if (!headRef.ok || currentHeadSha !== expectedHeadSha) {
+    return { ok: false, status: 409, conflict: true, msg: "待合并临时分支已变化，必须重新审核后再推送。" };
+  }
+
+  // 在固定 base SHA 上计算三方合并树；最终只用 force:false 更新 base ref。
+  // 若 main 在计算期间前进，最终 ref 更新会因非 fast-forward 被 GitHub 拒绝。
+  const scratch = codeTempBranch("merge-txn");
+  const scratchRef = "heads/" + scratch;
+  const made = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/refs", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ref: "refs/heads/" + scratch, sha: expectedBaseSha })
+  });
+  if (!made.ok) return { ok: false, msg: "创建隔离合并基线失败：" + made.msg };
+  let mergeTreeSha = "";
+  try {
+    const preview = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/merges", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base: scratch, head: expectedHeadSha, commit_message: String(message || "OpenManus code change").slice(0, 200) })
+    });
+    if (!preview.ok) return { ok: false, status: preview.status, conflict: preview.status === 409, msg: "在固定基线上计算合并失败：" + preview.msg };
+    const previewSha = String(preview.data && preview.data.sha || "");
+    mergeTreeSha = String(preview.data && preview.data.commit && preview.data.commit.tree && preview.data.commit.tree.sha || "");
+    if (!mergeTreeSha && previewSha) {
+      const commit = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/commits/" + encodeURIComponent(previewSha));
+      mergeTreeSha = String(commit.data && commit.data.tree && commit.data.tree.sha || "");
+      if (!commit.ok || !mergeTreeSha) return { ok: false, msg: "读取隔离合并文件树失败：" + (commit.msg || "缺少 tree SHA") };
+    }
+    if (!mergeTreeSha) return { ok: false, msg: "GitHub 未返回隔离合并文件树，拒绝更新目标分支。" };
+  } finally {
+    const cleanup = await codeDeleteBranch(env, repo, scratch);
+    if (!cleanup.ok && cleanup.status !== 404) {
+      return { ok: false, scratch_cleanup_failed: true, scratch_branch: scratch, msg: "隔离合并计算完成，但清理临时合并分支失败；目标分支尚未更新：" + cleanup.msg };
+    }
+  }
+
+  const created = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/commits", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: String(message || "OpenManus code change").slice(0, 200),
+      tree: mergeTreeSha,
+      parents: [expectedBaseSha, expectedHeadSha]
+    })
+  });
+  const commitSha = String(created.data && created.data.sha || "");
+  if (!created.ok || !commitSha) return { ok: false, msg: "创建固定基线合并提交失败：" + (created.msg || "缺少 commit SHA") };
+  const moved = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + safeBase), {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sha: commitSha, force: false })
+  });
+  if (!moved.ok) return { ok: false, status: moved.status, conflict: true, cas_rejected: true, msg: "目标分支在合并计算期间发生变化；GitHub 拒绝非 fast-forward 更新，未覆盖新提交：" + moved.msg };
+  return { ok: true, status: 200, data: { sha: commitSha, commit: { tree: { sha: mergeTreeSha }, parents: [{ sha: expectedBaseSha }, { sha: expectedHeadSha }] } }, cas: true };
 }
 const codeHistoryKey = (user) => "code:history:" + String(user || "").slice(0, 160);
 async function codeHistoryLoad(env, user) { return env.KV ? (await env.KV.get(codeHistoryKey(user), "json").catch(() => null) || []) : []; }
@@ -763,7 +822,7 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
   if (record.baseCommit && previousSha !== record.baseCommit) {
     return { ok: false, conflict: true, base_advanced: true, base_commit: record.baseCommit, current_base_commit: previousSha, msg: record.baseBranch + " 已在创建临时分支后发生变化。为防止旧基线覆盖新修改，已阻止合并；请先同步基线并重新审核改动。" };
   }
-  const merged = await codeMergeTempBranch(env, repo, record.branch, record.baseBranch, String(body.summary || "Workbench: merge " + record.project));
+  const merged = await codeMergeTempBranch(env, repo, record.branch, record.baseBranch, String(body.summary || "Workbench: merge " + record.project), previousSha, String(compared.data && compared.data.head_commit && compared.data.head_commit.sha || ""));
   if (!merged.ok) return { ok: false, conflict: merged.status === 409, files, msg: "合并失败，临时分支保留：" + merged.msg };
   let commitSha = String(merged.data && merged.data.sha || "");
   if (!commitSha) {
