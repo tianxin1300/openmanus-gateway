@@ -457,7 +457,7 @@ async function codeLLM(env, msgs, budgetMs) {
     for (const key of t.keys) {
       const left = budget - (Date.now() - t0); if (left < 8000) return { text: "", tried };
       try {
-        const r = await fetch(t.url, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + key }, body: JSON.stringify({ model: t.model, messages: msgs, temperature: 0.2, max_tokens: 16000 }), signal: T(Math.min(70000, left)) });
+        const r = await fetch(t.url, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + key }, body: JSON.stringify({ model: t.model, messages: msgs, temperature: 0.2, max_tokens: 16000 }), signal: T(Math.min(60000, left)) });
         if (!r.ok) { tried.push(t.name + "·" + t.model + " HTTP " + r.status); if (r.status === 404) break; continue; }
         const j = await r.json().catch(() => null), c = j && j.choices && j.choices[0];
         const text = c && c.message && typeof c.message.content === "string" ? c.message.content.trim() : "";
