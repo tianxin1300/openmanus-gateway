@@ -417,6 +417,12 @@ test('ACCEPTANCE LOCK-CLEANUP-01: failed or cancelled claim releases its operati
   const lockAgain = await call('branch-lock', { lock_id: lockId, token: 'token-three' });
   assert.equal(lockAgain.acquired, true, 'a released lock permits the next operation');
   assert.equal((await call('branch-unlock', { lock_id: lockId, token: 'token-three' })).released, true);
+  await storage.put('workbench_locks', { [lockId]: { token: 'expired-token', expires_at: Date.now() - 1 } });
+  const afterExpiry = await call('branch-lock', { lock_id: lockId, token: 'fresh-token' });
+  assert.equal(afterExpiry.acquired, true, 'an abandoned lock can be reclaimed after its lease expires');
+  const staleRelease = await call('branch-unlock', { lock_id: lockId, token: 'expired-token' });
+  assert.equal(staleRelease.ok, false, 'an expired owner cannot release the replacement lock');
+  assert.equal((await call('branch-unlock', { lock_id: lockId, token: 'fresh-token' })).released, true);
 
   const pending = { id: 'task-one', project: 'p', repo: 'tianxin1300/openmanus-gateway', branch: 'code/task-one',
     edits: [{ path: 'a.js', old: 'a', new: 'b' }], created_at: Date.now() };
