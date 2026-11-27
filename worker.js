@@ -735,8 +735,19 @@ async function codeWorkbenchBranchSaveFileUnlocked(env, user, body = {}) {
   const saved = await codeUpdateFile(env, repo, path, body.content, String(body.message || ("Workbench: update " + path)), branch, file.sha);
   if (!saved.ok) return { ok: false, msg: "保存到临时分支失败：" + (saved.msg || "GitHub 写入失败") };
   const updated = await codeGetFile(env, repo, path, branch);
-  if (!updated.ok || !updated.exists || !updated.sha) return { ok: true, saved: true, sha: "", refresh_required: true, msg: "文件已写入；新 SHA 暂时无法确认，请重新读取文件" };
-  return { ok: true, saved: true, sha: updated.sha, url: saved.url || "" };
+  if (!updated.ok || !updated.exists || !updated.sha) return { ok: true, saved: true, sha: "", refresh_required: true, audit_saved: false, msg: "文件已写入；新 SHA 暂时无法确认，请重新读取文件" };
+  let auditSaved = false, auditWarning = "";
+  try {
+    const key = codeWorkbenchBranchKey(user, repo), record = await env.KV.get(key, "json");
+    if (record && record.branch === branch) {
+      const event = { action: "save", actor: String(user), path, branch, previous_sha: file.sha, new_sha: updated.sha, at: new Date().toISOString() };
+      record.last_saved_by = String(user);
+      record.save_events = [...(Array.isArray(record.save_events) ? record.save_events : []), event].slice(-100);
+      await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 });
+      auditSaved = true;
+    } else auditWarning = "临时分支记录已变化，未能确认操作者审计记录";
+  } catch (auditError) { auditWarning = String(auditError && auditError.message || auditError).slice(0, 160); }
+  return { ok: true, saved: true, sha: updated.sha, url: saved.url || "", audit_saved: auditSaved, audit_warning: auditWarning };
 }
 async function codeWorkbenchBranchSaveFile(env, user, body = {}) {
   const repo = String(body.repo || "");
@@ -756,6 +767,8 @@ async function codeWorkbenchBranchPreviewUnlocked(env, user, repo) {
   current.preview_url = codeTempPreview(current.branch, repo);
   current.preview_request_id = requestId;
   current.preview_started_at = new Date().toISOString();
+  current.preview_started_by = String(user);
+  current.preview_events = [...(Array.isArray(current.preview_events) ? current.preview_events : []), { actor: String(user), request_id: requestId, at: current.preview_started_at }].slice(-100);
   await env.KV.put(codeWorkbenchBranchKey(user, repo), JSON.stringify(current), { expirationTtl: 2592000 });
   return { ok: true, preview_url: current.preview_url, request_id: requestId, branch: current.branch, state: "dispatched" };
 }
@@ -771,8 +784,18 @@ async function codeWorkbenchBranchDiscardUnlocked(env, user, body = {}) {
   if (body.branch && body.branch !== record.branch) return { ok: false, msg: "临时分支已变化，拒绝删除其他分支" };
   const deleted = await codeDeleteBranch(env, repo, record.branch);
   if (!deleted.ok && deleted.status !== 404) return { ok: false, msg: "GitHub 删除临时分支失败，记录保留：" + deleted.msg };
-  await env.KV.delete(key);
-  return { ok: true, discarded: true, branch: record.branch, main_untouched: true };
+  const auditId = "workbench-discard-" + record.branch;
+  try {
+    const history = await codeHistoryLoad(env, user);
+    if (!history.some((row) => row && row.id === auditId)) {
+      await codeHistorySave(env, user, [{ id: auditId, kind: "workbench_discard", action: "discard", actor: String(user), repo, project: record.project, branch: record.branch, at: new Date().toISOString() }, ...history]);
+    }
+  } catch (auditError) {
+    return { ok: false, discarded: true, branch_deleted: true, audit_saved: false, msg: "临时分支已删除，但操作者审计记录写入失败；状态记录保留，重试可补写审计：" + (auditError && auditError.message || "审计写入失败") };
+  }
+  try { await env.KV.delete(key); }
+  catch (recordError) { return { ok: false, discarded: true, branch_deleted: true, audit_saved: true, msg: "临时分支已删除且审计已记录，但状态记录清理失败；重试可完成清理：" + (recordError && recordError.message || "KV 删除失败") }; }
+  return { ok: true, discarded: true, branch: record.branch, main_untouched: true, audit_saved: true };
 }
 async function codeWorkbenchBranchDiscard(env, user, body = {}) {
   const repo = String(body.repo || "");
@@ -966,7 +989,7 @@ async function codeRollbackUnlocked(env, user, body) {
     body: JSON.stringify({ sha: newSha, force: false })
   });
   if (!moved.ok) return { ok: false, msg: "回滚提交已创建，但分支未更新（可能有并发提交）：" + moved.msg };
-  const rec = { id: "rollback-" + Date.now().toString(36), repo, project: item.project, baseBranch: base, commit_sha: newSha, previous_sha: currentSha, target_sha: item.previous_sha, summary: "回滚：" + item.summary, files: item.files || [], at: new Date().toISOString(), rollback: true };
+  const rec = { id: "rollback-" + Date.now().toString(36), actor: String(user), repo, project: item.project, baseBranch: base, commit_sha: newSha, previous_sha: currentSha, target_sha: item.previous_sha, summary: "回滚：" + item.summary, files: item.files || [], at: new Date().toISOString(), rollback: true };
   await codeHistorySave(env, user, [rec, ...rows]);
   return { ok: true, ...rec, reply: "已创建回滚提交并恢复到目标版本内容：" + newSha.slice(0, 12) };
 }
