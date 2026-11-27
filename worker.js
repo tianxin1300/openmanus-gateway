@@ -830,7 +830,7 @@ async function codeRepairPendingFromVerification(env, user, job) {
     pending_id: String(job.pending_id || ""), request_id: String(job.request_id || ""),
     run_id: String(job.run_id || "")
   });
-  if (!claimed.ok || !claimed.pending) return claimed;
+  if (!claimed.ok || !claimed.pending || claimed.limit_reached) return claimed;
   const pend = claimed.pending;
   const finish = async (status, result, edits, verification) => {
     const saved = await codeClaimCall(env, user, "repair-finish", {
@@ -1184,7 +1184,7 @@ async function codePendingSweep(env) {
 }
 
 function codePendingView(p) {
-  if (!p || !Array.isArray(p.edits) || !p.edits.length || !["awaiting_approval", "applying", "partial", "conflict", "failed", "verification_pending", "verification_passed", "verification_failed"].includes(p.status || "awaiting_approval")) return null;
+  if (!p || !Array.isArray(p.edits) || !p.edits.length || !["awaiting_approval", "applying", "partial", "conflict", "failed", "verification_pending", "verification_passed", "verification_failed", "repairing"].includes(p.status || "awaiting_approval")) return null;
   return { id: p.id || "", pending_id: p.id || "", version: Number(p.version) || 1, project: p.project || "", status: p.status || "awaiting_approval", repo: p.repo, branch: p.branch, baseBranch: p.baseBranch || "main", preview_url: p.preview_url || codeTempPreview(p.branch), summary: p.summary, at: p.at, updatedAt: p.updatedAt || p.at, verify_request_id: p.verify_request_id || "", verify_run_id: p.verify_run_id || "", verify_run_url: p.verify_run_url || "", verify_expected_sha: p.verify_expected_sha || "", verify_head_sha: p.verify_head_sha || "", verify_error_lines: p.verify_error_lines || [], verify_failed_step: p.verify_failed_step || "", repair_attempts: Number(p.repair_attempts || 0), repair_error: p.repair_error || "", warn: p.warn || [], edits: p.edits.map((e) => ({ path: e.path, line: e.line || 0, old: codeCut(e.old, 4000), new: codeCut(e.new, 4000) })) };
 }
 const codeBalanceWarn = (a, b) => ["{}", "()", "[]"].filter((p) => { const d = (t) => t.split(p[0]).length - t.split(p[1]).length; return d(a) !== d(b); });
@@ -9487,7 +9487,11 @@ export class CodeClaimDO {
     if (!value) return null;
     const createdAt = (value.pending && value.pending.created_at) || value.created_at || 0;
     const verificationActive = value.pending && value.pending.status === "verification_pending" && value.pending.verify_expires_at > Date.now();
-    if (!verificationActive && ((value.expires_at && value.expires_at <= Date.now()) || (createdAt && Date.now() - createdAt >= CODE_PENDING_TTL_MS))) {
+    const repairActive = value.pending && value.pending.status === "repairing" && value.pending.repair_expires_at > Date.now();
+    if (value.pending && value.pending.status === "repairing" && !repairActive) {
+      value.pending.status = "verification_failed"; value.pending.repair_error = "模型自动修复超过 4 分钟，已停止本轮修复"; value.pending.created_at = Date.now(); value.created_at = Date.now(); value.expires_at = Date.now() + CODE_PENDING_TTL_MS; value.version = Number(value.version || 0) + 1; value.pending.version = value.version; await this.storage.put("claim", value); await this.storage.setAlarm(value.expires_at); return value;
+    }
+    if (!verificationActive && !repairActive && ((value.expires_at && value.expires_at <= Date.now()) || (createdAt && Date.now() - createdAt >= CODE_PENDING_TTL_MS))) {
       const p = value.pending;
       if (p && ["applying", "discarding", "repairing"].includes(p.status)) {
         await this.storage.setAlarm(Date.now() + 60000);
@@ -9514,6 +9518,8 @@ export class CodeClaimDO {
     const createdAt = (p && p.created_at) || value.created_at || 0;
     const expiresAt = value.expires_at || (createdAt ? createdAt + CODE_PENDING_TTL_MS : 0);
     if (p && p.status === "verification_pending" && p.verify_expires_at > Date.now()) { await this.storage.setAlarm(Math.min(p.verify_expires_at, Date.now() + 60000)); return; }
+    if (p && p.status === "repairing" && p.repair_expires_at > Date.now()) { await this.storage.setAlarm(Math.min(p.repair_expires_at, Date.now() + 60000)); return; }
+    if (p && p.status === "repairing") { p.status = "verification_failed"; p.repair_error = "模型自动修复超过 4 分钟，已停止本轮修复"; p.created_at = Date.now(); value.created_at = Date.now(); value.expires_at = Date.now() + CODE_PENDING_TTL_MS; value.version = Number(value.version || 0) + 1; p.version = value.version; await this.storage.put("claim", value); await this.storage.setAlarm(value.expires_at); return; }
     if (expiresAt && expiresAt > Date.now()) { await this.storage.setAlarm(expiresAt); return; }
     if (p && ["applying", "discarding", "repairing"].includes(p.status)) {
       await this.storage.setAlarm(Date.now() + 60000);
@@ -9579,8 +9585,8 @@ export class CodeClaimDO {
       const pendingId = String(body.pending_id || ""), requestId = String(body.request_id || ""), runId = String(body.run_id || "");
       if (!current || !p || p.id !== pendingId || p.status !== "verification_failed" || p.verify_request_id !== requestId || p.verify_run_id !== runId) return this.response({ ok: false, conflict: true, msg: "失败验证已变化，不能启动自动修复" }, 409);
       const attempts = Number(p.repair_attempts || 0);
-      if (attempts >= 2) return this.response({ ok: false, limit_reached: true, pending: p, msg: "自动修复已达到 2 次上限" }, 409);
-      p.status = "repairing"; p.repair_attempts = attempts + 1; p.repair_started_at = now; p.repair_error = ""; p.updatedAt = now;
+      if (attempts >= 2) { p.repair_error = "自动修复已达到 2 次上限"; p.updatedAt = now; current.version = Number(current.version || 0) + 1; p.version = current.version; await this.save(current); return this.response({ ok: true, limit_reached: true, pending: p, version: current.version }); }
+      p.status = "repairing"; p.repair_attempts = attempts + 1; p.repair_started_at = now; p.repair_expires_at = now + 4 * 60 * 1000; p.repair_error = ""; p.updatedAt = now;
       current.version = Number(current.version || 0) + 1; p.version = current.version;
       await this.save(current);
       return this.response({ ok: true, pending: p, version: current.version });
