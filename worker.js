@@ -832,7 +832,7 @@ function codeRepairSourceContext(path, source, edits, logs) {
     if (end < start) return;
     ranges.push([start, end]);
   };
-  const escapedPath = String(path || "").replace(/[.*+?^${}()|[\]\\]/g, "\\async function codeRepairPendingFromVerification(env, user, job) {");
+  const escapedPath = String(path || "").replace(/[.*+?^${}()|[\]\\]/g, (match) => "\\" + match);
   const location = new RegExp("(?:^|[\\s(])" + escapedPath + ":(\\d+)(?::\\d+)?");
   for (const log of logs || []) {
     const match = location.exec(String(log || ""));
