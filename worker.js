@@ -1119,7 +1119,7 @@ async function codePendingSweep(env) {
 
 function codePendingView(p) {
   if (!p || !Array.isArray(p.edits) || !p.edits.length || !["awaiting_approval", "applying", "partial", "conflict", "failed", "verification_pending", "verification_passed", "verification_failed"].includes(p.status || "awaiting_approval")) return null;
-  return { id: p.id || "", pending_id: p.id || "", version: Number(p.version) || 1, project: p.project || "", status: p.status || "awaiting_approval", repo: p.repo, branch: p.branch, baseBranch: p.baseBranch || "main", preview_url: p.preview_url || codeTempPreview(p.branch), summary: p.summary, at: p.at, updatedAt: p.updatedAt || p.at, verify_run_id: p.verify_run_id || "", verify_run_url: p.verify_run_url || "", verify_expected_sha: p.verify_expected_sha || "", verify_head_sha: p.verify_head_sha || "", verify_error_lines: p.verify_error_lines || [], verify_failed_step: p.verify_failed_step || "", warn: p.warn || [], edits: p.edits.map((e) => ({ path: e.path, line: e.line || 0, old: codeCut(e.old, 4000), new: codeCut(e.new, 4000) })) };
+  return { id: p.id || "", pending_id: p.id || "", version: Number(p.version) || 1, project: p.project || "", status: p.status || "awaiting_approval", repo: p.repo, branch: p.branch, baseBranch: p.baseBranch || "main", preview_url: p.preview_url || codeTempPreview(p.branch), summary: p.summary, at: p.at, updatedAt: p.updatedAt || p.at, verify_request_id: p.verify_request_id || "", verify_run_id: p.verify_run_id || "", verify_run_url: p.verify_run_url || "", verify_expected_sha: p.verify_expected_sha || "", verify_head_sha: p.verify_head_sha || "", verify_error_lines: p.verify_error_lines || [], verify_failed_step: p.verify_failed_step || "", warn: p.warn || [], edits: p.edits.map((e) => ({ path: e.path, line: e.line || 0, old: codeCut(e.old, 4000), new: codeCut(e.new, 4000) })) };
 }
 const codeBalanceWarn = (a, b) => ["{}", "()", "[]"].filter((p) => { const d = (t) => t.split(p[0]).length - t.split(p[1]).length; return d(a) !== d(b); });
 const codeCut = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n) + "…（共 " + s.length + " 字）" : s; };
@@ -9495,7 +9495,7 @@ export class CodeClaimDO {
       if (p.status === "verification_pending") { current.expires_at = now + 20 * 60 * 1000; p.verify_expires_at = current.expires_at; await this.storage.setAlarm(current.expires_at); }
       if (Array.isArray(body.edits)) p.edits = body.edits;
       if (body.verification && typeof body.verification === "object") Object.assign(p, body.verification);
-      p.updatedAt = now; current.results[operationId] = result; current.version = Number(current.version) + 1;
+      p.updatedAt = now; current.results[operationId] = result; current.version = Number(current.version) + 1; p.version = current.version;
       delete current.claims[operationId];
       await this.save(current);
       return this.response({ ok: true, result, pending: p, version: current.version });
@@ -9507,7 +9507,7 @@ export class CodeClaimDO {
       const conclusion = String(body.conclusion || "success");
       p.verify_run_id = runId; p.verify_run_url = String(body.run_url || p.verify_run_url || "");
       p.status = conclusion === "success" && actualSha === expectedSha ? "verification_passed" : "verification_failed";
-      p.verify_conclusion = conclusion; p.verify_head_sha = actualSha; p.verify_completed_at = now; p.verify_error_lines = Array.isArray(body.error_lines) ? body.error_lines.slice(0, 60) : []; p.verify_failed_step = String(body.failed_step || "").slice(0, 160); p.created_at = now; current.created_at = now; current.expires_at = now + CODE_PENDING_TTL_MS; p.updatedAt = now; current.version = Number(current.version || 0) + 1; await this.storage.setAlarm(current.expires_at);
+      p.verify_conclusion = conclusion; p.verify_head_sha = actualSha; p.verify_completed_at = now; p.verify_error_lines = Array.isArray(body.error_lines) ? body.error_lines.slice(0, 60) : []; p.verify_failed_step = String(body.failed_step || "").slice(0, 160); p.created_at = now; current.created_at = now; current.expires_at = now + CODE_PENDING_TTL_MS; p.updatedAt = now; current.version = Number(current.version || 0) + 1; p.version = current.version; await this.storage.setAlarm(current.expires_at);
       await this.save(current);
       return this.response({ ok: true, pending: p, version: current.version });
     }
