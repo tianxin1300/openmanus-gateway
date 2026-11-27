@@ -721,7 +721,7 @@ async function codeWorkbenchBranchRejectFile(env, user, body = {}) {
 }
 async function codeWorkbenchBranchSaveFileUnlocked(env, user, body = {}) {
   const repo = String(body.repo || ""), path = String(body.path || ""), branch = String(body.branch || "");
-  if (!codeRepoOk(env, repo) || !codePathOk(path) || !/^code\\/[A-Za-z0-9._/-]+$/.test(branch) || typeof body.content !== "string") {
+  if (!codeRepoOk(env, repo) || !codePathOk(path) || !/^code\/[A-Za-z0-9._/-]+$/.test(branch) || typeof body.content !== "string") {
     return { ok: false, msg: "仓库、分支、文件路径或文件内容不合法" };
   }
   const guard = codePushGuard(env, user, repo, path);
