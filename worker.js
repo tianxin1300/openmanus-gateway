@@ -446,11 +446,50 @@ const CODE_NVIDIA_MODELS = [
   "mistral-large-4",
   "kimi-k3.1-pro"
 ];
+const CODE_OPENROUTER_CATALOG_URL = "https://openrouter.ai/api/v1/models?input_modalities=text";
+const CODE_OPENROUTER_CATALOG_TIMEOUT_MS = 8000;
+const CODE_OPENROUTER_DYNAMIC_LIMIT = 30;
+async function codeOpenRouterFreeModels(key, budgetLeft) {
+  if (!key || budgetLeft < 1000) return [];
+  try {
+    const response = await fetch(CODE_OPENROUTER_CATALOG_URL, {
+      method: "GET",
+      headers: { Authorization: "Bearer " + key, Accept: "application/json" },
+      signal: T(Math.min(CODE_OPENROUTER_CATALOG_TIMEOUT_MS, budgetLeft))
+    });
+    if (!response.ok) return [];
+    const payload = await response.json().catch(() => null);
+    const models = payload && Array.isArray(payload.data) ? payload.data : [];
+    const ids = [];
+    for (const model of models) {
+      const id = typeof model.id === "string" ? model.id.trim() : "";
+      const architecture = model.architecture || {};
+      const pricing = model.pricing || {};
+      const inputs = Array.isArray(architecture.input_modalities) ? architecture.input_modalities : [];
+      const outputs = Array.isArray(architecture.output_modalities) ? architecture.output_modalities : [];
+      const endpoints = Array.isArray(model.endpoints) ? model.endpoints : null;
+      if (!id || !id.endsWith(":free") || !inputs.includes("text") || !outputs.includes("text")) continue;
+      if (String(pricing.prompt) !== "0" || String(pricing.completion) !== "0") continue;
+      if (endpoints && !endpoints.includes("/api/v1/chat/completions")) continue;
+      ids.push(id);
+      if (ids.length >= CODE_OPENROUTER_DYNAMIC_LIMIT) break;
+    }
+    return ids;
+  } catch (_) {
+    return [];
+  }
+}
 const CODE_PUSH_LIMIT = 40000;   // 被改的原文件超过这个字数，不让模型整份重写，也不推送
 async function codeLLM(env, msgs, budgetMs) {
   const tried = [], t0 = Date.now(), budget = Math.max(15000, Number(budgetMs) || 110000), targets = [];
   // 代码模式不使用肖恩AI（Toter）；普通聊天的供应商配置保持不变。
-  for (const m of [...new Set([...getKeys(env.CODE_MODELS), ...CODE_OR_MODELS])]) targets.push({ name: "OpenRouter", url: "https://openrouter.ai/api/v1/chat/completions", keys: getKeys(env.OPENROUTER_KEYS), model: m });
+  const openRouterKeys = getKeys(env.OPENROUTER_KEYS);
+  if (openRouterKeys.length) {
+    const customModels = getKeys(env.CODE_MODELS);
+    const dynamicModels = await codeOpenRouterFreeModels(openRouterKeys[0], Math.max(0, budget - (Date.now() - t0)));
+    const openRouterModels = [...new Set([...customModels, ...dynamicModels, ...CODE_OR_MODELS])];
+    for (const m of openRouterModels) targets.push({ name: "OpenRouter", url: "https://openrouter.ai/api/v1/chat/completions", keys: openRouterKeys, model: m });
+  }
   for (const m of CODE_GROQ_MODELS) targets.push({ name: "Groq", url: "https://api.groq.com/openai/v1/chat/completions", keys: getKeys(env.GROQ_KEYS || env.GROQ_API_KEY), model: m });
   for (const m of CODE_NVIDIA_MODELS) targets.push({ name: "NVIDIA", url: "https://integrate.api.nvidia.com/v1/chat/completions", keys: getKeys(env.NVIDIA_KEYS), model: m });
   for (const t of targets) {
