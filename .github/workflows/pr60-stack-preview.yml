@@ -1,11 +1,9 @@
 name: pr60-stack-preview
-run-name: PR #60 stack preview · ${{ github.event.pull_request.head.sha || github.sha }}
+run-name: PR #60 stack preview · ${{ github.sha }}
 
 on:
   push:
     branches: [code/cron-automation-token-20261128]
-  pull_request:
-    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -18,17 +16,17 @@ concurrency:
 
 jobs:
   preview:
-    if: github.event_name == 'push' || github.event.pull_request.number == 60
+    if: github.ref_name == 'code/cron-automation-token-20261128'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      DEPLOY_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
-      DEPLOY_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      DEPLOY_REF: ${{ github.ref_name }}
+      DEPLOY_SHA: ${{ github.sha }}
     steps:
       - name: Checkout exact PR head
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Setup Node.js
