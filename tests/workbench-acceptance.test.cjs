@@ -1045,3 +1045,66 @@ test('ACCEPTANCE WORKBENCH-LOCK-HEARTBEAT-FAIL-01: failed lease renewal is repor
   assert.equal(result.operation_result.merged, true);
   assert.match(result.msg, /核对 GitHub 实际结果/);
 });
+
+
+test('ACCEPTANCE MERGE-CAS-05: thrown scratch cleanup errors block target ref mutation and preserve orphan ref name', async () => {
+  const baseSha = 'a'.repeat(40), headSha = 'b'.repeat(40);
+  let targetPatch = false;
+  const merge = runFunction(sourceOf('async function codeMergeTempBranch(', 'const codeHistoryKey ='), 'codeMergeTempBranch', {
+    codeVerifyRef: x => x, codeGitRefUrl: (_repo, ref) => 'https://api.github.com/git/ref/' + ref,
+    codeTempBranch: () => 'code/merge-txn-throw',
+    codeDeleteBranch: async () => { throw new Error('simulated delete transport failure'); },
+    codeGhApi: async (_env, url, options = {}) => {
+      if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: baseSha } } };
+      if (url.endsWith('/heads/code/review')) return { ok: true, data: { object: { sha: headSha } } };
+      if (url.endsWith('/git/refs')) return { ok: true, data: {} };
+      if (url.endsWith('/merges')) return { ok: true, data: { sha: 'c'.repeat(40), commit: { tree: { sha: 'd'.repeat(40) } } } };
+      if (url.endsWith('/git/commits')) return { ok: true, data: { sha: 'e'.repeat(40) } };
+      if (url.includes('/git/ref/heads/main') && options.method === 'PATCH') targetPatch = true;
+      throw new Error('unexpected API call');
+    }
+  });
+  const result = await merge({}, 'owner/repo', 'code/review', 'main', 'test cleanup throw', baseSha, headSha);
+  assert.equal(result.ok, false);
+  assert.equal(result.scratch_cleanup_failed, true);
+  assert.equal(result.scratch_branch, 'code/merge-txn-throw');
+  assert.match(result.msg, /simulated delete transport failure/);
+  assert.equal(targetPatch, false);
+});
+
+test('ACCEPTANCE MERGE-CAS-06: invalid reviewed SHA values are rejected before any GitHub write', async () => {
+  let writes = 0;
+  const merge = runFunction(sourceOf('async function codeMergeTempBranch(', 'const codeHistoryKey ='), 'codeMergeTempBranch', {
+    codeVerifyRef: x => x, codeGitRefUrl: (_repo, ref) => 'https://api.github.com/git/ref/' + ref,
+    codeTempBranch: () => 'code/merge-txn-invalid',
+    codeDeleteBranch: async () => ({ ok: true }),
+    codeGhApi: async (_env, _url, options = {}) => { if (options.method && options.method !== 'GET') writes++; return { ok: true, data: { object: { sha: 'a'.repeat(40) } } }; }
+  });
+  const result = await merge({}, 'owner/repo', 'code/review', 'main', 'test invalid sha', 'not-a-sha', 'also-not-a-sha');
+  assert.equal(result.ok, false);
+  assert.match(result.msg, /SHA 不合法/);
+  assert.equal(writes, 0);
+});
+
+test('ACCEPTANCE MERGE-CAS-07: scratch branch creation failure stops before merge commit creation or target update', async () => {
+  const baseSha = 'a'.repeat(40), headSha = 'b'.repeat(40);
+  const calls = [];
+  const merge = runFunction(sourceOf('async function codeMergeTempBranch(', 'const codeHistoryKey ='), 'codeMergeTempBranch', {
+    codeVerifyRef: x => x, codeGitRefUrl: (_repo, ref) => 'https://api.github.com/git/ref/' + ref,
+    codeTempBranch: () => 'code/merge-txn-create-fail',
+    codeDeleteBranch: async () => ({ ok: true }),
+    codeGhApi: async (_env, url, options = {}) => {
+      calls.push([url, options.method || 'GET']);
+      if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: baseSha } } };
+      if (url.endsWith('/heads/code/review')) return { ok: true, data: { object: { sha: headSha } } };
+      if (url.endsWith('/git/refs')) return { ok: false, status: 403, msg: 'permission denied' };
+      throw new Error('later merge steps must not execute');
+    }
+  });
+  const result = await merge({}, 'owner/repo', 'code/review', 'main', 'test scratch create fail', baseSha, headSha);
+  assert.equal(result.ok, false);
+  assert.match(result.msg, /创建隔离合并基线失败/);
+  assert.equal(calls.some(x => x[0].endsWith('/merges')), false);
+  assert.equal(calls.some(x => x[0].endsWith('/git/commits')), false);
+  assert.equal(calls.some(x => x[0].includes('/git/ref/heads/main') && x[1] === 'PATCH'), false);
+});
