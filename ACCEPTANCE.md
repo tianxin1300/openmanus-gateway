@@ -229,11 +229,11 @@ npm test
 
 ### WORKBENCH-06 — 权限边界与操作者审计
 
-**自动化测试：** `ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, save, review, merge, or roll back; authorized actions are attributed`
+**自动化测试：** `ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, save, review, merge, discard, preview, or roll back; authorized actions are attributed`
 
 **测试覆盖：**
-- 非授权用户及自动化身份尝试创建临时分支、编辑器保存、审核文件、合并推送和历史回滚。
-- 五类写操作均必须在任何 GitHub 写请求前拒绝。
+- 非授权用户及自动化身份尝试创建临时分支、编辑器保存、审核文件、合并推送、丢弃分支、触发预览和历史回滚。
+- 七类受保护写入/部署操作均必须在任何 GitHub 写请求前拒绝。
 - 授权创建记录 `created_by`。
 - 文件拒绝审核记录 `last_reviewed_by` 与 `review_events.actor`。
 - 合并历史记录 `actor`。
