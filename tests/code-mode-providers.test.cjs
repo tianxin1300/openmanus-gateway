@@ -2003,6 +2003,7 @@ test('automatic repair uses real Actions logs, source patches and a fresh verifi
   const statusEnd = workerSource.indexOf('async function codeGetFile', statusStart);
   const status = workerSource.slice(statusStart, statusEnd);
   assert.match(status, /old\.pending_status === "verification_failed"/);
+  assert.match(status, /old\.head_sha === old\.expected_sha/);
   assert.match(status, /await codeRepairPendingFromVerification\(env, user, old\)/);
   assert.match(status, /if \(env\.KV\) await env\.KV\.put\(codeVerifyKey\(user\), JSON\.stringify\(old\)/);
   assert.match(frontendStudioSource, /自动修复中/);
@@ -2047,4 +2048,29 @@ test('automatic repair reads failed logs, applies model SEARCH/REPLACE and queue
   assert.ok(finishCall);
   assert.equal(finishCall[2].edits.length, 2);
   assert.equal(finishCall[2].edits[1].auto_repair, true);
+});
+
+
+test('CodeClaimDO: automatic repair stops after two model attempts without unlocking merge', async () => {
+  const value = {
+    pending: { id: 'repair-limit', project: 'demo', status: 'verification_failed', verify_request_id: 'req-1', verify_run_id: 'run-1', repair_attempts: 2, edits: [{ path: 'worker.js' }] },
+    created_at: 1700000000000, expires_at: 1700000600000, version: 8, claims: {}, results: {}
+  };
+  const storage = {
+    value,
+    async get(key) { return key === 'claim' ? this.value : null; },
+    async put(key, next) { this.value = next; },
+    async setAlarm() {}
+  };
+  const DO = loadCodeClaimDO(async () => ({ ok: true, status: 204 }));
+  const instance = new DO({ storage }, {});
+  const response = await instance.fetch(new Request('https://code-claims/repair-claim', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pending_id: 'repair-limit', request_id: 'req-1', run_id: 'run-1' })
+  }));
+  const result = await response.json();
+  assert.equal(result.ok, true);
+  assert.equal(result.limit_reached, true);
+  assert.equal(storage.value.pending.status, 'verification_failed');
+  assert.match(storage.value.pending.repair_error, /2 次上限/);
 });
