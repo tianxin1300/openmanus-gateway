@@ -532,6 +532,18 @@ const codeHistoryKey = (user) => "code:history:" + String(user || "").slice(0, 1
 async function codeHistoryLoad(env, user) { return env.KV ? (await env.KV.get(codeHistoryKey(user), "json").catch(() => null) || []) : []; }
 async function codeHistorySave(env, user, rows) { if (env.KV) await env.KV.put(codeHistoryKey(user), JSON.stringify(rows.slice(0, 20)), { expirationTtl: 31536000 }); }
 const codeWorkbenchBranchKey = (user, repo) => "code:workbench-branch:" + String(user || "").slice(0, 120) + ":" + String(repo || "").slice(0, 120);
+async function codeWorkbenchWithLock(env, user, repo, operation, run) {
+  if (!env.CODE_CLAIMS) return { ok: false, msg: "CODE_CLAIMS Durable Object 未绑定，拒绝无锁执行工作台写操作" };
+  const lockId = "workbench:" + String(repo) + ":" + String(operation);
+  const token = (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + "-" + String(Math.random()).slice(2);
+  const acquired = await codeClaimCall(env, user, "branch-lock", { lock_id: lockId, token });
+  if (!acquired || !acquired.ok) return { ok: false, busy: !!(acquired && acquired.busy), msg: acquired && acquired.msg || "工作台操作锁获取失败" };
+  try {
+    return await run();
+  } finally {
+    await codeClaimCall(env, user, "branch-unlock", { lock_id: lockId, token }).catch(() => null);
+  }
+}
 async function codeWorkbenchBranchCurrent(env, user, repo) {
   if (!env.KV || !codeRepoOk(env, repo)) return { ok: false, msg: "项目仓库或 KV 配置不可用" };
   const key = codeWorkbenchBranchKey(user, repo);
@@ -547,7 +559,7 @@ async function codeWorkbenchBranchCurrent(env, user, repo) {
   }
   return { ok: true, active: true, ...record };
 }
-async function codeWorkbenchBranchCreate(env, user, body = {}) {
+async function codeWorkbenchBranchCreateUnlocked(env, user, body = {}) {
   const repo = String(body.repo || ""), project = String(body.project || repo.split("/").pop() || "project").slice(0, 80);
   const base = codeVerifyRef(body.base || "main");
   if (!env.KV || !codeRepoOk(env, repo) || !base) return { ok: false, msg: "项目仓库、KV 或基线分支不合法" };
@@ -565,6 +577,10 @@ async function codeWorkbenchBranchCreate(env, user, body = {}) {
   const record = { project, repo, branch: made.branch, baseBranch: made.base, baseCommit: made.sha, created_by: String(user), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), status: "active", preview_url: codeTempPreview(made.branch, repo) };
   await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 });
   return { ok: true, active: true, ...record };
+}
+async function codeWorkbenchBranchCreate(env, user, body = {}) {
+  const repo = String(body.repo || "");
+  return codeWorkbenchWithLock(env, user, repo, "create", () => codeWorkbenchBranchCreateUnlocked(env, user, body));
 }
 async function codeWorkbenchBranchDiff(env, user, repo) {
   const current = await codeWorkbenchBranchCurrent(env, user, repo);
@@ -636,7 +652,7 @@ async function codeWorkbenchBranchDiscard(env, user, body = {}) {
   await env.KV.delete(key);
   return { ok: true, discarded: true, branch: record.branch, main_untouched: true };
 }
-async function codeWorkbenchBranchMerge(env, user, body = {}) {
+async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
   const repo = String(body.repo || "");
   if (!codeRepoOk(env, repo) || !env.KV) return { ok: false, msg: "项目仓库或 KV 配置不可用" };
   const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
@@ -701,6 +717,10 @@ async function codeWorkbenchBranchMerge(env, user, body = {}) {
   }
   await env.KV.delete(key);
   return { ok: true, merged: true, branch_deleted: true, commit_sha: commitSha, files, history_id: row.id, preview_url: row.preview_url, reply: "已合并到 " + record.baseBranch + "，临时分支已删除。" };
+}
+async function codeWorkbenchBranchMerge(env, user, body = {}) {
+  const repo = String(body.repo || "");
+  return codeWorkbenchWithLock(env, user, repo, "merge", () => codeWorkbenchBranchMergeUnlocked(env, user, body));
 }
 async function codeMemoryAppend(env, user, row) {   // 代码模式的上下文记忆：用户消息 / AI 回复 / 接受 / 拒绝，只留最近 20 条
   const rows = await codeHistoryLoad(env, user);
@@ -9684,6 +9704,25 @@ export class CodeClaimDO {
       return this.response({ ok: true, pending: current && current.pending || null, version: current && current.version || 0, result: current && current.result || null });
     }
     const body = await request.json().catch(() => ({})), now = Date.now();
+    if (action === "branch-lock") {
+      const lockId = String(body.lock_id || ""), token = String(body.token || "");
+      if (!lockId || !token || lockId.length > 240 || token.length > 240) return this.response({ ok: false, msg: "无效的工作台锁参数" }, 400);
+      const locks = (await this.storage.get("workbench_locks")) || {};
+      const currentLock = locks[lockId];
+      if (currentLock && Number(currentLock.expires_at) > now) return this.response({ ok: false, busy: true, msg: "同一项目操作正在执行，请稍后重试" }, 409);
+      locks[lockId] = { token, expires_at: now + 300000 };
+      await this.storage.put("workbench_locks", locks);
+      return this.response({ ok: true, acquired: true, expires_at: locks[lockId].expires_at });
+    }
+    if (action === "branch-unlock") {
+      const lockId = String(body.lock_id || ""), token = String(body.token || "");
+      if (!lockId || !token) return this.response({ ok: false, msg: "无效的工作台解锁参数" }, 400);
+      const locks = (await this.storage.get("workbench_locks")) || {};
+      if (!locks[lockId] || locks[lockId].token !== token) return this.response({ ok: false, stale: true, msg: "锁已过期或不属于当前操作" }, 409);
+      delete locks[lockId];
+      await this.storage.put("workbench_locks", locks);
+      return this.response({ ok: true, released: true });
+    }
     if (action === "create") {
       const current = await this.load(), incoming = body.pending;
       if (!incoming || !incoming.id || !incoming.project || !Array.isArray(incoming.edits) || !incoming.edits.length) return this.response({ ok: false, msg: "缺少有效 pending" }, 400);
