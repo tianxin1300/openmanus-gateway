@@ -16,6 +16,7 @@ function fixtures() {
     discardFailure: false,
     history: [],
     rejected: [],
+    rejectedPayloads: [],
     mergePayload: null,
     discardPayload: null,
     rollbackPayload: null,
@@ -61,6 +62,7 @@ async function installApiFixtures(page, state) {
         return json({ ok: false, msg: "simulated rejection failure" }, 500);
       }
       state.rejected.push(body.path);
+      state.rejectedPayloads.push(body);
       state.changes = state.changes.filter(file => file.path !== body.path);
       return json({ ok: true, rejected: body.path });
     }
@@ -179,6 +181,30 @@ test("file review, reject one file, accept another, and push only accepted paths
   expect(state.mergePayload.accepted_paths).toEqual(["README.md"]);
   await expect(page.locator("#wb-branch")).toContainText("无活动临时分支");
   await expect(page.locator("#wb-version-list")).toContainText("Playwright UI push");
+});
+
+test("rejecting a renamed file sends the previous filename so the source path can be restored", async ({ page }) => {
+  const state = fixtures();
+  state.changes = [{
+    path: "new-name.js",
+    previous_path: "old-name.js",
+    status: "renamed",
+    additions: 1,
+    deletions: 1,
+    patch: "@@ rename"
+  }];
+  await installApiFixtures(page, state);
+  await openWorkbench(page);
+
+  const row = page.locator(".wb-change-row").filter({ hasText: "new-name.js" });
+  await row.getByRole("button", { name: "拒绝" }).click();
+  await expect.poll(() => state.rejectedPayloads.length).toBe(1);
+  expect(state.rejectedPayloads[0]).toMatchObject({
+    path: "new-name.js",
+    previous_path: "old-name.js",
+    branch: BRANCH
+  });
+  await expect(row).toHaveCount(0);
 });
 
 test("terminal and run-log tabs switch exclusively and follow mobile viewport resizing", async ({ page }) => {
