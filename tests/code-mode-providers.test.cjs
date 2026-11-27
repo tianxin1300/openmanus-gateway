@@ -1579,7 +1579,7 @@ test('ACCEPTANCE WORKBENCH-PROJECT-02: switching projects clears old branch stat
     FILE: "old/file.js",
     curSha: "old-sha",
     dirty: false,
-    select: { value: "second-project" },
+    select: { value: "owner-b/second-project" },
     fileLabel: { textContent: "old/file.js" }
   };
   const sandbox = {
@@ -1609,7 +1609,7 @@ test('ACCEPTANCE WORKBENCH-PROJECT-02: switching projects clears old branch stat
     say: message => calls.push("error:" + message)
   };
   vm.runInNewContext(frontendSource.slice(start, end) + '\nglobalThis.testSwitchProject = switchWorkbenchProject;', sandbox);
-  await sandbox.testSwitchProject("second");
+  await sandbox.testSwitchProject("owner-b/second-project");
   assert.equal(state.REPO.owner, "owner-b");
   assert.equal(state.REPO.repo, "second-project");
   assert.equal(state.REPO.branch, "code/second-active");
