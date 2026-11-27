@@ -2074,3 +2074,16 @@ test('CodeClaimDO: automatic repair stops after two model attempts without unloc
   assert.equal(storage.value.pending.status, 'verification_failed');
   assert.match(storage.value.pending.repair_error, /2 次上限/);
 });
+
+
+test('codeConfirm discard refuses success when GitHub cannot delete the temporary branch', () => {
+  const start = workerSource.indexOf('async function codeConfirm(');
+  const end = workerSource.indexOf('async function codeChatEntry', start);
+  const confirm = workerSource.slice(start, end);
+  const discardStart = confirm.indexOf('  if (!yes) {');
+  const discardEnd = confirm.indexOf('  const claimedFrom', discardStart);
+  const discard = confirm.slice(discardStart, discardEnd);
+  assert.match(discard, /if \(!removed\.ok && removed\.status !== 404\)/);
+  assert.match(discard, /ok: false, pending: true, conflict: true/);
+  assert.ok(discard.indexOf('codeDeleteBranch') < discard.indexOf('finish("discarded"'));
+});
