@@ -6278,7 +6278,7 @@ function renderWorkbenchChanges() {
     reject.addEventListener("click", async () => {
       reject.disabled = true;
       try {
-        await wbApi("/api/code/branch/reject-file", { method: "POST", body: JSON.stringify({ repo: workbenchRepoFull(), branch: activeBranchRecord.branch, path }) });
+        await wbApi("/api/code/branch/reject-file", { method: "POST", body: JSON.stringify({ repo: workbenchRepoFull(), branch: activeBranchRecord.branch, path, previous_path: file.previous_path || "" }) });
         delete workbenchDecisions[path];
         if (FILE === path) await loadFile();
         await Promise.all([loadWorkbenchChanges(), loadWorkbenchTree()]);
