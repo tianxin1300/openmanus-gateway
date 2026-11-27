@@ -1749,7 +1749,7 @@ test('CodeClaimDO: verification accepts only its dispatched run and records SHA 
   const request = body => instance.fetch(new Request('https://code-claims/verification', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   }));
-  const wrongRun = await request({ pending_id: 'verify-1', request_id: 'req-42', run_id: 'run-other', expected_sha: 'abc1234', actual_sha: 'abc1234' });
+  const wrongRun = await request({ pending_id: 'verify-1', request_id: 'req-other', run_id: 'run-other', expected_sha: 'abc1234', actual_sha: 'abc1234' });
   assert.equal(wrongRun.status, 409);
   const mismatch = await request({ pending_id: 'verify-1', request_id: 'req-42', run_id: 'run-42', expected_sha: 'abc1234', actual_sha: 'def5678', conclusion: 'success' });
   assert.equal(mismatch.status, 200);
