@@ -2019,6 +2019,8 @@ test('automatic repair uses real Actions logs, source patches and a fresh verifi
   assert.match(status, /old\.pending_status === "verification_failed"/);
   assert.match(status, /old\.head_sha === old\.expected_sha/);
   assert.match(status, /await codeRepairPendingFromVerification\(env, user, old\)/);
+  assert.match(status, /verificationConflict = true/);
+  assert.match(status, /!repairStarted && !verificationConflict/);
   assert.match(status, /if \(env\.KV\) await env\.KV\.put\(codeVerifyKey\(user\), JSON\.stringify\(old\)/);
   assert.match(frontendStudioSource, /自动修复中/);
   assert.match(frontendStudioSource, /function pollVerification\(\)/);
