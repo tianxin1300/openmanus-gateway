@@ -1622,3 +1622,22 @@ test('workbench history loads on tab open and exposes full both Runner state', (
   assert.ok(!script.includes('else renderVerifyResult({...j,state:j.state||x.state,fromHistory:true})'));
   assert.ok(script.includes('历史记录加载失败'));
 });
+
+test('Cron Issue Agent: codeLLM rotates existing providers with 60-second per-model timeout and bounded budget', () => {
+  const agent = fs.readFileSync(path.join(root, '.github/scripts/issue-agent.mjs'), 'utf8');
+  const workflow = fs.readFileSync(path.join(root, '.github/workflows/cron-issue-agent.yml'), 'utf8');
+  const docs = fs.readFileSync(path.join(root, '.github/CRON-ISSUE-AGENT.md'), 'utf8');
+  assert.match(workerSource, /signal: T\\(Math\\.min\\(60000, left\\)\\)/);
+  assert.match(workerSource, /async function codeAssist\\(env, user, raw, history, budgetMs\\)/);
+  assert.match(workerSource, /await codeLLM\\(env, \\[\\{ role: "system", content: sys \\}, \.\.\.hist\\.slice\\(-10\\), \\{ role: "user", content: d\\.text \\}\\], budgetMs\\)/);
+  assert.match(workerSource, /budgetMs: Math\\.min\\(420000, Math\\.max\\(15000, Number\\(b\\.code_budget_ms\\) \\|\\| 110000\\)\\)/);
+  assert.match(agent, /code_budget_ms: 420000/);
+  assert.match(agent, /AbortSignal\\.timeout\\(8 \\* 60 \\* 1000\\)/);
+  assert.match(agent, /全部限流超时，下一轮再试/);
+  assert.match(agent, /labels\\(issue\\.number, \\["bot:ready"\\], \\["bot:running", "bot:failed"\\]\\)/);
+  assert.match(agent, /per_page=1/);
+  assert.match(workflow, /poll-and-process:[\\s\\S]*?timeout-minutes: 10/);
+  assert.match(docs, /Schedule: every 30 minutes/);
+  assert.match(docs, /per_page=1/);
+  assert.doesNotMatch(agent, /CODE_OR_MODELS|CODE_GROQ_MODELS|CODE_NVIDIA_MODELS/);
+});
