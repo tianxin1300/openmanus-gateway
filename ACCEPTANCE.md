@@ -289,8 +289,8 @@ npm test
 **自动化测试：** `ACCEPTANCE WORKBENCH-CONCURRENCY-01`、`ACCEPTANCE WORKBENCH-LOCK-FAIL-CLOSED-01`，并由 `ACCEPTANCE LOCK-CLEANUP-01` 检查 Durable Object 锁释放。
 
 **测试覆盖：**
-- 同一仓库跨授权用户的分支创建和合并共用同一把 Durable Object 锁。
-- 创建期间发起合并，第二个操作必须返回 busy，不得进入 GitHub 写操作。
+- 同一仓库跨授权用户的分支创建、文件审核、合并和丢弃共用同一把 Durable Object 锁。
+- 创建期间发起合并，第二个操作必须返回 busy，不得进入 GitHub 写操作；文件审核和丢弃也必须经过同一把锁。
 - 锁只能由持有正确 token 的操作释放。
 - 操作结束释放锁，后续操作可重新获取。
 - 未绑定 `CODE_CLAIMS` 时，创建和合并均失败关闭，不得退回 KV 无锁执行。
