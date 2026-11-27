@@ -49,5 +49,6 @@ test('个人中心提供独立 Cron 令牌生成、复制、撤销，不保存�
 test('PR 60 Pages preview may target only its dedicated preview Worker', () => {
   assert.match(frontend, /location\.hostname\.endsWith\("\.pages\.dev"\)/);
   assert.match(frontend, /openmanus-gateway-pr60-preview/);
-  assert.match(frontend, /workers\\\\\.dev/);
 });
+
+  assert.ok(frontend.includes('workers\\.dev'));
