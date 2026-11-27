@@ -1027,7 +1027,7 @@ async function codeClaimState(env, user) {
   return await r.json().catch(() => ({ ok: false, msg: "Durable Object 返回了无效响应" }));
 }
 function codePendingActive(p) {
-  return p && Array.isArray(p.edits) && p.edits.length && ["awaiting_approval", "applying", "partial", "conflict", "failed"].includes(p.status || "awaiting_approval");
+  return p && Array.isArray(p.edits) && p.edits.length && ["awaiting_approval", "applying", "partial", "conflict", "failed", "verification_pending", "verification_passed"].includes(p.status || "awaiting_approval");
 }
 async function codePendingLoad(env, user) {
   const d = await codeClaimState(env, user);
@@ -1113,7 +1113,7 @@ async function codePendingSweep(env) {
 }
 
 function codePendingView(p) {
-  if (!p || !Array.isArray(p.edits) || !p.edits.length || !["awaiting_approval", "applying", "partial", "conflict", "failed"].includes(p.status || "awaiting_approval")) return null;
+  if (!p || !Array.isArray(p.edits) || !p.edits.length || !["awaiting_approval", "applying", "partial", "conflict", "failed", "verification_pending", "verification_passed"].includes(p.status || "awaiting_approval")) return null;
   return { id: p.id || "", pending_id: p.id || "", version: Number(p.version) || 1, project: p.project || "", status: p.status || "awaiting_approval", repo: p.repo, branch: p.branch, baseBranch: p.baseBranch || "main", preview_url: p.preview_url || codeTempPreview(p.branch), summary: p.summary, at: p.at, updatedAt: p.updatedAt || p.at, warn: p.warn || [], edits: p.edits.map((e) => ({ path: e.path, line: e.line || 0, old: codeCut(e.old, 4000), new: codeCut(e.new, 4000) })) };
 }
 const codeBalanceWarn = (a, b) => ["{}", "()", "[]"].filter((p) => { const d = (t) => t.split(p[0]).length - t.split(p[1]).length; return d(a) !== d(b); });
@@ -9424,7 +9424,7 @@ export class CodeClaimDO {
     if (action === "create") {
       const current = await this.load(), incoming = body.pending;
       if (!incoming || !incoming.id || !incoming.project || !Array.isArray(incoming.edits) || !incoming.edits.length) return this.response({ ok: false, msg: "缺少有效 pending" }, 400);
-      if (current && current.pending && ["awaiting_approval", "applying", "discarding", "partial", "conflict", "failed"].includes(current.pending.status || "awaiting_approval")) return this.response({ ok: false, conflict: true, pending: current.pending, msg: "已有待处理修改" }, 409);
+      if (current && current.pending && ["awaiting_approval", "applying", "discarding", "partial", "conflict", "failed", "verification_pending", "verification_passed"].includes(current.pending.status || "awaiting_approval")) return this.response({ ok: false, conflict: true, pending: current.pending, msg: "已有待处理修改" }, 409);
       incoming.status = "awaiting_approval"; incoming.version = 1; incoming.updatedAt = now;
       if (!incoming.created_at) incoming.created_at = now;   // v108：记录创建时间，10 分钟后自动过期
       await this.save({ pending: incoming, created_at: now, version: 1, claims: {}, results: {}, expires_at: now + CODE_PENDING_TTL_MS });
@@ -9438,7 +9438,7 @@ export class CodeClaimDO {
       if (current && current.results && current.results[operationId]) return this.response({ ok: true, replayed: true, result: current.results[operationId] });
       if (current && current.claims && current.claims[operationId]) return this.response({ ok: false, replayed: true, in_progress: true, pending: true, msg: "相同操作正在处理，请等待第一次请求完成" }, 409);
       if (!p || p.id !== pendingId || Number(current.version) !== Number(body.version) || p.project !== project) return this.response({ ok: false, conflict: true, pending: codePendingView(p), msg: "待推送内容已变化，请刷新预览后再操作" }, 409);
-      if (!["awaiting_approval", "partial", "failed"].includes(p.status || "awaiting_approval")) return this.response({ ok: false, pending: true, busy: p.status === "applying", msg: p.status === "applying" ? "这项修改正在处理，请不要重复点击" : "这项修改当前不能确认" }, 409);
+      if (!["awaiting_approval", "partial", "failed", "verification_passed"].includes(p.status || "awaiting_approval")) return this.response({ ok: false, pending: true, busy: p.status === "applying", msg: p.status === "applying" ? "这项修改正在处理，请不要重复点击" : "这项修改当前不能确认" }, 409);
       current.claims[operationId] = { at: now, yes: body.yes === true };
       p.status = "applying"; p.updatedAt = now; p.operation_id = operationId;
       await this.save(current);
@@ -9454,6 +9454,14 @@ export class CodeClaimDO {
       delete current.claims[operationId];
       await this.save(current);
       return this.response({ ok: true, result, pending: p, version: current.version });
+    }
+    if (action === "verification") {
+      const current = await this.load(), p = current && current.pending;
+      const pendingId = String(body.pending_id || ""), runId = String(body.run_id || ""), expectedSha = String(body.expected_sha || ""), actualSha = String(body.actual_sha || "");
+      if (!current || !p || p.id !== pendingId || p.status !== "verification_pending" || !runId || p.verify_run_id !== runId || !expectedSha || p.verify_expected_sha !== expectedSha || actualSha !== expectedSha) return this.response({ ok: false, conflict: true, msg: "验证结果与当前待处理提交不匹配，拒绝标记通过" }, 409);
+      p.status = "verification_passed"; p.verify_conclusion = "success"; p.verify_head_sha = actualSha; p.verify_completed_at = now; p.updatedAt = now; current.version = Number(current.version || 0) + 1;
+      await this.save(current);
+      return this.response({ ok: true, pending: p, version: current.version });
     }
     if (action === "discard") {
       const current = await this.load(), p = current && current.pending;
