@@ -190,7 +190,7 @@ test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, review, o
     codeGitRefUrl: () => 'https://api.github.com/ref',
     codeGhApi: async () => { writes++; return { ok: true }; }
   });
-  const reject = runFunction(sourceOf('async function codeWorkbenchBranchRejectFile(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchRejectFile', {
+  const reject = runFunction(sourceOf('async function codeWorkbenchBranchRejectFileUnlocked(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchRejectFile', {
     codeRepoOk: () => true, codePathOk: () => true, codePushGuard: guard,
     codeWorkbenchBranchCurrent: async () => ({ ok: true, active: true, branch: 'code/owned', baseCommit: 'base' }),
     codeWorkbenchBranchKey: () => 'key', codeGetFile: async () => { writes++; return { ok: true, exists: true, text: 'x', sha: 'blob' }; },
@@ -293,7 +293,7 @@ test('ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rej
   const record = { repo, branch: 'code/mixed', baseBranch: 'main', baseCommit: 'base', project: 'mixed' };
   const kv = { async get() { return record; }, async put(_k, value) { Object.assign(record, JSON.parse(value)); }, async delete() {} };
   const deletedPaths = [], restored = [];
-  const reject = runFunction(sourceOf('async function codeWorkbenchBranchRejectFile(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchRejectFile', {
+  const reject = runFunction(sourceOf('async function codeWorkbenchBranchRejectFileUnlocked(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchRejectFile', {
     codeRepoOk: () => true, codePathOk: () => true, codePushGuard: () => '',
     codeWorkbenchBranchCurrent: async () => ({ ok: true, active: true, ...record }),
     codeWorkbenchBranchKey: () => 'key',
@@ -333,7 +333,7 @@ test('ACCEPTANCE MULTI-REVIEW-01: mixed file review keeps accepted files and rej
       if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: 'base' } } };
       throw new Error('unexpected ' + url);
     },
-    codeWorkbenchBranchRejectFile: async (_e, _u, body) => { rejected.push(body); return { ok: true }; },
+    codeWorkbenchBranchRejectFileUnlocked: async (_e, _u, body) => { rejected.push(body); return { ok: true }; },
     codeMergeTempBranch: async (_e, _r, _b, _base, _msg) => { mergeFiles = ['keep.js', 'add.js']; return { ok: true, data: { sha: 'merged' } }; },
     codeHistoryLoad: async () => [], codeHistorySave: async () => {}, codeDeleteBranch: async () => ({ ok: true }),
     codeGitRefUrl: (r, ref) => 'https://api.github.com/repos/' + r + '/git/ref/' + ref,
@@ -356,7 +356,7 @@ test('ACCEPTANCE CLEANUP-01: failed deletion retains recoverable state; successf
     async delete() { record = null; },
     async put(_k, value) { record = JSON.parse(value); }
   };
-  const discard = runFunction(sourceOf('async function codeWorkbenchBranchDiscard(', 'async function codeWorkbenchBranchMerge('), 'codeWorkbenchBranchDiscard', {
+  const discard = runFunction(sourceOf('async function codeWorkbenchBranchDiscardUnlocked(', 'async function codeWorkbenchBranchMergeUnlocked('), 'codeWorkbenchBranchDiscard', {
     codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
     codeDeleteBranch: async () => { deletes++; return deleteFails ? { ok: false, status: 500, msg: 'simulated failure' } : { ok: true }; }
   });
