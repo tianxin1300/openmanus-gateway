@@ -236,7 +236,7 @@ npm test
 - 七类受保护写入/部署操作均必须在任何 GitHub 写请求前拒绝。
 - 授权创建记录 `created_by`。
 - 授权保存记录 `last_saved_by` 与 `save_events.actor`；预览触发记录 `preview_started_by` 与 `preview_events.actor`。
-- 历史回滚写入 `actor`；丢弃临时分支写入带操作者的 `workbench_discard` 历史事件。
+- 历史回滚写入 `actor`；丢弃临时分支写入带操作者的 `workbench_discard` 历史事件，并在工作台历史区显示为不可回滚的操作记录。
 - 文件拒绝审核记录 `last_reviewed_by` 与 `review_events.actor`。
 - 合并历史记录 `actor`。
 
