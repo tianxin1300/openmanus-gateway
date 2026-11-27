@@ -735,7 +735,7 @@ async function codeWorkbenchBranchSaveFileUnlocked(env, user, body = {}) {
   const saved = await codeUpdateFile(env, repo, path, body.content, String(body.message || ("Workbench: update " + path)), branch, file.sha);
   if (!saved.ok) return { ok: false, msg: "保存到临时分支失败：" + (saved.msg || "GitHub 写入失败") };
   const updated = await codeGetFile(env, repo, path, branch);
-  if (!updated.ok || !updated.exists || !updated.sha) return { ok: false, saved: true, msg: "文件已写入，但读取新 SHA 失败；请重新读取文件确认状态" };
+  if (!updated.ok || !updated.exists || !updated.sha) return { ok: true, saved: true, sha: "", refresh_required: true, msg: "文件已写入；新 SHA 暂时无法确认，请重新读取文件" };
   return { ok: true, saved: true, sha: updated.sha, url: saved.url || "" };
 }
 async function codeWorkbenchBranchSaveFile(env, user, body = {}) {
