@@ -1717,7 +1717,7 @@ test('Cron Issue Agent: exhausted model pool restores bot:ready and logs the ret
   };
   vm.runInNewContext(agent.slice(start, end) + '\nglobalThis.testRequeue = requeueForModelPool;', sandbox);
   await sandbox.testRequeue(314, 'model_pool_exhausted', {detail: 'all providers exhausted'});
-  assert.deepEqual(calls, [[314, ['bot:ready'], ['bot:running', 'bot:failed']]]);
+  assert.equal(JSON.stringify(calls), JSON.stringify([[314, ['bot:ready'], ['bot:running', 'bot:failed']]]));
   assert.equal(events[0].event, 'model_pool_exhausted');
   assert.equal(events[0].details.message, '全部限流超时，下一轮再试');
   assert.equal(events[1].event, 'issue_requeued');
