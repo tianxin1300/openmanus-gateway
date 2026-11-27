@@ -132,6 +132,7 @@ test('ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restore
     codeHistoryLoad: async () => rows,
     codeHistorySave: async (_env, _user, next) => { rows.splice(0, rows.length, ...next); },
     codeVerifyRef: x => x, codeRepoOk: () => true, codePushGuard: () => '',
+    codePathOk: p => typeof p === 'string' && !!p && !p.includes('..') && !p.startsWith('/'),
     codeGitRefUrl: (repo, ref) => 'https://api.github.com/repos/' + repo + '/git/ref/' + ref,
     codeGhApi: async (_env, url, options = {}) => {
       if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: 'current-commit' } } };
