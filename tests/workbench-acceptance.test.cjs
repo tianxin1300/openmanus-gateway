@@ -235,6 +235,7 @@ test('ACCEPTANCE WORKBENCH-SAVE-CAS-01: editor saves share the repository lock a
     codeRepoOk: () => true,
     codePathOk: () => true,
     codePushGuard: () => '',
+    codeWorkbenchBranchKey: () => 'key',
     codeWorkbenchBranchCurrent: async () => ({ ok: true, active: true, branch: 'code/save-test' }),
     codeGetFile: async () => ({ ok: true, exists: true, sha: currentSha }),
     codeUpdateFile: async (_env, _repo, _path, _content, _message, _branch, sha) => {
