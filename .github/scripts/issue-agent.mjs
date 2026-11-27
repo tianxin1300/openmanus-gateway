@@ -117,11 +117,9 @@ async function main() {
       body: JSON.stringify({
         model: "claude-sonnet-4-5",
         provider: "OpenRouter",
-        code_mode: true,
         stream: false,
         message: prompt,
-        messages: [{ role: "user", content: prompt }],
-        code_project: repository
+        messages: [{ role: "user", content: prompt }]
       }),
       signal: AbortSignal.timeout(180000)
     });
