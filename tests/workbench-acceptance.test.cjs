@@ -135,7 +135,7 @@ test('ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restore
     codePathOk: p => typeof p === 'string' && !!p && !p.includes('..') && !p.startsWith('/'),
     codeGitRefUrl: (repo, ref) => 'https://api.github.com/repos/' + repo + '/git/ref/' + ref,
     codeGhApi: async (_env, url, options = {}) => {
-      if (url.endsWith('/heads/main')) return { ok: true, data: { object: { sha: 'current-commit' } } };
+      if (url.endsWith('/heads/main') && options.method !== 'PATCH') return { ok: true, data: { object: { sha: 'current-commit' } } };
       if (url.endsWith('/git/commits/current-commit')) return { ok: true, data: { tree: { sha: 'current-tree' } } };
       if (url.endsWith('/git/commits/target-commit')) return { ok: true, data: { tree: { sha: 'target-tree' } } };
       if (url.endsWith('/git/trees/current-tree?recursive=1')) return { ok: true, data: { tree: [
