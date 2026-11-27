@@ -760,3 +760,43 @@ test('ACCEPTANCE MERGE-RECORD-CLEANUP-01: KV record deletion failure does not re
   assert.equal(deleteCalls, 2, 'retry treats an already deleted branch as a safe cleanup target');
   assert.equal(kvDeleteCalls, 2);
 });
+
+
+test('ACCEPTANCE IDEMPOTENCY-CONCURRENT-CREATE-01: simultaneous duplicate creates produce one branch and retry reuses it', async () => {
+  let held = false, createCalls = 0, record = null, finishCreate;
+  const wait = new Promise(resolve => { finishCreate = resolve; });
+  const helper = sourceOf('async function codeWorkbenchLockCall(', 'async function codeWorkbenchBranchCurrent(');
+  const createBlock = sourceOf('async function codeWorkbenchBranchCreateUnlocked(', 'async function codeWorkbenchBranchDiff(');
+  const create = runFunction(helper + '\n' + createBlock, 'codeWorkbenchBranchCreate', {
+    codeWorkbenchLockCall: async (_env, _repo, action) => {
+      if (action === 'branch-lock') {
+        if (held) return { ok: false, busy: true, msg: 'locked' };
+        held = true; return { ok: true };
+      }
+      held = false; return { ok: true };
+    },
+    codeVerifyRef: x => x, codeRepoOk: () => true, codePushGuard: () => '',
+    codeWorkbenchBranchKey: () => 'branch-key', codeTempPreview: () => '',
+    codeCreateTempBranch: async () => { createCalls++; await wait; return { ok: true, branch: 'code/p-once', base: 'main', sha: 'base-sha' }; },
+    codeGitRefUrl: (_repo, ref) => 'https://api.github.com/heads/' + ref,
+    codeGhApi: async () => ({ ok: true, data: { object: { sha: 'base-sha' } } })
+  });
+  const env = { CODE_CLAIMS: {}, KV: {
+    get: async () => record,
+    put: async (_key, value) => { record = JSON.parse(value); },
+    delete: async () => { record = null; }
+  } };
+  const first = create(env, 'owner', { repo: 'owner/repo', project: 'p' });
+  await Promise.resolve();
+  const concurrent = await create(env, 'owner', { repo: 'owner/repo', project: 'p' });
+  assert.equal(concurrent.ok, false);
+  assert.equal(concurrent.busy, true);
+  assert.equal(createCalls, 1, 'only one concurrent request reaches GitHub branch creation');
+  finishCreate();
+  const made = await first;
+  assert.equal(made.ok, true);
+  const retry = await create(env, 'owner', { repo: 'owner/repo', project: 'p' });
+  assert.equal(retry.ok, true);
+  assert.equal(retry.existing, true, 'retry after lock release reuses the already-created branch');
+  assert.equal(createCalls, 1, 'no second branch is created');
+});
