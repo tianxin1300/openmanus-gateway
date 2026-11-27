@@ -43,7 +43,7 @@ async function gh(path, method = "GET", body) {
   return data;
 }
 
-async function worker(path, { method = "GET", body, auth = true, e2e = false } = {}) {
+async function worker(path, { method = "GET", body, auth = true, e2e = false, allowStatuses = [] } = {}) {
   const response = await fetch(new URL(path, baseUrl), {
     method,
     headers: {
@@ -56,7 +56,7 @@ async function worker(path, { method = "GET", body, auth = true, e2e = false } =
   const raw = await response.text();
   let data;
   try { data = JSON.parse(raw); } catch { data = raw; }
-  if (!response.ok) throw new Error(`Worker ${method} ${path}: HTTP ${response.status} ${JSON.stringify(data).slice(0, 700)}`);
+  if (!response.ok && !allowStatuses.includes(response.status)) throw new Error(`Worker ${method} ${path}: HTTP ${response.status} ${JSON.stringify(data).slice(0, 700)}`);
   return data;
 }
 
@@ -80,7 +80,8 @@ try {
     method: "POST",
     body: { ...lockA, token: `b-${runId}` },
     auth: false,
-    e2e: true
+    e2e: true,
+    allowStatuses: [409]
   });
   assert.equal(competing.ok, false, "second HTTP request must observe persisted DO lock");
   assert.equal(competing.busy, true, "second HTTP request must be rejected as busy");
