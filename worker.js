@@ -534,7 +534,7 @@ async function codeHistorySave(env, user, rows) { if (env.KV) await env.KV.put(c
 const codeWorkbenchBranchKey = (user, repo) => "code:workbench-branch:" + String(user || "").slice(0, 120) + ":" + String(repo || "").slice(0, 120);
 async function codeWorkbenchLockCall(env, repo, action, body) {
   if (!env.CODE_CLAIMS) return { ok: false, configured: false, msg: "CODE_CLAIMS Durable Object 未绑定" };
-  const stub = env.CODE_CLAIMS.get(env.CODE_CLAIMS.idFromName("workbench:" + String(repo)));
+  const stub = env.CODE_CLAIMS.get(env.CODE_CLAIMS.idFromName("workbench:" + String(repo).trim().toLowerCase()));
   const response = await stub.fetch("https://workbench-lock/" + action, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {})
   });
@@ -542,7 +542,7 @@ async function codeWorkbenchLockCall(env, repo, action, body) {
 }
 async function codeWorkbenchWithLock(env, user, repo, operation, run) {
   if (!env.CODE_CLAIMS) return { ok: false, msg: "CODE_CLAIMS Durable Object 未绑定，拒绝无锁执行工作台写操作" };
-  const lockId = "workbench:" + String(repo);
+  const lockId = "workbench:" + String(repo).trim().toLowerCase();
   const token = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + "-" + String(Math.random()).slice(2);
   const acquired = await codeWorkbenchLockCall(env, repo, "branch-lock", { lock_id: lockId, token, operation: String(operation) });
   if (!acquired || !acquired.ok) return { ok: false, busy: !!(acquired && acquired.busy), msg: acquired && acquired.msg || "工作台操作锁获取失败" };
