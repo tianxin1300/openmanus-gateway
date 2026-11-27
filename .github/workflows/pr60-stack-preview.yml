@@ -18,7 +18,7 @@ jobs:
   preview:
     if: github.ref_name == 'code/cron-automation-token-20261128'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     env:
       DEPLOY_REF: ${{ github.ref_name }}
       DEPLOY_SHA: ${{ github.sha }}
@@ -103,6 +103,7 @@ jobs:
           echo "url=$PAGES_URL" >> "$GITHUB_OUTPUT"
 
       - name: Verify automation-token API end to end on isolated preview
+        id: preview-api
         env:
           WORKER_URL: ${{ steps.worker.outputs.url }}
         shell: bash
@@ -163,6 +164,109 @@ jobs:
           test "$(printf '%s' "$AFTER" | jq -r '.ok and (.active == false)')" = "true"
           echo "PASS: isolated preview register -> GET -> POST create -> GET active -> automation-token scope denial -> DELETE revoke -> GET inactive"
           echo "Test account and tokens existed only in the isolated preview KV namespace."
+          echo "::add-mask::$LOGIN_TOKEN"
+          echo "login_token=$LOGIN_TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Real isolated code-mode failure → model repair → reverify smoke
+        if: contains(github.event.head_commit.message, '[repair-smoke]')
+        env:
+          WORKER_URL: \${{ steps.worker.outputs.url }}
+          LOGIN_TOKEN: \${{ steps.preview-api.outputs.login_token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          AUTH=(-H "Authorization: Bearer $LOGIN_TOKEN" -H 'Accept: application/json')
+          CLEANED=false
+          cleanup() {
+            CURRENT="$(curl --silent --show-error "$WORKER_URL/api/code/pending" "\${AUTH[@]}" || true)"
+            CURRENT_ID="$(printf '%s' "$CURRENT" | jq -r '.pending.pending_id // .pending.id // empty' 2>/dev/null || true)"
+            if [ -n "$CURRENT_ID" ]; then
+              CURRENT_VERSION="$(printf '%s' "$CURRENT" | jq -r '.pending.version // empty')"
+              CURRENT_PROJECT="$(printf '%s' "$CURRENT" | jq -r '.pending.project // empty')"
+              BODY="$(jq -nc --arg token "$LOGIN_TOKEN" --arg id "$CURRENT_ID" --arg project "$CURRENT_PROJECT" --argjson version "$CURRENT_VERSION" --arg op "repair-smoke-cleanup-$GITHUB_SHA" '{token:$token,yes:false,pending_id:$id,version:$version,project:$project,operation_id:$op}')"
+              curl --silent --show-error --max-time 30 -X POST "$WORKER_URL/api/code/confirm" "\${AUTH[@]}" -H 'Content-Type: application/json' --data "$BODY" >/tmp/pr60-repair-cleanup.json || true
+            fi
+          }
+          trap cleanup EXIT
+
+          PROMPT='PR60 隔离环境的自动修复端到端验收。请只修改 worker.js 和 tests/code-mode-providers.test.cjs。第一，在 worker.js 的 const codePathOk 定义后新增这一行，故意保留这个错误实现：const codeRepairSmokeProbe = (value) => value === "repair-me" ? "broken" : value; 第二，在 tests/code-mode-providers.test.cjs 末尾增加一个 node:test，使用已有的 workerSource、vm、assert，从 workerSource 中提取 codeRepairSmokeProbe 定义并执行，断言传入 "repair-me" 必须返回 "repair-me"。这是有意注入的一次临时故障：本轮生成阶段必须让函数返回 broken、测试保持正确，从而让 Actions 的 npm test 真实失败。不要在生成阶段提前修复这个函数，不要改其他文件。'
+          REQUEST="$(jq -nc --arg token "$LOGIN_TOKEN" --arg text "$PROMPT" '{token:$token,text:$text,code_mode:true,code_project:"聚合体"}')"
+          echo "Starting real code-mode model task in the isolated preview Worker."
+          CODE_RESULT="$(curl --fail-with-body --silent --show-error --max-time 240 -X POST "$WORKER_URL/api/code" "\${AUTH[@]}" -H 'Content-Type: application/json' --data "$REQUEST")"
+          if ! printf '%s' "$CODE_RESULT" | jq -e '.ok == true and .pending == true' >/dev/null; then
+            echo "::error::Code-mode model did not create the expected isolated pending patch."
+            printf '%s' "$CODE_RESULT" | jq -c '{ok,reply,msg}' || true
+            exit 1
+          fi
+
+          PENDING="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/code/pending" "\${AUTH[@]}")"
+          PENDING_ID="$(printf '%s' "$PENDING" | jq -r '.pending.pending_id // .pending.id // empty')"
+          VERSION="$(printf '%s' "$PENDING" | jq -r '.pending.version // empty')"
+          PROJECT="$(printf '%s' "$PENDING" | jq -r '.pending.project // empty')"
+          BRANCH="$(printf '%s' "$PENDING" | jq -r '.pending.branch // empty')"
+          PATHS="$(printf '%s' "$PENDING" | jq -r '[.pending.edits[].path] | unique | join(",")')"
+          WORKER_PATCH="$(printf '%s' "$PENDING" | jq -r '[.pending.edits[] | select(.path=="worker.js") | .new] | join("\n")')"
+          TEST_PATCH="$(printf '%s' "$PENDING" | jq -r '[.pending.edits[] | select(.path=="tests/code-mode-providers.test.cjs") | .new] | join("\n")')"
+          test -n "$PENDING_ID" && [[ "$BRANCH" == code/* ]] || { echo "::error::No safe code/* pending branch was created"; exit 1; }
+          [[ "$PATHS" == *"worker.js"* && "$PATHS" == *"tests/code-mode-providers.test.cjs"* ]] || { echo "::error::Model patch did not stay within the two expected smoke files: $PATHS"; exit 1; }
+          [[ "$WORKER_PATCH" == *"codeRepairSmokeProbe"* && "$WORKER_PATCH" == *"broken"* ]] || { echo "::error::Model did not create the intentional failing function"; exit 1; }
+          [[ "$TEST_PATCH" == *"codeRepairSmokeProbe"* && "$TEST_PATCH" == *"repair-me"* ]] || { echo "::error::Model did not create the expected regression test"; exit 1; }
+          echo "PASS: real code-mode model generated the intentional failing patch on a temporary branch: $BRANCH"
+
+          CONFIRM="$(jq -nc --arg token "$LOGIN_TOKEN" --arg id "$PENDING_ID" --arg project "$PROJECT" --argjson version "$VERSION" --arg op "repair-smoke-accept-$GITHUB_SHA" '{token:$token,yes:true,pending_id:$id,version:$version,project:$project,operation_id:$op}')"
+          ACCEPTED="$(curl --fail-with-body --silent --show-error --max-time 60 -X POST "$WORKER_URL/api/code/confirm" "\${AUTH[@]}" -H 'Content-Type: application/json' --data "$CONFIRM")"
+          printf '%s' "$ACCEPTED" | jq -e '.ok == true and .verification_pending == true' >/dev/null || { echo "::error::Initial acceptance did not queue Actions verification"; printf '%s' "$ACCEPTED" | jq -c '{ok,status,reply,msg}'; exit 1; }
+
+          DEADLINE=$((SECONDS + 2100))
+          PASSED=false
+          while (( SECONDS < DEADLINE )); do
+            PENDING="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/code/pending" "\${AUTH[@]}")"
+            STATUS="$(printf '%s' "$PENDING" | jq -r '.pending.status // empty')"
+            ATTEMPTS="$(printf '%s' "$PENDING" | jq -r '.pending.repair_attempts // 0')"
+            if [ "$STATUS" = "verification_passed" ]; then
+              if [ "$ATTEMPTS" -ge 1 ] && [ "$(printf '%s' "$PENDING" | jq -r '[.pending.edits[] | select(.auto_repair == true)] | length')" -ge 1 ]; then
+                EXPECTED="$(printf '%s' "$PENDING" | jq -r '.pending.verify_expected_sha // empty')"
+                ACTUAL="$(printf '%s' "$PENDING" | jq -r '.pending.verify_head_sha // empty')"
+                test -n "$EXPECTED" && [ "$EXPECTED" = "$ACTUAL" ] || { echo "::error::Repair re-verification SHA mismatch"; exit 1; }
+                PASSED=true
+                break
+              fi
+              echo "::error::Verification passed without a recorded automatic model repair."
+              exit 1
+            fi
+            if [ "$STATUS" = "repairing" ] || [ "$STATUS" = "verification_pending" ] || [ "$STATUS" = "verification_failed" ]; then
+              VERIFY="$(curl --silent --show-error --max-time 480 "$WORKER_URL/api/code/verify" "\${AUTH[@]}" || true)"
+              PENDING="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/code/pending" "\${AUTH[@]}")"
+              STATUS="$(printf '%s' "$PENDING" | jq -r '.pending.status // empty')"
+              ATTEMPTS="$(printf '%s' "$PENDING" | jq -r '.pending.repair_attempts // 0')"
+              if [ "$STATUS" = "verification_failed" ]; then
+                REPAIR_ERROR="$(printf '%s' "$PENDING" | jq -r '.pending.repair_error // empty')"
+                if [ -n "$REPAIR_ERROR" ] || [ "$ATTEMPTS" -ge 2 ]; then
+                  echo "::error::Automatic model repair did not recover the isolated failure: $REPAIR_ERROR"
+                  exit 1
+                fi
+              fi
+            fi
+            sleep 8
+          done
+          [ "$PASSED" = true ] || { echo "::error::Timed out waiting for real model repair and re-verification"; exit 1; }
+
+          REPAIRED_WORKER="$(curl --fail-with-body --silent --show-error --get "$WORKER_URL/api/code/file" "\${AUTH[@]}" --data-urlencode 'repo=tianxin1300/openmanus-gateway' --data-urlencode "path=worker.js" --data-urlencode "ref=$BRANCH")"
+          REPAIRED_TEST="$(curl --fail-with-body --silent --show-error --get "$WORKER_URL/api/code/file" "\${AUTH[@]}" --data-urlencode 'repo=tianxin1300/openmanus-gateway' --data-urlencode 'path=tests/code-mode-providers.test.cjs' --data-urlencode "ref=$BRANCH")"
+          printf '%s' "$REPAIRED_WORKER" | jq -r '.content' | grep -F 'codeRepairSmokeProbe' >/dev/null
+          printf '%s' "$REPAIRED_WORKER" | jq -r '.content' | grep -F 'broken' >/dev/null && { echo "::error::Repaired source still contains the injected broken return"; exit 1; } || true
+          printf '%s' "$REPAIRED_TEST" | jq -r '.content' | grep -F 'repair-me' >/dev/null || { echo "::error::Automatic repair weakened or removed the regression test"; exit 1; }
+          echo "PASS: real model repaired the temporary source, preserved the regression test, and Actions re-verified the exact commit."
+
+          CURRENT="$(curl --fail-with-body --silent --show-error "$WORKER_URL/api/code/pending" "\${AUTH[@]}")"
+          CURRENT_ID="$(printf '%s' "$CURRENT" | jq -r '.pending.pending_id // .pending.id // empty')"
+          CURRENT_VERSION="$(printf '%s' "$CURRENT" | jq -r '.pending.version // empty')"
+          CURRENT_PROJECT="$(printf '%s' "$CURRENT" | jq -r '.pending.project // empty')"
+          CLEAN="$(jq -nc --arg token "$LOGIN_TOKEN" --arg id "$CURRENT_ID" --arg project "$CURRENT_PROJECT" --argjson version "$CURRENT_VERSION" --arg op "repair-smoke-cleanup-$GITHUB_SHA" '{token:$token,yes:false,pending_id:$id,version:$version,project:$project,operation_id:$op}')"
+          CLEAN_RESULT="$(curl --fail-with-body --silent --show-error --max-time 60 -X POST "$WORKER_URL/api/code/confirm" "\${AUTH[@]}" -H 'Content-Type: application/json' --data "$CLEAN")"
+          printf '%s' "$CLEAN_RESULT" | jq -e '.ok == true and .discarded == true' >/dev/null || { echo "::error::Could not delete the temporary repair-smoke branch"; printf '%s' "$CLEAN_RESULT" | jq -c '{ok,reply,msg}'; exit 1; }
+          CLEANED=true
+          echo "PASS: isolated smoke branch deleted; no merge or main deployment was performed."
 
       - name: Publish paired preview URLs on PR #60
         if: success()
