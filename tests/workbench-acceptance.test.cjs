@@ -459,11 +459,11 @@ test('ACCEPTANCE WORKBENCH-CONCURRENCY-01: simultaneous branch operations are se
     throw new Error('unexpected lock action');
   };
   const create = runFunction(helper + '\n' + wrapper, 'codeWorkbenchBranchCreate', {
-    codeClaimCall,
+    codeWorkbenchLockCall: async (_env, _repo, action, body) => codeClaimCall(_env, 'owner', action, body),
     codeWorkbenchBranchCreateUnlocked: async () => { entered++; await wait; return { ok: true, branch: 'code/once' }; }
   });
   const merge = runFunction(helper + '\n' + mergeWrapper, 'codeWorkbenchBranchMerge', {
-    codeClaimCall,
+    codeWorkbenchLockCall: async (_env, _repo, action, body) => codeClaimCall(_env, 'owner', action, body),
     codeWorkbenchBranchMergeUnlocked: async () => { entered++; return { ok: true }; }
   });
   const env = { CODE_CLAIMS: {} };
