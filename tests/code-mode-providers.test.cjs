@@ -341,7 +341,7 @@ test('BUG-03/04/06: push confirmation uses Durable Object atomic claim and idemp
 test('Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions', () => {
   // Worker: temp branch naming, preview, history, rollback, tree APIs
   assert.match(workerSource, /return "code\/" \+ tag \+ "-"/);
-  assert.match(workerSource, /function codeTempPreview\(branch\)/);
+  assert.match(workerSource, /function codeTempPreview\(branch, repo\)/);
   assert.match(workerSource, /codeHistoryKey/);
   assert.match(workerSource, /async function codeRollback/);
   assert.match(workerSource, /path === "\/api\/code\/history"/);
