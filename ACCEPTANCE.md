@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前快照：`code-mode-providers.test.cjs` 有 81 个静态 `test(...)` 声明；其中两个声明在两个工作台文件上各执行一次，按当前源码预计 Node TAP 展开为 83 项。`workbench-acceptance.test.cjs` 有 45 个静态测试声明，因此按源码预计 `npm test` 共 128 项；最终数量以本次 TAP 输出为准。Playwright UI 文件另有 10 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
+> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前测试源文件快照：`code-mode-providers.test.cjs` 有 87 个静态 `test(...)` 声明；`workbench-acceptance.test.cjs` 有 49 个静态 `test(...)` 声明。静态声明数不替代运行统计；`npm test` 的实际总数、通过、失败和跳过数量，以本次 Node TAP 输出为准。最近一次已核实的 Run #372 为 133 项通过、0 项失败、0 项跳过。Playwright UI 文件有 10 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
 
 ## 1. 唯一执行入口与判定规则
 
@@ -387,7 +387,7 @@ npm test
 
 以下清单按当前分支测试源文件逐项核对。测试名称是验收映射依据；如代码中的测试名称变化，必须同步更新本文件。
 
-### 14.1 Node.js 工作台行为测试（45 项）
+### 14.1 Node.js 工作台行为测试（49 个静态 test 声明）
 
 文件：`tests/workbench-acceptance.test.cjs`
 
@@ -401,8 +401,9 @@ npm test
 | 审核拒绝路径与失败保护 | `ACCEPTANCE REVIEW-GUARD-01`、`ACCEPTANCE REVIEW-GUARD-02`、`ACCEPTANCE REVIEW-READ-01`、`ACCEPTANCE REVIEW-READ-02`、`ACCEPTANCE REVIEW-WRITE-01`、`ACCEPTANCE REVIEW-WRITE-02` |
 | 合并后恢复与清理 | `ACCEPTANCE MERGE-HISTORY-RECOVERY-01`、`ACCEPTANCE MERGE-CLEANUP-01`、`ACCEPTANCE MERGE-RECORD-CLEANUP-01` |
 | 合并 CAS 与 Git ref 边界 | `ACCEPTANCE MERGE-CAS-01`～`MERGE-CAS-07`、`ACCEPTANCE GIT-REF-WRITE-01`、`ACCEPTANCE WORKBENCH-CAS-CONFLICT-01` |
+| 多项目切换 | `ACCEPTANCE WORKBENCH-PROJECT-01`、`ACCEPTANCE WORKBENCH-PROJECT-02` |
 
-**计数说明：** 上述分组对应文件内 45 个 `test(...)` 用例。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
+**计数说明：** 上述分组对应文件内 49 个静态 `test(...)` 声明。实际运行数以 `npm test` 的 TAP 汇总为准；最近一次 Run #372 输出 133 项通过、0 项失败、0 项跳过。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
 
 ### 14.2 Playwright UI E2E（10 个场景 × 2 个浏览器项目）
 
