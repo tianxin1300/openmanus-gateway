@@ -834,7 +834,7 @@ test('codeLLM: rate-limited model is skipped and the next OpenRouter model succe
   assert.ok(result.tried.some(entry => entry.includes('custom/rate-limited HTTP 429')));
 });
 
-test('codeLLM: timed-out model is aborted and the next OpenRouter model succeeds', async () => {
+test('codeLLM: timeout skips the remaining keys for that model and advances to the next model', async () => {
   const { subject, calls, timeouts } = loadCodeLLM((call, index) => {
     if (index === 0) {
       const error = new Error('mock timeout');
@@ -844,12 +844,13 @@ test('codeLLM: timed-out model is aborted and the next OpenRouter model succeeds
     return success('after timeout');
   });
   const result = await subject.codeLLM({
-    ...toterEnv, OPENROUTER_KEYS: 'or-key',
+    ...toterEnv, OPENROUTER_KEYS: 'or-key-a,or-key-b',
     CODE_MODELS: 'custom/slow,custom/healthy'
   }, messages);
-  assert.deepEqual(calls.map(call => call.body.model), [
-    'custom/slow', 'custom/healthy'
-  ]);
+  assert.deepEqual(calls.map(call => [call.body.model, call.options.headers.Authorization]), [
+    ['custom/slow', 'Bearer or-key-a'],
+    ['custom/healthy', 'Bearer or-key-a']
+  ], 'the second key must not be tried for the model that timed out');
   assert.ok(timeouts.includes(60000), 'model request retains the 60-second timeout');
   assert.equal(result.text, 'after timeout');
   assert.equal(result.from, 'OpenRouter · custom/healthy');
