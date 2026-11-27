@@ -284,7 +284,7 @@ jobs:
               }
               const mergedTree = await github.rest.git.getTree({ owner, repo, tree_sha: mergedCommit.data.tree.sha, recursive: '1' });
               if (!(mergedTree.data.tree || []).some(entry => entry.path === filePath)) throw new Error('Merged tree is missing the staged test file');
-              core.info(`PASS: exact Worker merge helper created ${result.data.sha} on disposable target ${baseBranch}; two parents and merged file verified.`);
+              core.info(`PASS: full Worker workbench merge created ${result.commit_sha} on disposable target ${baseBranch}; history, two parents, merged file, and cleanup verified.`);
 
               await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${casBaseBranch}`, sha: baseSha });
               casBaseCreated = true;
