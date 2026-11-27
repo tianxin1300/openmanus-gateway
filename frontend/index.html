@@ -6482,12 +6482,12 @@ async function initEditor() {
     const m = monaco.editor.create(box, {value: "", language: "html", theme: "vs-dark", automaticLayout: true, minimap: {enabled: false}, fontSize: 12, tabSize: 2, scrollBeyondLastLine: false, wordWrap: "on", wrappingStrategy: "advanced", scrollbar: {horizontal: "hidden"}});
     m.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save());
     m.onDidChangeModelContent(() => cbs.forEach(f => f()));
-    ed = {get: () => m.getValue(), set: v => m.setValue(v), revealLine: line => { m.revealLineInCenter(line); m.setPosition({lineNumber: line, column: 1}); m.focus(); }, on: f => cbs.push(f), kind: "monaco"};
+    ed = {get: () => m.getValue(), set: v => m.setValue(v), setLanguage: language => monaco.editor.setModelLanguage(m.getModel(), language), revealLine: line => { m.revealLineInCenter(line); m.setPosition({lineNumber: line, column: 1}); m.focus(); }, on: f => cbs.push(f), kind: "monaco"};
   } catch (e) {
     const ta = document.createElement("textarea"); ta.spellcheck = false; ta.wrap = "soft"; ta.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;"; box.innerHTML = ""; box.appendChild(ta);
     ta.addEventListener("input", () => cbs.forEach(f => f()));
     ta.addEventListener("keydown", ev => { if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); save(); } });
-    ed = {get: () => ta.value, set: v => { ta.value = v; }, revealLine: line => { const rows = ta.value.split("\n"); const start = rows.slice(0, Math.max(0, line - 1)).reduce((n, row) => n + row.length + 1, 0); ta.focus(); ta.setSelectionRange(start, start + (rows[line - 1] || "").length); ta.scrollTop = Math.max(0, (line - 1) * 18); }, on: f => cbs.push(f), kind: "textarea"};
+    ed = {get: () => ta.value, set: v => { ta.value = v; }, setLanguage: () => {}, revealLine: line => { const rows = ta.value.split("\n"); const start = rows.slice(0, Math.max(0, line - 1)).reduce((n, row) => n + row.length + 1, 0); ta.focus(); ta.setSelectionRange(start, start + (rows[line - 1] || "").length); ta.scrollTop = Math.max(0, (line - 1) * 18); }, on: f => cbs.push(f), kind: "textarea"};
     say("Monaco 没加载出来（" + e.message + "），先用普通文本框编辑", true);
   }
   ed.on(() => { dirty = true; if (!/^Monaco|文本框/.test(g("wb-state").textContent)) say("有未保存的修改"); clearTimeout(prevTimer); prevTimer = setTimeout(renderPreview, 900); });
@@ -6501,7 +6501,16 @@ function srcdocOf(code) {   // 复用主页面预览用的 ART_PROBE（报错回
   const m = /<head[^>]*>/i.exec(code); if (!m) return probe + code;
   const at = m.index + m[0].length; return code.slice(0, at) + probe + code.slice(at);
 }
-function renderPreview() { if (!ed) return; g("wb-preview").srcdoc = srcdocOf(ed.get()); syncLocalTaskPreview(); }
+function renderPreview() {
+  if (!ed) return;
+  const code = ed.get();
+  if (/\.html?$/i.test(FILE)) g("wb-preview").srcdoc = srcdocOf(code);
+  else {
+    const escaped = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    g("wb-preview").srcdoc = "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><style>body{margin:0;padding:14px;background:#171c25;color:#e5eaf2}pre{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font:12px/1.6 ui-monospace,monospace}</style><pre>" + escaped + "</pre>";
+  }
+  syncLocalTaskPreview();
+}
 function showTab(which) {
   document.querySelectorAll("#wb .wb-tab").forEach(b => b.classList.toggle("on", b.dataset.wbtab === which));
   const res = g("wb-res");
@@ -6520,38 +6529,41 @@ window.addEventListener("message", e => {
 
 /* ---------------- 读 / 写 index.html ---------------- */
 async function loadFile() {
-  say("正在通过 MCP 读取 " + FILE + " …");
-  let text = "", how = "";
+  say("正在从 " + REPO.repo + "@" + REPO.branch + " 读取 " + FILE + " …");
   try {
-    const r = await mcpGet(FILE); if (r.list) throw new Error("get_file 返回的是目录");
-    const c = cleanHtml(r.text, r.sha); text = c.text; curSha = c.sha;
-    if (text.length < 1000 || !/<html/i.test(text)) throw new Error("get_file 返回内容不像 index.html（" + text.length + " 字符）");
-    how = "已从 GitHub " + REPO.branch + " 读取";
-  } catch (e) {
-    try {
-      const rr = await fetch(location.href.split("#")[0], {cache: "no-store"}); if (!rr.ok) throw new Error(rr.status);
-      text = await rr.text(); curSha = null;
-      say("MCP 读取失败（" + e.message + "），已改用当前页面源码；保存时拿不到 sha，可能被拒绝", true);
-      how = "";
-    } catch (_) { say("读取失败：" + e.message, true); return false; }
+    const r = await mcpGet(FILE);
+    if (r.list || !r.sha) throw new Error("读取结果不是单文件，或没有文件 SHA");
+    const htmlFile = /\.html?$/i.test(FILE);
+    const c = htmlFile ? cleanHtml(r.text, r.sha) : { text: r.text, sha: r.sha };
+    const text = String(c.text == null ? "" : c.text);
+    if (!text.length || (htmlFile && text.length < 1000)) throw new Error("文件内容为空或不完整（" + text.length + " 字符）");
+    curSha = c.sha;
+    if (ed.setLanguage) ed.setLanguage(workbenchLanguage(FILE));
+    ed.set(text); clearTimeout(prevTimer); dirty = false;
+    say("已从临时分支 " + REPO.branch + " 读取 " + FILE + "（" + Math.round(text.length / 1024) + " KB）");
+    renderWorkbenchTree(); renderPreview(); return true;
+  } catch (error) {
+    curSha = null; say("读取失败：" + (error.message || String(error)) + "。没有回退读取 main 或线上页面。", true); return false;
   }
-  ed.set(text); clearTimeout(prevTimer); dirty = false; if (how) say(how + "（" + Math.round(text.length / 1024) + " KB）"); renderPreview(); return true;
 }
 let saving = false;
 async function save() {
   if (!ed || saving) return;
-  const val = ed.get();
-  if (val.length < 2000 || !/<html/i.test(val)) { say("内容看起来不完整（太短或没有 <html>），已拒绝保存", true); return; }
-  if (!curSha) { say("没有拿到文件基线 SHA，为避免覆盖线上改动，请先重新读取后再保存", true); return; }
-  if (!confirm("把编辑器里的内容推送到 " + REPO.owner + "/" + REPO.repo + " 的 " + REPO.branch + "：" + FILE + "？\n大小约 " + Math.round(val.length / 1024) + " KB")) return;
-  saving = true; g("wb-save").disabled = true; say("正在推送到 GitHub …");
+  if (!activeBranchRecord || REPO.branch !== activeBranchRecord.branch || !/^code\//.test(REPO.branch)) { say("没有活动临时分支，已阻止写入 main。请先创建临时分支。", true); return; }
+  const val = ed.get(), htmlFile = /\.html?$/i.test(FILE);
+  if (!val.length || (htmlFile && (val.length < 1000 || !/<html/i.test(val)))) { say("文件内容为空或 HTML 不完整，已拒绝保存", true); return; }
+  if (!curSha) { say("没有拿到当前临时分支的文件 SHA，为避免覆盖，请先重新读取文件。", true); return; }
+  if (!confirm("保存到临时分支 " + REPO.branch + "：" + FILE + "？\n这一步不会修改 main。大小约 " + Math.round(val.length / 1024) + " KB")) return;
+  saving = true; g("wb-save").disabled = true; say("正在保存到临时分支 …");
   try {
     const out = await mcpPut(FILE, val, "workbench: update " + FILE + " (" + new Date().toISOString().slice(0, 16).replace("T", " ") + ")", curSha);
     let ns = null; try { const j = JSON.parse(out); ns = (j.content && j.content.sha) || j.sha || null; } catch (_) {}
-    if (!ns) { try { const r = await mcpGet(FILE); ns = cleanHtml(r.text || "", r.sha).sha; } catch (_) {} }
-    curSha = ns || curSha; dirty = false; say("已保存到 GitHub " + REPO.branch + "（" + new Date().toLocaleTimeString() + "）"); note("已保存到 GitHub");
+    if (!ns) { try { const r = await mcpGet(FILE); ns = r.sha || null; } catch (_) {} }
+    curSha = ns || curSha; dirty = false;
+    say("已保存到临时分支 " + REPO.branch + "（" + new Date().toLocaleTimeString() + "），main 未改变"); note("已保存到临时分支");
+    await Promise.all([loadWorkbenchChanges(), loadWorkbenchTree()]);
   } catch (e) { say("保存失败：" + e.message, true); }
-  finally { saving = false; g("wb-save").disabled = false; }
+  finally { saving = false; g("wb-save").disabled = !activeBranchRecord; }
 }
 let verifyTimer = null;
 let verifyAbort = null;
