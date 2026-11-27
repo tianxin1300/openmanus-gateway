@@ -873,13 +873,13 @@ async function codeRepairPendingFromVerification(env, user, job) {
     if (applied.errs.length || !applied.done.length) return await finish("verification_failed", { ok: false, reply: "模型修复块无法安全应用：" + applied.errs.map((e) => e.msg).join("；") }, pend.edits);
     const changed = [...new Set(applied.done.map((e) => e.path))];
     if (changed.length > 4) return await finish("verification_failed", { ok: false, reply: "自动修复涉及超过 4 个文件，已停止自动写入，保留临时分支供人工审查。" }, pend.edits);
-    const repairedEdits = [...(pend.edits || []), ...applied.done.map((e) => ({ ...e, auto_repair: true }))];
-    pend.edits = repairedEdits;
+    const repairedEdits = [...(pend.edits || [])];
     for (const path of changed) {
       const update = await codeUpdateFile(env, pend.repo, path, applied.out[path], "AI: repair failed verification", pend.branch, shas[path]);
       if (!update.ok) return await finish("verification_failed", { ok: false, reply: "自动修复写入 " + path + " 失败：" + update.msg }, repairedEdits);
+      repairedEdits.push(...applied.done.filter((e) => e.path === path).map((e) => ({ ...e, auto_repair: true })));
     }
-    pend.repair_model = model.from || "unknown";
+    pend.edits = repairedEdits; pend.repair_model = model.from || "unknown";
     return await codeQueuePendingVerification(env, user, pend, finish, repairedEdits);
   } catch (e) {
     return await finish("verification_failed", { ok: false, reply: "自动修复过程异常：" + String(e && e.message || e).slice(0, 300) }, pend.edits);
