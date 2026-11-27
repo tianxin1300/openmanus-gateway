@@ -361,13 +361,15 @@ npm test
 
 ### WORKBENCH-15 — 合并必须绑定审核时的 base SHA 与 head SHA
 
-**自动化测试：** `ACCEPTANCE MERGE-CAS-01`、`MERGE-CAS-02`、`MERGE-CAS-03`、`MERGE-CAS-04`。
+**自动化测试：** `ACCEPTANCE MERGE-CAS-01`、`MERGE-CAS-02`、`MERGE-CAS-03`、`MERGE-CAS-04`、`MERGE-CAS-05`、`MERGE-CAS-06`、`MERGE-CAS-07`。
 
 **实现约束：**
 - 合并前固定并核验 base SHA 与已审核 head SHA；任一发生变化，停止合并。
 - 在以固定 base SHA 创建的隔离临时分支上计算三方合并树。
 - 创建父提交固定为 `[expectedBaseSha, expectedHeadSha]` 的 merge commit。
 - 最终只用 GitHub ref `PATCH force:false` 更新目标分支；若 main 在计算期间前进，非 fast-forward 更新必须失败，不得覆盖新提交。
-- 隔离合并分支清理失败时，不得更新目标分支，并返回可追踪的遗留分支名。
+- 隔离合并分支清理失败（包括请求抛异常）时，不得更新目标分支，并返回可追踪的遗留分支名。
+- base/head SHA 格式非法时，任何 GitHub 写操作前拒绝。
+- 隔离分支创建失败时，不执行后续 merge commit 创建或目标分支更新。
 
 **通过条件：** main 在合并计算期间推进时，最终 ref 更新失败；只有目标分支仍处于预期基线时才可提交合并。
