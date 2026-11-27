@@ -160,17 +160,23 @@ try {
 
   console.log(`PASS: real Worker HTTP routes, SQLite Durable Object lock contention/renew/release, KV branch/history persistence, and isolated GitHub merge verified. commit=${merged.commit_sha}`);
 } finally {
-  // Best-effort application cleanup first, then hard-delete any remaining disposable refs.
+  // Attempt every cleanup independently so one failed deletion cannot skip the others.
+  const cleanupErrors = [];
   if (tempBranch) {
     try {
       await worker("/api/code/branch/discard", { method: "POST", body: { repo, branch: tempBranch } });
     } catch (error) {
       console.error("Worker discard cleanup warning:", error.message);
     }
-    await deleteRef(tempBranch);
+    try { await deleteRef(tempBranch); } catch (error) { cleanupErrors.push(`temp branch ${tempBranch}: ${error.message}`); }
   }
-  await deleteRef(baseBranch);
-  const mainAfter = (await gh("git/ref/heads/main")).object.sha;
-  assert.equal(mainAfter, mainBefore, "main must remain byte-for-byte at the same commit SHA");
-  console.log(`PASS: main unchanged at ${mainAfter}; disposable target and temp refs cleaned.`);
+  try { await deleteRef(baseBranch); } catch (error) { cleanupErrors.push(`base branch ${baseBranch}: ${error.message}`); }
+  try {
+    const mainAfter = (await gh("git/ref/heads/main")).object.sha;
+    assert.equal(mainAfter, mainBefore, "main must remain byte-for-byte at the same commit SHA");
+    console.log(`PASS: main unchanged at ${mainAfter}; disposable target and temp refs cleaned.`);
+  } catch (error) {
+    cleanupErrors.push(`main integrity check: ${error.message}`);
+  }
+  if (cleanupErrors.length) throw new Error("Runtime E2E cleanup/integrity failures: " + cleanupErrors.join(" | "));
 }
