@@ -118,6 +118,7 @@ async function installApiFixtures(page, state) {
         return json({ ok: false, discarded: true, branch_deleted: true, audit_saved: false, msg: "临时分支已删除，但操作者审计记录写入失败" }, 400);
       }
       state.active = false;
+      state.history.unshift({ id: "workbench-discard-" + BRANCH, kind: "workbench_discard", action: "discard", actor: "playwright-user", repo: REPO, branch: BRANCH, at: "2026-11-27T14:00:00Z" });
       return json({ ok: true, main_untouched: true, audit_saved: true, reply: "临时分支已删除，main 未改变。" });
     }
     if (path.endsWith("/rollback") && method === "POST") {
@@ -349,6 +350,8 @@ test("discard audit failure keeps a retry path after the branch is already delet
   await page.locator("#wb-discard").click();
   await expect.poll(() => state.discardCalls).toBe(2);
   await expect(page.locator("#wb-branch")).toContainText("无活动临时分支");
+  await expect(page.locator("#wb-version-list")).toContainText("操作记录：discard");
+  await expect(page.locator("#wb-version-list")).toContainText("操作者 playwright-user");
 });
 
 test("failed discard keeps the active branch and permits another attempt", async ({ page }) => {
