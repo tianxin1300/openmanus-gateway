@@ -229,7 +229,8 @@ test('temporary branch preview is built from the staged branch and uses the Page
   assert.match(workerSource, /claim\.pending\.staged_on_branch/);
   assert.match(workerSource, /OpenManus: reject/);
   assert.match(workerSource, /codeTempPreview\(branch, repo\)/);
-  assert.match(workerSource, /zhineng-et5\.pages\.dev\/branch-/);
+  assert.match(workerSource, /return slug \? "https:\/\/" \+ slug \+ "\.zhineng-et5\.pages\.dev" : ""/);
+  assert.match(workerSource, /slice\(0, 28\)/);
   const previewMiddleware = fs.readFileSync(path.join(root, "frontend/functions/_middleware.js"), "utf8");
   assert.ok(previewMiddleware.includes("branch-(code-[a-z0-9-]+)"));
   assert.match(previewMiddleware, /branchAlias \+ "\.zhineng\.pages\.dev"/);
