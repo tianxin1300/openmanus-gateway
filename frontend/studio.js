@@ -21,7 +21,7 @@
   if (window.__omStudio) return;
   window.__omStudio = true;
 
-  var KEY_ON = "om_code_mode", KEY_PROJ = "om_code_project", PROJECTS = ["聚合体", "就医伴侣"];
+  var KEY_ON = "om_code_mode", KEY_PROJ = "om_code_project", PROJECTS = [];
   var state = { on: false, project: window.OM_CODE_PROJECT || "聚合体" };
   var panelState = "";   // "" | "pending"（等你点推/不推）| "result"（已出结果，等你关掉）
 
@@ -30,8 +30,7 @@
     return null;
   }
   state.on = ls(KEY_ON) === "1";
-  var saved = ls(KEY_PROJ); if (saved && PROJECTS.indexOf(saved) >= 0) state.project = saved;
-  if (PROJECTS.indexOf(state.project) < 0) state.project = "聚合体";
+  var saved = ls(KEY_PROJ); if (saved) state.project = saved;
 
   function gw() { try { return typeof GATEWAY !== "undefined" ? GATEWAY : ""; } catch (e) { return ""; } }
   function loggedIn() { try { return typeof authToken === "undefined" ? true : !!authToken; } catch (e) { return true; } }
@@ -43,6 +42,42 @@
       return fetch(u, Object.assign({}, o, { headers: h }));
     };
     return f(gw() + path, opt || {});
+  }
+  function loadProjects() {
+    if (!loggedIn()) return;
+    return api("/api/code/projects", { cache: "no-store" }).then(function (response) {
+      return response.json().catch(function () { return { ok: false, msg: "项目列表响应不是 JSON" }; });
+    }).then(function (data) {
+      if (!data || data.ok !== true || !Array.isArray(data.projects)) throw new Error((data && data.msg) || "读取 CODE_REPOS 授权仓库失败");
+      PROJECTS = data.projects.filter(function (project) { return project && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(String(project.repo || "")); });
+      if (sel) {
+        sel.replaceChildren();
+        PROJECTS.forEach(function (project) {
+          var option = el("option", "", String(project.label || project.repo) + " · " + project.repo);
+          option.value = project.repo; sel.appendChild(option);
+        });
+        var selected = PROJECTS.find(function (project) { return project.repo === state.project || project.label === state.project; }) || PROJECTS[0];
+        state.project = selected ? selected.repo : "";
+        sel.value = state.project;
+        sel.disabled = !selected;
+        if (selected) ls(KEY_PROJ, state.project);
+      }
+      if (!PROJECTS.length) {
+        state.on = false; ls(KEY_ON, "0");
+        if (box) box.disabled = true;
+        if (hintEl) hintEl.textContent = "未配置 CODE_REPOS 授权仓库";
+        syncToggle();
+      } else {
+        if (box) box.disabled = false;
+        if (hintEl) hintEl.textContent = "仅显示 CODE_REPOS 授权仓库";
+        syncToggle();
+      }
+    }).catch(function (error) {
+      if (sel) sel.disabled = true;
+      if (box) box.disabled = true;
+      if (hintEl) hintEl.textContent = "授权项目列表读取失败：" + (error && error.message || error);
+      toast("代码项目列表读取失败，已禁用代码模式");
+    });
   }
 
   function el(tag, cls, text) {
@@ -140,8 +175,7 @@
     if (document.getElementById("om-code-toggle")) return;
     box = el("button", "om-chip"); box.id = "om-code-toggle"; box.type = "button";
     box.appendChild(document.createElement("i")); box.appendChild(el("span", "", "代码模式"));
-    sel = el("select"); sel.id = "om-code-project"; sel.setAttribute("aria-label", "代码模式要改的项目");
-    PROJECTS.forEach(function (p) { var o = el("option", "", p); o.value = p; sel.appendChild(o); });
+    sel = el("select"); sel.id = "om-code-project"; sel.setAttribute("aria-label", "代码模式要改的项目"); sel.disabled = true;
     sel.value = state.project;
     hintEl = el("span", "om-hint", "改完先预览，点「推」才推");
     var bothBtn = el("button", "", "同时启动"); bothBtn.id = "om-both-start"; bothBtn.type = "button";
@@ -446,7 +480,7 @@
     refreshPending(true);
   }
 
-  function init() { mountToggle(); if (typeof document.getElementById === "function") { bothButton = document.getElementById("om-both-start"); bothStatusNode = document.getElementById("om-both-status"); if (bothStatusNode) refreshBothStatus(true); } if (state.on) setTimeout(check, 800); }
+  function init() { mountToggle(); var ready = loadProjects(); if (typeof document.getElementById === "function") { bothButton = document.getElementById("om-both-start"); bothStatusNode = document.getElementById("om-both-status"); if (bothStatusNode) refreshBothStatus(true); } Promise.resolve(ready).then(function () { if (state.on && PROJECTS.length) setTimeout(check, 800); }); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 
   window.omStudio = { state: state, check: check, hide: hide, enable: function () { if (!state.on && box) box.click(); }, disable: function () { if (state.on && box) box.click(); } };
