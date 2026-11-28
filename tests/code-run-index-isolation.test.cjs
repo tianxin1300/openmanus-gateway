@@ -72,6 +72,14 @@ test('RUN-ISOLATION-02: summary retains project, branch, commit, task and Action
   assert.equal(runs[0].actions_run_id, '812345');
   assert.deepEqual(Array.from(runs[0].actions_run_ids), ['812345', '812346']);
   assert.deepEqual(Array.from(runs[0].head_shas), ['b'.repeat(40), 'c'.repeat(40)]);
+  assert.equal(runs[0].retry_count, 2);
+  assert.deepEqual(Array.from(runs[0].child_runs, x => ({
+    kind: x.kind, run_id: x.run_id, status: x.status, conclusion: x.conclusion,
+    state: x.state, run_url: x.run_url
+  })), [
+    { kind: 'deploy', run_id: '812345', status: 'completed', conclusion: 'success', state: 'success', run_url: 'https://github.com/run/812345' },
+    { kind: 'worker', run_id: '812346', status: 'completed', conclusion: 'failure', state: 'failure', run_url: 'https://github.com/run/812346' }
+  ]);
 });
 test('RUN-ISOLATION-03: same Actions run ID in two repositories cannot collide in log storage', async () => {
   const f = loadRunFunctions(), env = makeEnv();
