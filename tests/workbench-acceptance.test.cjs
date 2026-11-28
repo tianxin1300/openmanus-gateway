@@ -228,6 +228,7 @@ test('ACCEPTANCE WORKBENCH-PREVIEW-AUDIT-01: preview dispatch records the authen
   const record = { ok: true, repo: 'tianxin1300/openmanus-gateway', branch: 'code/preview', baseBranch: 'main', active: true };
   const preview = runFunction(sourceOf('async function codeWorkbenchBranchPreviewUnlocked(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchPreviewUnlocked', {
     codePushGuard: () => '',
+    codePreviewConfig: () => ({ mode: 'pages' }),
     codeWorkbenchBranchCurrent: async () => record,
     codeTempPreview: () => 'https://preview.example.test',
     codeWorkbenchBranchKey: () => 'key',
@@ -240,6 +241,107 @@ test('ACCEPTANCE WORKBENCH-PREVIEW-AUDIT-01: preview dispatch records the authen
   assert.equal(record.preview_events[0].actor, 'owner');
   assert.equal(record.preview_url, 'https://preview.example.test');
 });
+
+
+test('ACCEPTANCE WORKBENCH-WORKER-PREVIEW-01: authorized Worker project dispatches an isolated preview workflow', async () => {
+  const repo = 'tianxin1300/jiuyibanlv';
+  const record = { ok: true, repo, branch: 'code/demo-preview', baseBranch: 'main', active: true, preview_status: 'idle' };
+  const calls = [];
+  const preview = runFunction(sourceOf('async function codeWorkbenchBranchPreviewUnlocked(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchPreviewUnlocked', {
+    codePushGuard: () => '',
+    codePreviewConfig: value => value === repo ? { mode: 'worker', worker_name: 'juyiibanlvzhinengai' } : null,
+    codeWorkbenchBranchCurrent: async () => record,
+    codeWorkbenchPreviewName: () => 'wb-code-demo-preview-12345678',
+    rand: () => 'abcd1234',
+    codeWorkbenchBranchKey: () => 'preview-key',
+    codeGhApi: async (_env, url, options = {}) => { calls.push({ url, options }); return { ok: true }; }
+  });
+  const env = { KV: { put: async (_key, value) => Object.assign(record, JSON.parse(value)) } };
+  const result = await preview(env, 'owner', repo);
+  assert.equal(result.ok, true);
+  assert.equal(result.state, 'dispatched');
+  assert.equal(result.preview_status, 'pending');
+  assert.equal(result.preview_url, '');
+  assert.equal(record.preview_mode, 'worker');
+  assert.equal(record.preview_supported, true);
+  assert.equal(record.preview_status, 'pending');
+  assert.equal(record.preview_started_by, 'owner');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.github.com/repos/tianxin1300/openmanus-gateway/actions/workflows/deploy-worker-preview.yml/dispatches');
+  const body = JSON.parse(calls[0].options.body);
+  assert.equal(body.ref, 'main');
+  assert.equal(body.inputs.action, 'create');
+  assert.equal(body.inputs.repository, repo);
+  assert.equal(body.inputs.ref, 'code/demo-preview');
+  assert.equal(body.inputs.preview_name, 'wb-code-demo-preview-12345678');
+});
+
+test('ACCEPTANCE WORKBENCH-WORKER-PREVIEW-02: current branch refresh accepts only the matching verified Worker Preview deployment URL', async () => {
+  const repo = 'tianxin1300/jiuyibanlv';
+  const record = { repo, branch: 'code/demo-preview', preview_mode: 'worker', preview_request_id: 'request-12345678', preview_status: 'pending' };
+  const deployment = {
+    id: 731,
+    payload: {
+      request_id: 'request-12345678', repository: repo, target_ref: 'code/demo-preview',
+      preview_name: 'wb-code-demo-preview-12345678', worker_name: 'juyiibanlvzhinengai', kv_namespace_id: 'a'.repeat(32)
+    }
+  };
+  const calls = [];
+  const refresh = runFunction(sourceOf('async function codeWorkbenchWorkerPreviewRefresh(', 'async function codeWorkbenchWorkerPreviewCleanup('), 'codeWorkbenchWorkerPreviewRefresh', {
+    codeGhApi: async (_env, url) => {
+      calls.push(url);
+      if (url.includes('/deployments?')) return { ok: true, data: [deployment] };
+      return { ok: true, data: [{ state: 'success', environment_url: 'https://wb-code-demo-preview-12345678-juyiibanlvzhinengai.tianxinyuan881.workers.dev' }] };
+    }
+  });
+  const result = await refresh({}, record);
+  assert.equal(result.ok, true);
+  assert.equal(record.preview_status, 'ready');
+  assert.equal(record.preview_url, 'https://wb-code-demo-preview-12345678-juyiibanlvzhinengai.tianxinyuan881.workers.dev');
+  assert.equal(record.preview_deployment_id, '731');
+  assert.equal(record.preview_kv_namespace_id, 'a'.repeat(32));
+  assert.equal(calls.length, 2);
+});
+
+test('ACCEPTANCE WORKBENCH-WORKER-PREVIEW-03: untrusted deployment URL is rejected', async () => {
+  const repo = 'tianxin1300/jiuyibanlv';
+  const record = { repo, branch: 'code/demo-preview', preview_mode: 'worker', preview_request_id: 'request-12345678', preview_status: 'pending' };
+  const deployment = { id: 732, payload: { request_id: 'request-12345678', repository: repo, target_ref: 'code/demo-preview', preview_name: 'wb-code-demo-preview-12345678', worker_name: 'juyiibanlvzhinengai', kv_namespace_id: 'b'.repeat(32) } };
+  const refresh = runFunction(sourceOf('async function codeWorkbenchWorkerPreviewRefresh(', 'async function codeWorkbenchWorkerPreviewCleanup('), 'codeWorkbenchWorkerPreviewRefresh', {
+    codeGhApi: async (_env, url) => url.includes('/deployments?') ? { ok: true, data: [deployment] } : { ok: true, data: [{ state: 'success', environment_url: 'https://evil.example.com/not-a-worker-preview' }] }
+  });
+  await refresh({}, record);
+  assert.equal(record.preview_status, 'failed');
+  assert.equal(record.preview_url, '');
+});
+
+test('ACCEPTANCE WORKBENCH-WORKER-PREVIEW-04: cleanup dispatch retains branch metadata until deployment is inactive', async () => {
+  const repo = 'tianxin1300/jiuyibanlv';
+  const record = {
+    repo, branch: 'code/demo-preview', preview_mode: 'worker', preview_request_id: 'request-12345678',
+    preview_status: 'ready', preview_deployment_id: '731', preview_kv_namespace_id: 'a'.repeat(32),
+    preview_name: 'wb-code-demo-preview-12345678', preview_worker_name: 'juyiibanlvzhinengai'
+  };
+  const calls = [];
+  const cleanup = runFunction(sourceOf('async function codeWorkbenchWorkerPreviewCleanup(', 'function codeTempPreview'), 'codeWorkbenchWorkerPreviewCleanup', {
+    codeWorkbenchWorkerPreviewRefresh: async () => ({ ok: true, changed: false, state: 'success' }),
+    codeGhApi: async (_env, url, options = {}) => { calls.push({ url, options }); return { ok: true }; },
+    codeWorkbenchBranchKey: () => 'preview-key'
+  });
+  const env = { KV: { put: async (_key, value) => Object.assign(record, JSON.parse(value)) } };
+  const result = await cleanup(env, 'owner', repo, record);
+  assert.equal(result.ok, false);
+  assert.equal(result.pending, true);
+  assert.equal(record.preview_cleanup_status, 'pending');
+  assert.equal(record.preview_cleanup_started_by, 'owner');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.github.com/repos/tianxin1300/openmanus-gateway/actions/workflows/deploy-worker-preview.yml/dispatches');
+  const body = JSON.parse(calls[0].options.body);
+  assert.equal(body.inputs.action, 'delete');
+  assert.equal(body.inputs.deployment_id, '731');
+  assert.equal(body.inputs.kv_namespace_id, 'a'.repeat(32));
+});
+
 
 test('ACCEPTANCE WORKBENCH-SAVE-CAS-01: editor saves share the repository lock and reject stale file SHA', async () => {
   let currentSha = 'a'.repeat(40), writes = 0;
