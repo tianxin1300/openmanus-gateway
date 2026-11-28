@@ -418,7 +418,8 @@ test('BUG-03/04/06: push confirmation uses Durable Object atomic claim and idemp
   assert.match(frontendStudioSource, /pending_id:\s*op\.pending_id/);
   assert.match(frontendStudioSource, /version:\s*op\.version/);
   assert.match(frontendStudioSource, /project:\s*op\.project/);
-  assert.match(frontendStudioSource, /operation_id:\s*operationId\(\)/);\n  assert.match(frontendStudioSource, /repo: String\(p\.repo \|\| state\.project\)/);
+  assert.match(frontendStudioSource, /operation_id:\s*operationId\(\)/);
+  assert.match(frontendStudioSource, /repo: String\(p\.repo \|\| state\.project\)/);
 });
 
 test('Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions', () => {
