@@ -471,7 +471,7 @@ async function codeLLM(env, msgs, budgetMs) {
 // GitHub 读写：用 REST（Worker 里不能用 MCP），等价于 MCP 的 get_file / update_file，用你已有的 GH_PAT（要有 Contents 写权限才能推送）
 const codeGhHeaders = (env) => ({ Authorization: "Bearer " + env.GH_PAT, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "openmanus-gateway" });
 const codeGhUrl = (repo, path) => "https://api.github.com/repos/" + repo + "/contents/" + path.split("/").map(encodeURIComponent).join("/");
-const codeRepoList = (env) => [...new Map(getKeys(env && env.CODE_REPOS).filter((repo) => /^[A-Za-z0-9_.\-]+\/[A-Za-z0-9_.\-]+$/.test(repo)).map((repo) => [repo.toLowerCase(), repo])).values()];
+const codeRepoList = (env) => { const seen = new Set(); return String(env && env.CODE_REPOS || "").split(",").map((x) => x.trim()).filter((x) => /^[A-Za-z0-9_.\-]+\/[A-Za-z0-9_.\-]+$/.test(x)).filter((x) => { const key = x.toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true; }); };
 const codeRepoOk = (env, repo) => /^[A-Za-z0-9_.\-]+\/[A-Za-z0-9_.\-]+$/.test(String(repo)) && codeRepoList(env).some((allowed) => allowed.toLowerCase() === String(repo).toLowerCase());
 const codePathOk = (p) => /^[A-Za-z0-9._\-\/]{1,200}$/.test(String(p)) && !String(p).split("/").some((s) => s === "" || s === "." || s === "..");
 const CODE_VERIFY_WORKFLOW = "verify-project.yml";
@@ -1467,6 +1467,17 @@ const CODE_PROJECTS = [
   { names: ["就医伴侣"], repo: "tianxin1300/jiuyibanlv", files: ["frontend/index.html", "worker.js"] },
   { names: ["聚合体"], repo: "tianxin1300/openmanus-gateway", files: ["frontend/index.html", "worker.js"] }
 ];
+function codeProjectRegistry(env) {
+  return codeRepoList(env).map((repo) => {
+    const known = CODE_PROJECTS.find((item) => item.repo.toLowerCase() === repo.toLowerCase());
+    const parts = repo.split("/");
+    const names = [...new Set([...(known ? known.names : []), repo])];
+    return { names, repo, owner: parts[0], name: parts[1], files: known ? known.files : ["frontend/index.html", "worker.js"] };
+  });
+}
+function codeWorkbenchProjectList(env) {
+  return codeProjectRegistry(env).map((project) => ({ repo: project.repo, owner: project.owner, name: project.name, label: project.names[0] }));
+}
 const CODE_EDIT_RE = /(?:修改|改一下|改)\s*(就医伴侣|聚合体)/;   // v105：消息里任何位置出现都算，不再要求在句首
 const CODE_TRIGGER_RE = /(?:请|帮我|麻烦你?)?\s*(?:修改|改一下|改)\s*(?:就医伴侣|聚合体)\s*[,，:：、]?\s*/g;
 const CODE_CONFIRM_RE = /^\s*(推上去|推吧|确认推|推|不推|别推|取消)\s*[。.!！~]*\s*$/;
@@ -1874,7 +1885,8 @@ async function codeChatEntry(env, user, text, history, o) {   // 返回 {ok, rep
   }
   if (o.forced || kind === "edit") {   // v105：开了代码模式（forced）就一定进来，不再猜这句话说了什么
     const nm = CODE_EDIT_RE.exec(String(text)), name = nm ? nm[1] : String(o.project || "");
-    const proj = CODE_PROJECTS.find((p) => p.names.includes(name)) || CODE_PROJECTS.find((p) => p.names.includes("聚合体"));
+    const proj = codeProjectRegistry(env).find((p) => p.names.some((candidate) => candidate.toLowerCase() === name.toLowerCase()));
+    if (!proj) return { ok: false, reply: "❌ 当前项目不在 Worker 的 CODE_REPOS 授权白名单内，已拒绝读取或写入。请先由管理员把 owner/repo 加入 CODE_REPOS。" };
     const req = String(text).replace(CODE_TRIGGER_RE, " ").replace(/^[\s,，:：、]+/, "").trim();
     return await codeProject(env, user, proj, req, history, !!o.ui);
   }
@@ -9526,6 +9538,11 @@ async function handle(request, env, ctx) {
       });
       return json({ ok: true, items, source: "CODE_REPOS" });
     }
+    if (path === "/api/code/projects" && request.method === "GET") {
+      const user = await userFromReq(request, env, url, "");
+      if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
+      return json({ ok: true, source: "CODE_REPOS", projects: codeWorkbenchProjectList(env) }, 200);
+    }
     if (path === "/api/code" && request.method === "POST") {
       const b = await request.json().catch(() => ({}));
       const user = await userFromReq(request, env, url, String(b.token || ""));
@@ -9537,7 +9554,7 @@ async function handle(request, env, ctx) {
       const user = await userFromReq(request, env, url, "");
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
       const g = await codeGetFile(env, String(url.searchParams.get("repo") || ""), String(url.searchParams.get("path") || ""), String(url.searchParams.get("ref") || ""));
-      return json(g.ok ? { ok: true, exists: !!g.exists, size: g.size || 0, content: g.text || "" } : g, g.ok ? 200 : 400);
+      return json(g.ok ? { ok: true, exists: !!g.exists, size: g.size || 0, sha: g.sha || "", content: g.text || "" } : g, g.ok ? 200 : 400);
     }
     if (path === "/api/code/branch/current" && request.method === "GET") {
       const user = await userFromReq(request, env, url, "");
