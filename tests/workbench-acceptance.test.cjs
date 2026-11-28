@@ -217,7 +217,7 @@ test('ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restore
     }
   });
   const rolled = await rollback({}, 'owner', { repo: 'tianxin1300/openmanus-gateway', id: 'history-1' });
-  assert.equal(rolled.ok, true);
+  assert.equal(rolled.ok, true, JSON.stringify(rolled));
   assert.equal(createdCommit.tree, 'restored-tree');
   assert.equal(createdCommit.parents[0], 'current-commit');
   assert.equal(movedRef, 'rollback-commit');
@@ -357,7 +357,7 @@ test('ACCEPTANCE WORKBENCH-ROLLBACK-LOCK-01: history rollback acquires the repos
     }
   });
   const result = await rollback({}, 'owner', { repo: 'owner/repo', id: 'history-locked' });
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, true, JSON.stringify(result));
   assert.equal(result.locked, true);
   assert.deepEqual(calls, [{ user: 'owner', repo: 'owner/repo', operation: 'rollback' }]);
 });
