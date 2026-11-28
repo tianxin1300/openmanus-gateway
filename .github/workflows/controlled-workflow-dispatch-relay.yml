@@ -98,8 +98,8 @@ jobs:
               raise SystemExit("Target must be a workflow filename, not a path or URL")
           lower = filename.lower()
           blocked = {"deploy-worker.yml", "deploy-project.yml", "apply-v105.yml"}
-          if lower in blocked or any(word in lower for word in ("production", "prod-deploy", "release", "publish-live")):
-              raise SystemExit("Production/release workflows are never dispatchable through this relay")
+          if lower in blocked or re.search(r"(?:^|[-_])(prod|production|release|publish|live)(?:[-_.]|$)", lower):
+              raise SystemExit("Production/release/live workflows are never dispatchable through this relay")
           explicit_preview = lower in {"deploy-worker-preview.yml", "deploy-branch-preview.yml"}
           category_patterns = (
               r"^test[-_].*\.ya?ml$",
@@ -127,14 +127,18 @@ jobs:
                   if not re.fullmatch(r"[0-9]+", str(inputs.get("deployment_id", ""))) or not re.fullmatch(r"[0-9a-f]{32}", str(inputs.get("kv_namespace_id", ""))):
                       raise SystemExit("Worker Preview delete requires deployment_id and kv_namespace_id")
           if lower == "deploy-branch-preview.yml":
-              if inputs.get("ref") != ref:
-                  raise SystemExit("Branch Preview input ref must match target_ref")
+              if set(inputs) - {"ref", "request_id"} or inputs.get("ref") != ref:
+                  raise SystemExit("Branch Preview requires only ref/request_id and matching ref")
               if "request_id" in inputs and len(str(inputs["request_id"])) > 160:
                   raise SystemExit("Invalid Branch Preview request ID")
-          if lower == "verify-project.yml" and inputs.get("ref") != ref:
-              raise SystemExit("verify-project requires ref matching target_ref")
-          if lower == "workbench-e2e-manual-trigger.yml" and inputs.get("target_ref") != ref:
-              raise SystemExit("workbench-e2e requires target_ref matching target_ref")
+          if lower == "verify-project.yml":
+              if set(inputs) - {"ref", "request_id"} or inputs.get("ref") != ref:
+                  raise SystemExit("verify-project requires only ref/request_id and matching ref")
+          if lower == "workbench-e2e-manual-trigger.yml":
+              if set(inputs) != {"target_ref"} or inputs.get("target_ref") != ref:
+                  raise SystemExit("workbench-e2e requires only target_ref matching the requested ref")
+          if lower == "test-project.yml" and inputs:
+              raise SystemExit("test-project does not accept workflow inputs")
           encoded = base64.b64encode(json.dumps({"workflow": filename, "ref": ref, "inputs": inputs}, separators=(",", ":")).encode()).decode()
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
               out.write("request_b64=" + encoded + "\n")
