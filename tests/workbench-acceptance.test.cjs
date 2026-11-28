@@ -57,7 +57,7 @@ function makeMergeHarness(options = {}) {
     codeGitRefUrl: (_repo, ref) => 'https://api.github.com/repos/owner/repo/git/ref/' + ref,
     codeMergeTempBranch: async () => { state.mergeCalls++; return { ok: true, data: { sha: 'merged-sha' } }; },
     codeHistoryLoad: async () => state.history,
-    codeHistorySave: async (_env, _user, _repo, rows) => { state.history = rows; },
+    codeHistorySave: async (_env, _user, rows) => { state.history = rows; },
     codeDeleteBranch: async () => { state.deleteCalls++; return { ok: true }; },
     ...options.globals
   });
@@ -125,7 +125,7 @@ test('ACCEPTANCE REVIEW-01: rejected file is absent from the final merge diff', 
     codeMergeTempBranch: async () => { mergedFiles = { ...branch }; Object.assign(main, branch); return { ok: true, data: { sha: 'merged-sha' } }; },
     codeDeleteBranch: async () => ({ ok: true }),
     codeHistoryLoad: async () => history,
-    codeHistorySave: async (_env, _user, _repo, rows) => { history.splice(0, history.length, ...rows); },
+    codeHistorySave: async (_env, _user, rows) => { history.splice(0, history.length, ...rows); },
     codeGitRefUrl: (repo, ref) => 'https://api.github.com/repos/' + repo + '/git/ref/' + ref,
     codeVerifyRef: x => x
   });
@@ -454,7 +454,7 @@ test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, save, rev
       throw new Error('unexpected ' + url);
     },
     codeMergeTempBranch: async () => ({ ok: true, data: { sha: 'merged-sha' } }),
-    codeHistoryLoad: async () => history, codeHistorySave: async (_e, _u, _repo, rows) => history.splice(0, history.length, ...rows),
+    codeHistoryLoad: async () => history, codeHistorySave: async (_e, _u, rows) => history.splice(0, history.length, ...rows),
     codeDeleteBranch: async () => ({ ok: true }), codeGitRefUrl: (r, ref) => 'https://api.github.com/repos/' + r + '/git/ref/' + ref,
     codeVerifyRef: x => x, codePathOk: () => true
   });
