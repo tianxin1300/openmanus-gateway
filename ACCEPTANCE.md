@@ -626,7 +626,18 @@ npm test
 - 工作台文件读取统一经 Worker 的 `/api/code/file`，并返回文件 SHA；不再通过独立 MCP 文件读取通道绕过 Worker 仓库白名单。
 - 分支创建、保存、文件树、审核、合并、丢弃和代码助手项目解析继续由 `codeRepoOk` 执行白名单校验。
 
-**测试：** `tests/workbench-project-registry.test.cjs` 的 P2-PROJECT-001～009 覆盖空白名单拒绝、格式过滤、大小写去重、动态项目列表、未授权项目拒绝、登录保护、前端动态加载、文件读取路径与无默认授权。既有项目切换测试已更新为使用完整 `owner/repo` 标识。
+**测试：** `tests/workbench-project-registry.test.cjs`：
+- `P2-PROJECT-001`：未配置 `CODE_REPOS` 时，授权列表为空。
+- `P2-PROJECT-002`：只接受合法 owner/repo 项，大小写重复项去重。
+- `P2-PROJECT-003`：项目注册表严格对应白名单输入。
+- `P2-PROJECT-004`：未授权仓库不能进入代码助手项目注册表。
+- `P2-PROJECT-005`：登录保护的 `GET /api/code/projects` 只返回白名单项目。
+- `P2-PROJECT-006`：工作台项目选择器读取 `GET /api/code/projects`，不使用固定项目选项。
+- `P2-PROJECT-007`：工作台文件读取使用 Worker 文件 API，并携带返回的 SHA。
+- `P2-PROJECT-008`：代码模式项目选择器读取 `GET /api/code/projects`；空列表或读取失败时禁用代码模式。
+- `P2-PROJECT-009`：Worker 仓库授权逻辑不包含默认仓库回退清单。
+
+既有项目切换测试已更新为使用完整 `owner/repo` 标识。
 
 **测试类型边界：** 这些测试验证真实源码函数与前端请求契约，但项目列表使用隔离环境变量，不读取线上 Worker Secret；不代表已核验生产环境实际配置了哪些仓库，也不代表对任意仓库执行过真实 GitHub 写操作。
 
