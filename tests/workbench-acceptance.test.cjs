@@ -231,6 +231,7 @@ test('ACCEPTANCE WORKBENCH-PREVIEW-AUDIT-01: preview dispatch records the authen
     codePreviewConfig: () => ({ mode: 'pages' }),
     codeWorkbenchBranchCurrent: async () => record,
     codeTempPreview: () => 'https://preview.example.test',
+    rand: () => 'abcdef12',
     codeWorkbenchBranchKey: () => 'key',
     codeGhApi: async () => ({ ok: true }),
   });
