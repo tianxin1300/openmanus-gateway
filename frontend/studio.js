@@ -45,11 +45,11 @@
   }
   function loadProjects() {
     if (!loggedIn()) return;
-    api("/api/code/projects", { cache: "no-store" }).then(function (response) {
+    return api("/api/code/projects", { cache: "no-store" }).then(function (response) {
       return response.json().catch(function () { return { ok: false, msg: "项目列表响应不是 JSON" }; });
     }).then(function (data) {
       if (!data || data.ok !== true || !Array.isArray(data.projects)) throw new Error((data && data.msg) || "读取 CODE_REPOS 授权仓库失败");
-      PROJECTS = data.projects.filter(function (project) { return project && /^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$/.test(String(project.repo || "")); });
+      PROJECTS = data.projects.filter(function (project) { return project && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(String(project.repo || "")); });
       if (sel) {
         sel.replaceChildren();
         PROJECTS.forEach(function (project) {
@@ -480,7 +480,7 @@
     refreshPending(true);
   }
 
-  function init() { mountToggle(); loadProjects(); if (typeof document.getElementById === "function") { bothButton = document.getElementById("om-both-start"); bothStatusNode = document.getElementById("om-both-status"); if (bothStatusNode) refreshBothStatus(true); } if (state.on) setTimeout(check, 800); }
+  function init() { mountToggle(); var ready = loadProjects(); if (typeof document.getElementById === "function") { bothButton = document.getElementById("om-both-start"); bothStatusNode = document.getElementById("om-both-status"); if (bothStatusNode) refreshBothStatus(true); } Promise.resolve(ready).then(function () { if (state.on && PROJECTS.length) setTimeout(check, 800); }); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 
   window.omStudio = { state: state, check: check, hide: hide, enable: function () { if (!state.on && box) box.click(); }, disable: function () { if (state.on && box) box.click(); } };
