@@ -754,7 +754,7 @@ async function codeWorkbenchBranchCurrent(env, user, repo) {
   const key = codeWorkbenchBranchKey(user, repo);
   const record = await env.KV.get(key, "json").catch(() => null);
   if (!record || !record.branch) return { ok: true, active: false, repo };
-  const previewConfig = codePreviewConfig(repo);
+  const previewConfig = typeof codePreviewConfig === "function" ? codePreviewConfig(repo) : null;
   if (!record.preview_mode && previewConfig) {
     record.preview_mode = previewConfig.mode;
     record.preview_supported = true;
@@ -792,7 +792,7 @@ async function codeWorkbenchBranchCreateUnlocked(env, user, body = {}) {
   }
   const made = await codeCreateTempBranch(env, repo, project, base);
   if (!made.ok) return made;
-  const previewConfig = codePreviewConfig(repo);
+  const previewConfig = typeof codePreviewConfig === "function" ? codePreviewConfig(repo) : null;
   const record = { project, repo, branch: made.branch, baseBranch: made.base, baseCommit: made.sha, created_by: String(user), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), status: "active", preview_mode: previewConfig ? previewConfig.mode : "none", preview_supported: !!previewConfig, preview_status: "idle", preview_url: codeTempPreview(made.branch, repo) };
   try {
     await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 });
@@ -892,7 +892,7 @@ async function codeWorkbenchBranchSaveFile(env, user, body = {}) {
 }
 async function codeWorkbenchBranchPreviewUnlocked(env, user, repo) {
   const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
-  const previewConfig = codePreviewConfig(repo);
+  const previewConfig = typeof codePreviewConfig === "function" ? codePreviewConfig(repo) : null;
   if (!previewConfig) return { ok: false, msg: "该项目仓库尚未配置隔离预览能力" };
   const current = await codeWorkbenchBranchCurrent(env, user, repo);
   if (!current.ok || !current.active) return { ok: false, msg: "当前项目没有活动临时分支" };
