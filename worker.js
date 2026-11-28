@@ -1549,70 +1549,84 @@ function codeApply(files, edits) {   // 在完整文件上逐块替换；SEARCH 
   });
   return { out, errs, done };
 }
-function codeClaimStub(env, user) {
-  if (!env.CODE_CLAIMS) return null;
-  return env.CODE_CLAIMS.get(env.CODE_CLAIMS.idFromName("code:" + String(user)));
+function codePendingRepo(env, repo) {
+  const value = String(repo || "").trim().toLowerCase();
+  return codeRepoOk(env, value) ? value : "";
 }
-async function codeClaimCall(env, user, action, body) {
-  const stub = codeClaimStub(env, user);
-  if (!stub) return { ok: false, configured: false, msg: "CODE_CLAIMS Durable Object 没有绑定" };
-  const r = await stub.fetch("https://code-claims/" + action, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+function codeClaimStub(env, user, repo) {
+  const scopeRepo = codePendingRepo(env, repo);
+  if (!env.CODE_CLAIMS || !scopeRepo) return null;
+  return env.CODE_CLAIMS.get(env.CODE_CLAIMS.idFromName("code:" + String(user) + ":" + scopeRepo));
+}
+async function codeClaimCall(env, user, repo, action, body) {
+  const scopeRepo = codePendingRepo(env, repo), stub = codeClaimStub(env, user, scopeRepo);
+  if (!stub) return { ok: false, configured: false, msg: "CODE_CLAIMS Durable Object 未绑定或项目不在 CODE_REPOS 授权名单内" };
+  const r = await stub.fetch("https://code-claims/" + action, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...(body || {}), repo: scopeRepo }) });
   return await r.json().catch(() => ({ ok: false, msg: "Durable Object 返回了无效响应" }));
 }
-async function codeClaimState(env, user) {
-  const stub = codeClaimStub(env, user);
-  if (!stub) return { ok: false, configured: false, msg: "CODE_CLAIMS Durable Object 没有绑定" };
+async function codeClaimState(env, user, repo) {
+  const scopeRepo = codePendingRepo(env, repo), stub = codeClaimStub(env, user, scopeRepo);
+  if (!stub) return { ok: false, configured: false, msg: "CODE_CLAIMS Durable Object 未绑定或项目不在 CODE_REPOS 授权名单内" };
   const r = await stub.fetch("https://code-claims/state");
   return await r.json().catch(() => ({ ok: false, msg: "Durable Object 返回了无效响应" }));
 }
 function codePendingActive(p) {
   return p && Array.isArray(p.edits) && p.edits.length && ["awaiting_approval", "applying", "partial", "conflict", "failed"].includes(p.status || "awaiting_approval");
 }
-async function codePendingLoad(env, user) {
-  const d = await codeClaimState(env, user);
-  if (d.ok && d.pending) return d.pending;
+async function codePendingLoad(env, user, repo) {
+  const scopeRepo = codePendingRepo(env, repo);
+  if (!scopeRepo) throw new Error("必须指定 CODE_REPOS 白名单内的项目，拒绝读取其他项目的待处理修改");
+  const d = await codeClaimState(env, user, scopeRepo);
+  if (d.ok && d.pending) return String(d.pending.repo || "").toLowerCase() === scopeRepo ? d.pending : null;
   if (d.ok) return null;
   if (d.configured === false && env.KV) {
-    const p = await env.KV.get("code:pend:" + user, "json").catch(() => null);
+    const key = "code:pend:" + user + ":" + scopeRepo;
+    const p = await env.KV.get(key, "json").catch(() => null);
+    if (p && String(p.repo || "").toLowerCase() !== scopeRepo) return null;
     if (p && p.created_at && Date.now() - p.created_at > CODE_PENDING_TTL_MS) {
       if (p.repo && p.branch) {
         const removed = await codeDeleteBranch(env, p.repo, p.branch);
         if (!removed.ok && removed.status !== 404) return p;
       }
-      await env.KV.delete("code:pend:" + user).catch(() => {});
+      await env.KV.delete(key).catch(() => {});
       return null;
     }
     return p;
   }
   throw new Error(d.msg || "Durable Object 读取待处理记录失败；记录未清除");
 }
-async function codePendingCreate(env, user, pending) {
-  const d = await codeClaimCall(env, user, "create", { pending });
+async function codePendingCreate(env, user, repo, pending) {
+  const scopeRepo = codePendingRepo(env, repo);
+  if (!scopeRepo || String(pending && pending.repo || "").toLowerCase() !== scopeRepo) return { ok: false, msg: "待处理修改的仓库与当前白名单项目不一致，已拒绝创建" };
+  const d = await codeClaimCall(env, user, scopeRepo, "create", { pending });
   if (d.ok) return d;
   return d.configured === false && env.KV ? { ok: false, msg: "必须先部署 CODE_CLAIMS Durable Object，拒绝使用 KV 模拟锁" } : d;
 }
 const CODE_PENDING_TTL_MS = 600000;   // v108：待处理改动 10 分钟没点「接受 / 拒绝」就自动过期
 
 // 丢弃采用 DO 原子占位：先锁定 pending（拒绝 applying），再删 GitHub 分支，最后按 id/version 清记录。
-async function codePendingDiscard(env, user, pending) {
-  const p = pending || (await codePendingLoad(env, user));
+async function codePendingDiscard(env, user, repo, pending) {
+  const scopeRepo = codePendingRepo(env, repo || (pending && pending.repo));
+  if (!scopeRepo) return { ok: false, status: 403, cleared: false, msg: "必须指定 CODE_REPOS 白名单内的项目", reply: "项目授权无效，未清理任何待处理修改。" };
+  const p = pending || (await codePendingLoad(env, user, scopeRepo));
   if (!p) return { ok: true, branch_deleted: false, cleared: true, skipped: true };
-  const state = await codeClaimState(env, user);
+  if (String(p.repo || "").toLowerCase() !== scopeRepo) return { ok: false, status: 409, cleared: false, msg: "待处理修改不属于当前项目，拒绝清理", reply: "待处理修改属于其他项目，未执行清理。" };
+  const state = await codeClaimState(env, user, scopeRepo);
   if (!state.ok) return { ok: false, status: 503, cleared: false, msg: state.msg || "无法读取待处理状态", reply: "无法确认旧操作状态，已停止清理；原记录保留。" };
   if (!state.pending || state.pending.id !== p.id) return { ok: false, status: 409, cleared: false, msg: "待处理修改已变化，拒绝清理过期快照", reply: "待处理修改状态已变化，未执行清理；请刷新后重试。" };
   const pendingId = String(state.pending.id), version = Number(state.version);
-  const locked = await codeClaimCall(env, user, "discard", { pending_id: pendingId, version });
+  const locked = await codeClaimCall(env, user, scopeRepo, "discard", { pending_id: pendingId, version });
   if (!locked.ok) return { ok: false, status: locked.status || 409, cleared: false, msg: locked.msg || "待处理操作正在执行", reply: locked.msg || "这项修改正在执行接受操作，未被清除。" };
   let branch = { ok: true, skipped: true };
   if (p.repo && p.branch) branch = await codeDeleteBranch(env, p.repo, p.branch);
   const branchGone = !!(branch && branch.status === 404);
   if (p.repo && p.branch && !branch.ok && !branchGone) {
-    await codeClaimCall(env, user, "discard-release", { pending_id: pendingId, version }).catch(() => {});
+    await codeClaimCall(env, user, scopeRepo, "discard-release", { pending_id: pendingId, version }).catch(() => {});
     return { ok: false, branch_deleted: false, cleared: false, status: branch.status || 502,
       msg: "GitHub 临时分支删除失败，待处理记录已保留：" + (branch.msg || "未知错误"),
       reply: "清空失败：GitHub 临时分支删除失败，待处理记录未清除。" };
   }
-  const cleared = await codeClaimCall(env, user, "clear", { pending_id: pendingId, version });
+  const cleared = await codeClaimCall(env, user, scopeRepo, "clear", { pending_id: pendingId, version });
   if (!cleared.ok) return { ok: false, branch_deleted: !!branch.ok, branch_already_gone: branchGone, cleared: false,
     status: 503, msg: cleared.msg || "Durable Object 清理失败", reply: "临时分支已处理，但待处理记录清除失败；请重试。" };
   if (env.KV) {
@@ -1658,15 +1672,16 @@ function codePendingView(p) {
 const codeBalanceWarn = (a, b) => ["{}", "()", "[]"].filter((p) => { const d = (t) => t.split(p[0]).length - t.split(p[1]).length; return d(a) !== d(b); });
 const codeCut = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n) + "…（共 " + s.length + " 字）" : s; };
 async function codeProject(env, user, proj, req, history, ui) {
-  const branch = "main", deadline = Date.now() + 170000, tag = proj.names[0];
+  const branch = "main", deadline = Date.now() + 170000, tag = proj.names[0], scopeRepo = codePendingRepo(env, proj.repo);
+  if (!scopeRepo) return { ok: false, reply: "当前项目不在 CODE_REPOS 授权名单内，拒绝读取或写入待处理修改。" };
   if (!req) return { ok: false, reply: "想改什么？请说明功能，或给出文件名 / 路径（例如 studio.js、tests/example.test.js）。（你现在在代码模式里，直接说就行。）" };
   if (!env.KV || !env.CODE_CLAIMS) return { ok: false, reply: "❌ 代码推送需要 CODE_CLAIMS Durable Object 绑定，未启用 KV 模拟锁" };
-  const previous = await codePendingLoad(env, user);
+  const previous = await codePendingLoad(env, user, scopeRepo);
   if (codePendingActive(previous)) {
     if ((previous.status || "awaiting_approval") === "applying") {
       return { ok: false, reply: "上一项修改正在执行接受操作，当前操作已保留，没有被新消息丢弃。请等本次执行结束后再提交新的修改需求。" };
     }
-    const discarded = await codePendingDiscard(env, user, previous);
+    const discarded = await codePendingDiscard(env, user, scopeRepo, previous);
     if (!discarded.ok) return { ok: false, reply: discarded.reply || discarded.msg || "旧的待处理修改未能安全清理，本次新修改已停止。" };
     console.log("[code] auto-discard on new message", JSON.stringify({ user: String(user).slice(0, 40), branch: previous.branch, branch_deleted: discarded.branch_deleted, branch_already_gone: discarded.branch_already_gone, cleared: discarded.cleared }));
   }
@@ -1747,7 +1762,7 @@ async function codeProject(env, user, proj, req, history, ui) {
     : { ok: false, msg: "该项目仓库尚未配置独立 Pages 预览工作流" };
   const previewUrl = previewDispatch.ok ? codeTempPreview(temp.branch, proj.repo) : "";
   const pending = { id: pendingId, project: tag, repo: proj.repo, branch: temp.branch, baseBranch: temp.base, baseCommit: temp.sha, staged_on_branch: true, preview_url: previewUrl, preview_error: previewDispatch.ok ? "" : previewDispatch.msg, preview_request_id: previewRequestId, status: "awaiting_approval", edits: good.map((g, i) => ({ path: final.done[i] ? final.done[i].path : g.path, line: final.done[i] ? final.done[i].line : 0, old: g.old, new: g.new })), baseSha, summary, warn: previewDispatch.ok ? warn : [...warn, "临时预览构建未能启动：" + previewDispatch.msg], at: Date.now(), updatedAt: Date.now(), created_at: Date.now() };
-  const created = await codePendingCreate(env, user, pending);
+  const created = await codePendingCreate(env, user, scopeRepo, pending);
   if (!created.ok) { await codeDeleteBranch(env, proj.repo, temp.branch); return { ok: false, pending: !!created.pending, reply: created.msg || "已有待推送修改，请先处理完成" }; }
   const explain = String(last).replace(new RegExp(CODE_BLOCK_RE.source, "g"), "").replace(/```[^\n]*\n?/g, "").trim();
   const tail = (warn.length ? "\n\n⚠️ " + warn.join("；") + "（可能是括号写漏了，推之前请留意）" : "") + (res.errs.length ? "\n\n⚠️ 另有 " + res.errs.length + " 处没能应用，已跳过。" : "");
@@ -1756,18 +1771,20 @@ async function codeProject(env, user, proj, req, history, ui) {
   return { ok: true, pending: true, model, reply: head + "改动预览（" + tag + "，共 " + final.done.length + " 处）：\n" + final.done.map((d, i) => (i + 1) + ". " + d.path + " 第 " + d.line + " 行\n- " + codeCut(d.old, 400).replace(/\n/g, "\n- ") + "\n+ " + codeCut(d.new, 400).replace(/\n/g, "\n+ ")).join("\n\n") + tail + "\n\n要推上去吗？" };
 }
 async function codeConfirm(env, user, yes, input = {}) {
-  const pending = await codePendingLoad(env, user);
+  const scopeRepo = codePendingRepo(env, input.repo);
+  if (!scopeRepo) return { ok: false, reply: "确认请求缺少有效项目仓库，已拒绝操作。" };
+  const pending = await codePendingLoad(env, user, scopeRepo);
   if (!pending || !Array.isArray(pending.edits) || !pending.edits.length) return { ok: false, reply: "没有待推送的修改（可能放了超过 1 小时，已经过期）。" };
   const pendingId = String(input.pending_id || ""), project = String(input.project || ""), operationId = String(input.operation_id || ""), version = Number(input.version);
   if (!pendingId || !project || !operationId || !Number.isInteger(version)) return { ok: false, msg: "确认请求必须带 pending_id、version、project、operation_id" };
-  const claim = await codeClaimCall(env, user, "claim", { pending_id: pendingId, version, project, operation_id: operationId, yes });
+  const claim = await codeClaimCall(env, user, scopeRepo, "claim", { pending_id: pendingId, version, project, operation_id: operationId, yes });
   if (claim.replayed && claim.result) return claim.result;
   if (claim.in_progress) return { ok: false, pending: true, busy: true, replayed: true, reply: claim.msg || "相同操作正在处理，请等待第一次请求完成" };
   if (!claim.ok || !claim.claimed) return { ok: false, pending: !!claim.pending, conflict: !!claim.conflict, busy: !!claim.busy, reply: claim.msg || "待推送内容已变化，请刷新预览后再操作。" };
   const selected = Array.isArray(input.accepted_paths) ? new Set(input.accepted_paths.map(String)) : null;
   const pend = selected ? { ...claim.pending, edits: claim.pending.edits.filter((e) => selected.has(e.path)) } : claim.pending;
   const finish = async (status, result, edits) => {
-    const done = await codeClaimCall(env, user, "finish", { pending_id: pendingId, operation_id: operationId, status, result, edits });
+    const done = await codeClaimCall(env, user, scopeRepo, "finish", { pending_id: pendingId, operation_id: operationId, status, result, edits });
     return done.ok ? (done.result || result) : { ...result, ok: false, pending: true, reply: result.reply + "（状态写入失败，请刷新确认）" };
   };
   if (!yes) {
@@ -1889,9 +1906,10 @@ async function codeChatEntry(env, user, text, history, o) {   // 返回 {ok, rep
   o = o && typeof o === "object" ? o : { inCode: !!o };
   const kind = codeShortcutKind(text), inCode = !!(o.inCode || o.forced);
   if (kind === "confirm") {
-    const pending = await codePendingLoad(env, user);
+    const pendingRepo = String(o.project || "");
+    const pending = await codePendingLoad(env, user, pendingRepo);
     if (!pending) return null;
-    return await codeConfirm(env, user, !/^\s*(不推|别推|取消)/.test(text), { pending_id: pending.id, version: pending.version, project: pending.project, operation_id: "chat-" + (crypto.randomUUID ? crypto.randomUUID() : rand(12)) });
+    return await codeConfirm(env, user, !/^\s*(不推|别推|取消)/.test(text), { repo: pendingRepo, pending_id: pending.id, version: pending.version, project: pending.project, operation_id: "chat-" + (crypto.randomUUID ? crypto.randomUUID() : rand(12)) });
   }
   if (o.forced || kind === "edit") {   // v105：开了代码模式（forced）就一定进来，不再猜这句话说了什么
     const nm = CODE_EDIT_RE.exec(String(text)), name = nm ? nm[1] : String(o.project || "");
@@ -9682,7 +9700,7 @@ async function handle(request, env, ctx) {
     if (path === "/api/code/force-clear" && request.method === "POST") {
       const user = await userFromReq(request, env, url, "");
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
-      const r = await codePendingDiscard(env, user);
+      const r = await codePendingDiscard(env, user, String(b.repo || ""));
       return json(r, r.ok ? 200 : (r.status || 502));
     }
 
@@ -9717,11 +9735,11 @@ async function handle(request, env, ctx) {
     if (path === "/api/code/pending" && request.method === "GET") {
       const user = await userFromReq(request, env, url, "");
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
-      const pend = await codePendingLoad(env, user);
+      const pend = await codePendingLoad(env, user, String(url.searchParams.get("repo") || ""));
       // v108：分支在 GitHub 上已经不存在（比如被手动删了）→ 读到即自动丢弃，不留死记录卡死下一次改动
       if (codePendingActive(pend) && pend.repo && pend.branch) {
         const alive = await codeGhApi(env, codeGitRefUrl(pend.repo, "heads/" + pend.branch));
-        if (!alive.ok && alive.status === 404) { await codePendingDiscard(env, user, pend); return json({ ok: true, pending: null, expired: true }); }
+        if (!alive.ok && alive.status === 404) { await codePendingDiscard(env, user, String(url.searchParams.get("repo") || ""), pend); return json({ ok: true, pending: null, expired: true }); }
       }
       return json({ ok: true, pending: codePendingView(pend) });
     }
@@ -9732,7 +9750,7 @@ async function handle(request, env, ctx) {
       const yes = b.yes === true || b.yes === "true", no = b.yes === false || b.yes === "false";
       if (!yes && !no) return json({ ok: false, msg: "yes 必须是 true（推）或 false（不推）" }, 400);
       if (!b.pending_id || !Number.isInteger(Number(b.version)) || !b.project || !b.operation_id) return json({ ok: false, msg: "确认请求必须带 pending_id、version、project、operation_id" }, 400);
-      const r = await codeConfirm(env, user, yes, { pending_id: String(b.pending_id), version: Number(b.version), project: String(b.project), operation_id: String(b.operation_id), accepted_paths: Array.isArray(b.accepted_paths) ? b.accepted_paths.map(String).slice(0, 100) : null, conflict_resolutions: b.conflict_resolutions && typeof b.conflict_resolutions === "object" ? b.conflict_resolutions : {} });
+      const r = await codeConfirm(env, user, yes, { repo: String(b.repo || ""), pending_id: String(b.pending_id), version: Number(b.version), project: String(b.project), operation_id: String(b.operation_id), accepted_paths: Array.isArray(b.accepted_paths) ? b.accepted_paths.map(String).slice(0, 100) : null, conflict_resolutions: b.conflict_resolutions && typeof b.conflict_resolutions === "object" ? b.conflict_resolutions : {} });
       return json(r, r.ok ? 200 : 400);
     }
 
