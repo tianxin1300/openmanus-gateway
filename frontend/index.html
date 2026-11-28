@@ -6746,7 +6746,8 @@ async function loadRunHistory() {
   if(!history)return;
   history.textContent="正在读取历史任务…";
   try {
-    const r=await authFetch(GATEWAY+"/api/code/runs",{cache:"no-store"}), d=await r.json().catch(()=>({}));
+    const repo=workbenchRepoFull();
+    const r=await authFetch(GATEWAY+"/api/code/runs?repo="+encodeURIComponent(repo),{cache:"no-store"}), d=await r.json().catch(()=>({}));
     if(!r.ok||!d.ok)throw new Error(d.msg||("读取历史任务失败（HTTP "+r.status+"）"));
     history.innerHTML="";
     const runs=Array.isArray(d.runs)?d.runs:[];
@@ -6759,7 +6760,7 @@ async function loadRunHistory() {
       b.onclick=async()=>{
         const detail=g("wb-run-detail-content"); if(detail)detail.textContent="正在读取任务 "+id+" 的持久化记录…";
         try{
-          const q=await authFetch(GATEWAY+"/api/code/logs?run_id="+encodeURIComponent(id),{cache:"no-store"}),j=await q.json().catch(()=>({}));
+          const q=await authFetch(GATEWAY+"/api/code/logs?repo="+encodeURIComponent(repo)+"&run_id="+encodeURIComponent(id),{cache:"no-store"}),j=await q.json().catch(()=>({}));
           if(!q.ok||!j.ok)throw new Error(j.msg||("读取任务记录失败（HTTP "+q.status+"）"));
           renderRunnerRecordDetail({...j,run_id:j.run_id||j.request_id||id});
         }catch(error){if(detail)detail.textContent="历史任务读取失败："+(error.message||String(error));}

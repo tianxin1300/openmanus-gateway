@@ -95,7 +95,7 @@ function loadCodeRunnerDO(fetchImpl) {
       } finally { release(); }
     }
   };
-  const sandbox = { URL, Response, Request, Date, structuredClone, fetch: fetchImpl || (async () => { throw new Error("unexpected fetch"); }), codeRunLogKey: id => "log:run:" + id, codeRunIndexKey: user => "code:runs:" + user, codeVerifyKey: user => "code:verify:" + user, codeVerifyErrorLines: value => String(value).split(/\r?\n/).filter(Boolean) };
+  const sandbox = { URL, Response, Request, Date, structuredClone, fetch: fetchImpl || (async () => { throw new Error("unexpected fetch"); }), codeRunLogKey: (id, user, repo) => "log:run:" + user + ":" + String(repo || "").toLowerCase() + ":" + id, codeRunIndexKey: (user, repo) => "code:runs:" + user + ":" + String(repo || "").toLowerCase(), codeRunIndexSave: async (env, user, record) => { const key = "code:runs:" + user + ":" + String(record.repo || "").toLowerCase(); const rows = await env.KV.get(key, "json") || []; const summary = { run_id: record.run_id || record.request_id, request_id: record.request_id, repo: record.repo, project: record.project || record.repo, branch: record.branch || record.ref || "", task_id: record.task_id || record.request_id, head_sha: record.head_sha || "", actions_run_ids: (record.runs || []).map(run => String(run.run_id || "")).filter(id => /^\d+$/.test(id)), head_shas: (record.runs || []).map(run => run.head_sha || "").filter(Boolean), log_key: record.log_key }; await env.KV.put(key, JSON.stringify([summary, ...rows])); return true; }, codeVerifyKey: user => "code:verify:" + user, codeVerifyErrorLines: value => String(value).split(/\r?\n/).filter(Boolean) };
   vm.runInNewContext(classSource + '\n' + 'globalThis.TestCodeRunnerDO = CodeRunnerDO;', sandbox);
   return { Runner: sandbox.TestCodeRunnerDO, storage };
 }
@@ -1958,4 +1958,53 @@ test('dynamic workbench repository registry is sourced only from CODE_REPOS and 
   assert.match(frontendSource, /wbApi\("\/api\/code\/projects"/, 'Workbench loads its project list from the Worker');
   assert.match(frontendSource, /const WORKBENCH_PROJECTS = Object\.create\(null\)/, 'Workbench does not maintain a second hard-coded allowlist');
   assert.doesNotMatch(frontendSource, /const WORKBENCH_PROJECTS = \{\s*"openmanus-gateway"/, 'static project allowlist is removed');
+});
+
+test('persistent runner watchdog aggregates mixed child results and releases the lock', async () => {
+  const values = new Map();
+  const kv = {
+    async get(key, type) { const value = values.get(key); return type === 'json' && typeof value === 'string' ? JSON.parse(value) : value ?? null; },
+    async put(key, value) { values.set(key, value); }
+  };
+  const calls = [];
+  const fetchMock = async url => {
+    const target = String(url); calls.push(target);
+    if (target.includes('/workflows/')) {
+      const worker = target.includes('deploy-worker.yml');
+      const id = worker ? 202 : 101;
+      const name = worker ? 'deploy-worker · both-mixed' : 'deploy-project · both-mixed';
+      return { ok: true, json: async () => ({ workflow_runs: [{ id, name, html_url: 'https://github.com/run/' + id }] }) };
+    }
+    if (target.endsWith('/actions/runs/101')) return { ok: true, json: async () => ({ id: 101, status: 'completed', conclusion: 'success', html_url: 'https://github.com/run/101', head_sha: 'a'.repeat(40) }) };
+    if (target.endsWith('/actions/runs/202')) return { ok: true, json: async () => ({ id: 202, status: 'completed', conclusion: 'failure', html_url: 'https://github.com/run/202', head_sha: 'b'.repeat(40) }) };
+    if (target.endsWith('/actions/runs/202/jobs?per_page=20')) return { ok: true, json: async () => ({ jobs: [{ id: 909, conclusion: 'failure', steps: [{ name: 'Worker deploy', conclusion: 'failure' }] }] }) };
+    if (target.endsWith('/actions/jobs/909/logs')) return { ok: true, text: async () => 'worker deployment failed' };
+    throw new Error('unexpected GitHub request: ' + target);
+  };
+  const releaseCalls = [];
+  const env = {
+    GH_PAT: 'test-token', KV: kv,
+    CODE_RUNNER: { idFromName: name => name, get: id => ({ fetch: async (url, options) => { releaseCalls.push({ id, url, body: JSON.parse(options.body) }); return new Response(JSON.stringify({ ok: true, released: true })); } }) }
+  };
+  const { Runner, storage } = loadCodeRunnerDO(fetchMock);
+  const runner = new Runner({ storage }, env);
+  await runner.fetch(new Request('https://runner/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+    request_id: 'both-mixed', run_id: 'both-mixed', owner_user: 'user-1', repo: 'owner/repo', kind: 'both', dispatching: true,
+    started_at: new Date().toISOString(), status: 'queued',
+    runs: [{ kind: 'deploy', workflow: 'deploy-project.yml', status: 'queued', conclusion: null }, { kind: 'worker', workflow: 'deploy-worker.yml', status: 'queued', conclusion: null }]
+  }) }));
+  await runner.fetch(new Request('https://runner/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dispatching: false }) }));
+  await runner.alarm();
+  const record = await runner.load();
+  assert.equal(record.state, 'failure');
+  assert.equal(record.status, 'completed');
+  assert.equal(record.conclusion, 'failure');
+  assert.deepEqual(record.runs.map(run => run.state), ['success', 'failure']);
+  assert.deepEqual(record.runs.map(run => run.conclusion), ['success', 'failure']);
+  assert.deepEqual(record.runs.map(run => run.run_url), ['https://github.com/run/101', 'https://github.com/run/202']);
+  assert.equal(record.runs[1].failed_step, 'Worker deploy');
+  assert.equal(calls.length, 6);
+  assert.equal(releaseCalls.length, 1);
+  assert.equal(releaseCalls[0].body.request_id, 'both-mixed');
+  assert.equal(await storage.getAlarm(), null);
 });
