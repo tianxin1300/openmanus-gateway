@@ -83,6 +83,23 @@ test('RUN-ISOLATION-03: same Actions run ID in two repositories cannot collide i
   assert.deepEqual(Array.from(b.logs), ['beta']);
   assert.notEqual(a.log_key, b.log_key);
 });
+test("RUN-ISOLATION-09: same repository and Actions run ID cannot collide across users", async () => {
+  const f = loadRunFunctions(), env = makeEnv();
+  await f.codePersistRun(env, "user-1", run("owner/alpha", "feature/alpha", { logs: ["user-1"] }));
+  await f.codePersistRun(env, "user-2", run("owner/alpha", "feature/alpha", { logs: ["user-2"] }));
+  const one = await f.codeRunLogs(env, "user-1", "owner/alpha", "812345");
+  const two = await f.codeRunLogs(env, "user-2", "owner/alpha", "812345");
+  assert.deepEqual(Array.from(one.logs), ["user-1"]);
+  assert.deepEqual(Array.from(two.logs), ["user-2"]);
+  assert.notEqual(one.log_key, two.log_key);
+});
+test("RUN-ISOLATION-10: short commit SHA is not mislabeled as a branch or full head SHA", async () => {
+  const f = loadRunFunctions(), env = makeEnv();
+  await f.codePersistRun(env, "user-1", run("owner/alpha", "abcdef1234567"));
+  const { runs } = await f.codeRuns(env, "user-1", "owner/alpha");
+  assert.equal(runs[0].branch, "");
+  assert.equal(runs[0].head_sha, "");
+});
 test('RUN-ISOLATION-04: cross-repository log reads are rejected', async () => {
   const f = loadRunFunctions(), env = makeEnv();
   await f.codePersistRun(env, 'user-1', run('owner/alpha', 'feature/alpha'));

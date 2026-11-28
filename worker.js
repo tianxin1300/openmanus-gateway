@@ -1125,7 +1125,7 @@ async function codeRollback(env, user, body) {
 }
 const CODE_DEPLOY_WORKFLOW = "deploy-project.yml";
 const CODE_WORKER_DEPLOY_WORKFLOW = "deploy-worker.yml";
-const codeRunLogKey = (runId, repo) => "log:run:" + String(repo || "").trim().toLowerCase().replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 120) + ":" + String(runId || "").replace(/[^A-Za-z0-9._:-]/g, "-").slice(0, 180);
+const codeRunLogKey = (runId, user, repo) => "log:run:" + String(user || "").replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 160) + ":" + String(repo || "").trim().toLowerCase().replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 120) + ":" + String(runId || "").replace(/[^A-Za-z0-9._:-]/g, "-").slice(0, 180);
 const codeRunIndexKey = (user, repo) => "code:runs:" + String(user || "").slice(0, 160) + ":" + String(repo || "").trim().toLowerCase();
 function codeRunnerNamespace(env) { return env.CODE_RUNNER || env.RUNNER || null; }
 function codeRunnerId(env, user, requestId) {
@@ -1155,11 +1155,12 @@ async function codeRunIndexLoad(env, user, repo) {
 function codeRunIndexSummary(record) {
   const repo = String(record.repo || "").trim();
   const ref = String(record.ref || record.branch || "");
+  const isShaRef = /^[0-9a-f]{7,64}$/i.test(ref);
   const shaRef = /^[0-9a-f]{40}$/i.test(ref) ? ref : "";
   return {
     run_id: String(record.run_id || record.request_id || ""), request_id: record.request_id,
     task_id: record.task_id || record.request_id || "", project: record.project || repo, repo,
-    branch: record.branch || (shaRef ? "" : ref), head_sha: record.head_sha || record.commit_sha || shaRef || "",
+    branch: record.branch || (isShaRef ? "" : ref), head_sha: record.head_sha || record.commit_sha || shaRef || "",
     actions_run_id: /^\d+$/.test(String(record.run_id || "")) ? String(record.run_id) : "",
     actions_run_ids: Array.isArray(record.runs) ? record.runs.map((run) => String(run.run_id || "")).filter((id) => /^\d+$/.test(id)) : [],
     head_shas: Array.isArray(record.runs) ? record.runs.map((run) => String(run.head_sha || "")).filter((sha) => /^[0-9a-f]{40}$/i.test(sha)) : [],
@@ -1184,7 +1185,7 @@ async function codePersistRun(env, user, record) {
   const repo = String(record.repo || "").trim();
   record.run_id = runId; record.owner_user = String(user || ""); record.updated_at = new Date().toISOString();
   if (env.KV && runId && repo && codeRepoOk(env, repo)) {
-    record.log_key = codeRunLogKey(runId, repo);
+    record.log_key = codeRunLogKey(runId, user, repo);
     await env.KV.put(record.log_key, JSON.stringify({ ok: true, ...record, logs: Array.isArray(record.logs) ? record.logs : [], error_lines: Array.isArray(record.error_lines) ? record.error_lines : [] }), { expirationTtl: 31536000 });
     await codeRunIndexSave(env, user, record);
   }
@@ -1197,7 +1198,7 @@ async function codeRunLogs(env, user, repo, runId) {
   if (!id || !/^[-A-Za-z0-9._:]+$/.test(id)) return { ok: false, msg: "run_id 不合法" };
   const owned = (await codeRunIndexLoad(env, user, scope)).some((x) => String(x.run_id) === id || String(x.request_id) === id);
   if (!owned) return { ok: false, msg: "当前项目没有这条运行日志" };
-  const key = codeRunLogKey(id, scope);
+  const key = codeRunLogKey(id, user, scope);
   const item = env.KV ? await env.KV.get(key, "json").catch(() => null) : null;
   if (!item || String(item.owner_user || "") !== String(user || "") || String(item.repo || "").toLowerCase() !== scope.toLowerCase()) return { ok: false, msg: "运行日志归属校验失败" };
   return { ok: true, ...item, log_key: key };
@@ -1360,7 +1361,7 @@ async function codeVerifyStart(env, user, body) {
   const job = { request_id: requestId, repo, ref, kind: "verify", workflow: CODE_VERIFY_WORKFLOW, started_at: new Date().toISOString(), status: "queued", conclusion: null, run_id: null, run_url: "", actions_url: "https://github.com/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW, preview_url: codeVerifyPreview(env, ""), error_lines: [] };
   if (env.KV) await env.KV.put(codeVerifyKey(user), JSON.stringify(job), { expirationTtl: 86400 });
   await codePersistRun(env, user, job);
-  return { ok: true, ...job, log_key: codeRunLogKey(requestId, repo), message: "验证已排队：checkout → npm install → npm test → npm run build" };
+  return { ok: true, ...job, log_key: codeRunLogKey(requestId, user, repo), message: "验证已排队：checkout → npm install → npm test → npm run build" };
 }
 function codeVerifyRedact(text) {
   return String(text || "")
@@ -1413,7 +1414,7 @@ async function codeVerifyStatus(env, user) {
   old.state = old.status === "completed" ? (old.conclusion === "success" ? "success" : "failure") : "running";
   if (env.KV) await env.KV.put(codeVerifyKey(user), JSON.stringify(old), { expirationTtl: 86400 });
   await codePersistRun(env, user, old);
-  return { ok: true, ...old, log_key: codeRunLogKey(old.run_id || old.request_id, old.repo || repo), actions_url: old.run_url || ("https://github.com/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW) };
+  return { ok: true, ...old, log_key: codeRunLogKey(old.run_id || old.request_id, user, old.repo || repo), actions_url: old.run_url || ("https://github.com/" + repo + "/actions/workflows/" + CODE_VERIFY_WORKFLOW) };
 }
 async function codeRetryRun(env, user, body = {}) {
   const kind = body.kind === "deploy" ? "deploy" : "verify";
@@ -10300,7 +10301,7 @@ export class CodeRunnerDO {
     const user = record.owner_user;
     const runId = String(record.run_id || record.request_id || "");
     if (this.env.KV && runId) {
-      record.log_key = codeRunLogKey(runId, record.repo);
+      record.log_key = codeRunLogKey(runId, user, record.repo);
       await this.env.KV.put(record.log_key, JSON.stringify({ ok: true, ...record }), { expirationTtl: 31536000 });
       await codeRunIndexSave(this.env, user, record);
       await this.env.KV.put(codeVerifyKey(user) + ":both", JSON.stringify(record), { expirationTtl: 86400 });
