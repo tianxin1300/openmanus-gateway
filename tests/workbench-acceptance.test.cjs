@@ -436,7 +436,7 @@ test('ACCEPTANCE WORKBENCH-WORKER-PREVIEW-06: merge is not finalized until previ
 
 test('ACCEPTANCE WORKBENCH-WORKER-PREVIEW-07: Workbench UI exposes pending and verified Worker Preview states', () => {
   assert.match(frontend, /activeBranchRecord\.preview_supported/);
-  assert.match(frontend, /waitForWorkbenchWorkerPreview/);
+  assert.match(frontend, /waitForWorkbenchPreview/);
   assert.match(frontend, /preview_cleanup_status === "pending"/);
   assert.match(frontend, /preview_status === "ready"/);
   assert.match(frontend, /HTTP 200 验证/);
