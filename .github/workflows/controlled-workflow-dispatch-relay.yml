@@ -1,0 +1,149 @@
+name: controlled-workflow-dispatch-relay
+run-name: Dispatch relay · ${{ inputs.target_workflow }} · ${{ inputs.target_ref }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_workflow:
+        description: Only these two workflows can be dispatched
+        required: true
+        type: choice
+        options:
+          - deploy-worker-preview.yml
+          - test-project.yml
+      target_ref:
+        description: Target branch (main is allowed only for test-project)
+        required: true
+        type: string
+      target_inputs:
+        description: JSON object of target workflow inputs; use {} for test-project
+        required: false
+        default: "{}"
+        type: string
+
+permissions: {}
+
+jobs:
+  dispatch:
+    name: Validate and dispatch one allowlisted workflow
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Validate repository, workflow, ref, and inputs
+        id: validate
+        env:
+          CURRENT_REPOSITORY: ${{ github.repository }}
+          TARGET_WORKFLOW: ${{ inputs.target_workflow }}
+          TARGET_REF: ${{ inputs.target_ref }}
+          TARGET_INPUTS: ${{ inputs.target_inputs }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          test "$CURRENT_REPOSITORY" = "tianxin1300/openmanus-gateway" || {
+            echo "拒绝：转发器只能在授权仓库运行。" >&2
+            exit 1
+          }
+          python3 - <<'PY'
+          import json, os, re
+          repo = os.environ["CURRENT_REPOSITORY"]
+          workflow = os.environ["TARGET_WORKFLOW"]
+          ref = os.environ["TARGET_REF"]
+          raw = os.environ.get("TARGET_INPUTS", "{}")
+          if repo != "tianxin1300/openmanus-gateway":
+              raise SystemExit("Repository is not allowlisted")
+          allowed = {"deploy-worker-preview.yml", "test-project.yml"}
+          if workflow not in allowed:
+              raise SystemExit("Workflow is not allowlisted")
+          if not ref or ref != ref.strip() or len(ref) > 120:
+              raise SystemExit("Invalid target ref")
+          if ref != "main" and (
+              not ref.startswith("code/")
+              or not re.fullmatch(r"[A-Za-z0-9._/-]+", ref)
+              or any(part in ("", ".", "..") for part in ref.split("/"))
+          ):
+              raise SystemExit("Target ref must be main or a safe code/* branch")
+          try:
+              inputs = json.loads(raw or "{}")
+          except json.JSONDecodeError:
+              raise SystemExit("Target inputs must be valid JSON")
+          if not isinstance(inputs, dict):
+              raise SystemExit("Target inputs must be a JSON object")
+          if workflow == "test-project.yml":
+              if ref != "main" and not ref.startswith("code/"):
+                  raise SystemExit("Invalid test-project ref")
+              if inputs:
+                  raise SystemExit("test-project does not accept forwarded inputs")
+          else:
+              required = {"action", "repository", "ref", "request_id", "preview_name"}
+              allowed_inputs = required | {"deployment_id", "kv_namespace_id"}
+              if not required.issubset(inputs) or not set(inputs).issubset(allowed_inputs):
+                  raise SystemExit("Preview dispatch inputs do not match the fixed schema")
+              if inputs["action"] not in ("create", "delete"):
+                  raise SystemExit("Invalid preview action")
+              if inputs["repository"] != "tianxin1300/openmanus-gateway":
+                  raise SystemExit("Preview repository is not allowlisted")
+              if inputs["ref"] != ref:
+                  raise SystemExit("Preview input ref must match target_ref")
+              if not re.fullmatch(r"[A-Za-z0-9._:-]{8,160}", str(inputs["request_id"])):
+                  raise SystemExit("Invalid preview request ID")
+              if not re.fullmatch(r"wb-[a-z0-9][a-z0-9-]{1,48}", str(inputs["preview_name"])):
+                  raise SystemExit("Invalid preview name")
+              if inputs["action"] == "delete":
+                  if not re.fullmatch(r"[0-9]+", str(inputs.get("deployment_id", ""))):
+                      raise SystemExit("Delete requires a numeric deployment_id")
+                  if not re.fullmatch(r"[0-9a-f]{32}", str(inputs.get("kv_namespace_id", ""))):
+                      raise SystemExit("Delete requires a valid kv_namespace_id")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write("validated=true\n")
+          print("Validated repository, workflow allowlist, ref, and input schema.")
+          PY
+
+      - name: Dispatch allowlisted workflow through GitHub API
+        env:
+          DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          TARGET_WORKFLOW: ${{ inputs.target_workflow }}
+          TARGET_REF: ${{ inputs.target_ref }}
+          TARGET_INPUTS: ${{ inputs.target_inputs }}
+          CURRENT_REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          test -n "${DISPATCH_TOKEN:-}" || {
+            echo "DISPATCH_TOKEN secret is not configured." >&2
+            exit 1
+          }
+          test "$CURRENT_REPOSITORY" = "tianxin1300/openmanus-gateway"
+          BODY="$(jq -cn --arg ref "$TARGET_REF" --argjson inputs "${TARGET_INPUTS:-{}}" '{ref:$ref,inputs:$inputs}')"
+          URL="https://api.github.com/repos/tianxin1300/openmanus-gateway/actions/workflows/$TARGET_WORKFLOW/dispatches"
+          HTTP_CODE="$(curl --silent --show-error --output /dev/null --write-out "%{http_code}" \
+            --request POST "$URL" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --header "Authorization: Bearer $DISPATCH_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data "$BODY")"
+          if [ "$HTTP_CODE" != "204" ]; then
+            echo "GitHub workflow dispatch failed (HTTP $HTTP_CODE)." >&2
+            exit 1
+          fi
+          echo "GitHub accepted the dispatch request (HTTP 204)."
+
+      - name: Summary
+        if: always()
+        env:
+          TARGET_WORKFLOW: ${{ inputs.target_workflow }}
+          TARGET_REF: ${{ inputs.target_ref }}
+          JOB_RESULT: ${{ job.status }}
+        shell: bash
+        run: |
+          {
+            echo "## Controlled workflow dispatch relay"
+            echo
+            echo "- Repository: tianxin1300/openmanus-gateway"
+            echo "- Allowlisted workflow: $TARGET_WORKFLOW"
+            echo "- Target ref: $TARGET_REF"
+            echo "- Result: $JOB_RESULT"
+            echo "- Token: read from DISPATCH_TOKEN secret at runtime; never printed"
+          } >> "$GITHUB_STEP_SUMMARY"
