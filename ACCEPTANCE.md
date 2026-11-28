@@ -615,21 +615,7 @@ npm test
 
 **本阶段安全边界：** 独立分支 `code/workbench-acceptance-phase1-20261128`；只允许改 `ACCEPTANCE.md` 与 `tests/workbench-acceptance-phase1.test.cjs`。PR #32、PR #60 不修改；不合并、不部署生产。
 
-## 19. 第二阶段：工作台文件读取白名单闭环（P2-READ-001～004）
-
-**目标：** 工作台读取文件必须经过已登录的 Worker API，并由 Worker 的 `CODE_REPOS` 唯一准入规则授权；不允许前端通过独立 MCP 文件读取通道绕过仓库白名单。
-
-**自动化测试：**
-- `P2-READ-001`：`CODE_REPOS` 未配置时，文件读取在任何 GitHub 请求前被拒绝。
-- `P2-READ-002`：目标仓库不在 `CODE_REPOS` 时，文件读取在任何 GitHub 请求前被拒绝。
-- `P2-READ-003`：白名单内文件读取使用指定临时分支 ref，并返回文件 SHA 与内容。
-- `P2-READ-004`：工作台 `mcpGet` 通过已登录的 `/api/code/file` 读取；路由先验证登录身份，再调用受 `codeRepoOk` 保护的 `codeGetFile`。
-
-**通过条件：** 四项全部执行并通过；未授权仓库不得触发 GitHub 文件读取；合法读取必须返回 SHA，供后续保存时进行版本一致性校验。
-
-**测试边界：** `P2-READ-001～003` 使用隔离 fetch 模拟验证 Worker 实际读取函数；`P2-READ-004` 核对前端读取入口与 Worker 路由契约。它们不代表线上 Worker Secret、真实 GitHub 令牌或生产环境配置已验收。
-
-## 18. 第二阶段：动态项目注册表与 CODE_REPOS 唯一准入（P2-PROJECT-001～P2-PROJECT-011）
+## 18. 第二阶段：动态项目注册表与 CODE_REPOS 唯一准入（P2-PROJECT-001～009）
 
 **目标：** 工作台与代码模式项目选择器只能展示 Worker 环境变量 `CODE_REPOS` 明确授权的仓库；未授权仓库不得读取文件、创建分支或执行任何写操作。
 
@@ -644,10 +630,18 @@ npm test
 
 **测试类型边界：** 这些测试验证真实源码函数与前端请求契约，但项目列表使用隔离环境变量，不读取线上 Worker Secret；不代表已核验生产环境实际配置了哪些仓库，也不代表对任意仓库执行过真实 GitHub 写操作。
 
-**新增文件读取授权行为测试：**
-- `P2-PROJECT-010`：直接执行 Worker 的 `codeGetFile`，验证 `CODE_REPOS` 为空或目标仓库未列入时，在发起任何 GitHub 请求前拒绝读取。
-- `P2-PROJECT-011`：验证白名单内文件读取使用指定 ref，并返回 GitHub 文件 SHA 与内容；不以仅有前端静态调用作为授权通过依据。
-
-**通过条件：** P2-PROJECT-001～011 全部执行并通过。新增两项仍使用隔离的 GitHub fetch 模拟，不代表线上 Worker Secret 或真实 GitHub 访问已验收。
-
 **预览边界：** 本次仅完成动态授权仓库列表和读写准入收口。独立 Pages 预览仍需逐仓库确认部署工作流、Cloudflare Pages 项目和预览 URL 契约；不得因仓库进入 `CODE_REPOS` 就假定它已具备可部署预览。
+
+## 19. 第二阶段：工作台文件读取白名单闭环（P2-READ-001～004）
+
+**目标：** 工作台读取文件必须经过已登录的 Worker API，并由 Worker 的 `CODE_REPOS` 唯一准入规则授权；不允许前端通过独立 MCP 文件读取通道绕过仓库白名单。
+
+**自动化测试：**
+- `P2-READ-001`：`CODE_REPOS` 未配置时，文件读取在任何 GitHub 请求前被拒绝。
+- `P2-READ-002`：目标仓库不在 `CODE_REPOS` 时，文件读取在任何 GitHub 请求前被拒绝。
+- `P2-READ-003`：白名单内文件读取使用指定临时分支 ref，并返回文件 SHA 与内容。
+- `P2-READ-004`：工作台 `mcpGet` 通过已登录的 `/api/code/file` 读取；路由先验证登录身份，再调用受 `codeRepoOk` 保护的 `codeGetFile`。
+
+**通过条件：** 四项全部执行并通过；未授权仓库不得触发 GitHub 文件读取；合法读取必须返回 SHA，供后续保存时进行版本一致性校验。
+
+**测试边界：** `P2-READ-001～003` 使用隔离 fetch 模拟验证 Worker 实际读取函数；`P2-READ-004` 核对前端读取入口与 Worker 路由契约。它们不代表线上 Worker Secret、真实 GitHub 令牌或生产环境配置已验收。
