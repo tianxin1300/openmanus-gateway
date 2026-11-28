@@ -201,6 +201,18 @@ jobs:
                   if response.status != 204:
                       raise SystemExit(f"GitHub dispatch returned unexpected HTTP {response.status}")
           except urllib.error.HTTPError as error:
+              # GitHub's validation response contains the actionable reason (for example,
+              # an invalid ref or workflow input). It does not contain the bearer token.
+              detail = error.read().decode("utf-8", errors="replace")
+              try:
+                  parsed = json.loads(detail)
+                  message = str(parsed.get("message", ""))
+                  errors = parsed.get("errors", [])
+                  print("GitHub API error: " + message[:500], file=__import__("sys").stderr)
+                  if errors:
+                      print("GitHub validation details: " + json.dumps(errors, ensure_ascii=True)[:1500], file=__import__("sys").stderr)
+              except Exception:
+                  print("GitHub API returned an unreadable error body.", file=__import__("sys").stderr)
               raise SystemExit(f"GitHub workflow dispatch failed (HTTP {error.code})")
           except Exception:
               raise SystemExit("GitHub workflow dispatch request failed")
