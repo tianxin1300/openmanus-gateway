@@ -1164,6 +1164,12 @@ function codeRunIndexSummary(record) {
     actions_run_id: /^\d+$/.test(String(record.run_id || "")) ? String(record.run_id) : "",
     actions_run_ids: Array.isArray(record.runs) ? record.runs.map((run) => String(run.run_id || "")).filter((id) => /^\d+$/.test(id)) : [],
     head_shas: Array.isArray(record.runs) ? record.runs.map((run) => String(run.head_sha || "")).filter((sha) => /^[0-9a-f]{40}$/i.test(sha)) : [],
+    child_runs: Array.isArray(record.runs) ? record.runs.map((run) => ({
+      kind: run.kind || "", workflow: run.workflow || "", run_id: String(run.run_id || ""),
+      status: run.status || "", conclusion: run.conclusion || null,
+      state: run.dispatch_error || (run.conclusion && run.conclusion !== "success") ? "failure" : run.conclusion === "success" ? "success" : (run.state || run.status || "queued"),
+      run_url: run.run_url || "", head_sha: run.head_sha || "", dispatch_error: run.dispatch_error || "", failed_step: run.failed_step || ""
+    })) : [],
     kind: record.kind, workflow: record.workflow, status: record.status, conclusion: record.conclusion,
     state: record.state, run_url: record.run_url, preview_url: record.preview_url, log_key: record.log_key,
     retry_count: Number(record.retry_count || 0), started_at: record.started_at, updated_at: record.updated_at
@@ -10250,7 +10256,7 @@ export class CodeRunnerDO {
     const base = "https://api.github.com/repos/" + record.repo;
     const headers = { Authorization: "Bearer " + token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
     for (const run of record.runs) {
-      if (run.dispatch_error) continue;
+      if (run.dispatch_error) { run.state = "failure"; continue; }
       try {
         if (!run.run_id) {
           const listed = await fetch(base + "/actions/workflows/" + encodeURIComponent(run.workflow) + "/runs?event=workflow_dispatch&per_page=30", { headers });
@@ -10261,12 +10267,13 @@ export class CodeRunnerDO {
             if (found) { run.run_id = String(found.id); run.run_url = found.html_url || ""; }
           }
         }
-        if (!run.run_id) { run.status = run.status || "queued"; continue; }
+        if (!run.run_id) { run.status = run.status || "queued"; run.state = run.state || run.status; continue; }
         const response = await fetch(base + "/actions/runs/" + encodeURIComponent(String(run.run_id)), { headers });
         if (!response.ok) { run.watch_error = "GitHub Actions 查询 HTTP " + response.status; continue; }
         const live = await response.json();
         run.status = live.status || run.status;
         run.conclusion = live.conclusion || null;
+        run.state = run.conclusion ? (run.conclusion === "success" ? "success" : "failure") : (run.status || "running");
         run.run_url = live.html_url || run.run_url;
         run.head_sha = live.head_sha || run.head_sha;
         run.watch_error = "";

@@ -59,9 +59,9 @@ test('RUN-ISOLATION-01: same user indexes are isolated by authorized repository'
 test('RUN-ISOLATION-02: summary retains project, branch, commit, task and Actions lineage', async () => {
   const f = loadRunFunctions(), env = makeEnv();
   const record = run('owner/alpha', 'feature/alpha', { runs: [
-    { kind: 'deploy', run_id: '812345', head_sha: 'b'.repeat(40) },
-    { kind: 'worker', run_id: '812346', head_sha: 'c'.repeat(40) }
-  ] });
+    { kind: 'deploy', run_id: '812345', head_sha: 'b'.repeat(40), status: 'completed', conclusion: 'success', state: 'success', run_url: 'https://github.com/run/812345' },
+    { kind: 'worker', run_id: '812346', head_sha: 'c'.repeat(40), status: 'completed', conclusion: 'failure', state: 'failure', run_url: 'https://github.com/run/812346' }
+  ], retry_count: 2 });
   await f.codePersistRun(env, 'user-1', record);
   const { runs } = await f.codeRuns(env, 'user-1', 'owner/alpha');
   assert.equal(runs[0].project, 'owner/alpha');
