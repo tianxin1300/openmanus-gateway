@@ -250,7 +250,7 @@ test('ACCEPTANCE WORKBENCH-PREVIEW-AUDIT-01: preview dispatch records the authen
 test('ACCEPTANCE WORKBENCH-PAGES-PREVIEW-01: Pages preview is pending until its matching Actions run succeeds', async () => {
   const repo = 'tianxin1300/openmanus-gateway';
   const record = { repo, branch: 'code/pages-preview', preview_mode: 'pages', preview_request_id: 'request-pages-12345678', preview_status: 'pending' };
-  const refresh = runFunction(sourceOf('async function codeWorkbenchPagesPreviewRefresh(', 'async function codeWorkbenchWorkerPreviewRefresh('), 'codeWorkbenchPagesPreviewRefresh', {
+  const refresh = runFunction(sourceOf('async function codeWorkbenchPagesPreviewRefresh(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchPagesPreviewRefresh', {
     codeGhApi: async (_env, url) => {
       assert.match(url, /actions\/runs\?branch=code%2Fpages-preview&event=workflow_dispatch/);
       return { ok: true, data: { workflow_runs: [{
@@ -269,7 +269,7 @@ test('ACCEPTANCE WORKBENCH-PAGES-PREVIEW-01: Pages preview is pending until its 
 
 test('ACCEPTANCE WORKBENCH-PAGES-PREVIEW-02: failed Pages workflow never exposes a preview URL', async () => {
   const record = { repo: 'tianxin1300/openmanus-gateway', branch: 'code/pages-preview', preview_mode: 'pages', preview_request_id: 'request-pages-12345678', preview_status: 'pending' };
-  const refresh = runFunction(sourceOf('async function codeWorkbenchPagesPreviewRefresh(', 'async function codeWorkbenchWorkerPreviewRefresh('), 'codeWorkbenchPagesPreviewRefresh', {
+  const refresh = runFunction(sourceOf('async function codeWorkbenchPagesPreviewRefresh(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchPagesPreviewRefresh', {
     codeGhApi: async () => ({ ok: true, data: { workflow_runs: [{
       id: 8802, display_title: 'branch preview · request-pages-12345678', status: 'completed', conclusion: 'failure'
     }] } }),
@@ -284,9 +284,10 @@ test('ACCEPTANCE WORKBENCH-PAGES-PREVIEW-02: failed Pages workflow never exposes
 
 test('ACCEPTANCE WORKBENCH-PREVIEW-SCOPE-01: Workbench only exposes this repository Pages preview', () => {
   const previewConfig = runFunction(sourceOf('const codePreviewConfig = (repo) =>', 'async function codeWorkbenchPagesPreviewRefresh'), 'codePreviewConfig', {});
-  assert.deepEqual(previewConfig('tianxin1300/openmanus-gateway'), {
-    mode: 'pages', workflow_repo: 'tianxin1300/openmanus-gateway', workflow_file: 'deploy-branch-preview.yml'
-  });
+  const config = previewConfig('tianxin1300/openmanus-gateway');
+  assert.equal(config.mode, 'pages');
+  assert.equal(config.workflow_repo, 'tianxin1300/openmanus-gateway');
+  assert.equal(config.workflow_file, 'deploy-branch-preview.yml');
   assert.equal(previewConfig('owner-b/second-project'), null);
   assert.doesNotMatch(worker, /codeWorkbenchWorkerPreview/);
 });
