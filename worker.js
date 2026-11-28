@@ -1003,7 +1003,7 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
   const history = await codeHistoryLoad(env, user, repo);
   const row = { id: "workbench-" + Date.now().toString(36), kind: "commit", actor: String(user), repo, project: record.project, baseBranch: record.baseBranch, commit_sha: commitSha, previous_sha: previousSha, at: new Date().toISOString(), summary: String(body.summary || "开发台推送"), files, preview_url: record.preview_url || "" };
   try {
-    await codeHistorySave(env, user, repo, [row, ...history]);
+    await codeHistorySave(env, user, [row, ...history]);
   } catch (historyError) {
     record.status = "merged_history_failed"; record.commit_sha = commitSha; record.history_row = row; record.updated_at = new Date().toISOString();
     try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); } catch (_) {}
