@@ -728,14 +728,14 @@ test('ACCEPTANCE LOCK-CLEANUP-01: failed or cancelled claim releases its operati
   assert.deepEqual(Object.keys(stored.claims), [], 'failed operation releases its lock');
   assert.equal(stored.pending.status, 'failed');
 
-  const discarded = await call('discard', { pending_id: 'task-one', version: stored.version });
+  const discarded = await call('discard', { repo: pending.repo, pending_id: 'task-one', version: stored.version });
   assert.equal(discarded.discarding, true);
-  const cleared = await call('clear', { pending_id: 'task-one', version: stored.version });
+  const cleared = await call('clear', { repo: pending.repo, pending_id: 'task-one', version: stored.version });
   assert.equal(cleared.cleared, true);
   assert.equal(await storage.get('claim'), undefined, 'cancel clears the review state and lock record');
 
   const next = { ...pending, id: 'task-two', branch: 'code/task-two' };
-  const createdAgain = await call('create', { pending: next });
+  const createdAgain = await call('create', { repo: next.repo, pending: next });
   assert.equal(createdAgain.ok, true, 'a new task can claim the cleared state');
 });
 
