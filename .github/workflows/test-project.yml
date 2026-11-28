@@ -309,7 +309,7 @@ jobs:
               codePushGuard: () => '',
               codeWorkbenchBranchKey: () => 'e2e-workbench-record',
               codeHistoryLoad: async () => history,
-              codeHistorySave: async (_env, _user, _repo, rows) => { history = rows; },
+              codeHistorySave: async (_env, _user, rows) => { history = rows; },
               codePathOk: path => typeof path === 'string' && !!path && !path.startsWith('/') && !path.split('/').some(part => !part || part === '.' || part === '..'),
               codeGhApi: ghApi,
               codeGitRefUrl: (r, ref) => `https://api.github.com/repos/${r}/git/ref/${String(ref).split('/').map(encodeURIComponent).join('/')}`,
