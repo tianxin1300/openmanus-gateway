@@ -523,6 +523,39 @@ function codeWorkbenchPreviewName(branch, requestId) {
   const suffix = String(requestId || "").replace(/[^a-z0-9]/gi, "").slice(-8).toLowerCase() || "preview01";
   return ("wb-" + slug + "-" + suffix).slice(0, 53).replace(/-+$/g, "");
 }
+async function codeWorkbenchPagesPreviewRefresh(env, record) {
+  if (!record || record.preview_mode !== "pages" || !record.preview_request_id) return { ok: true, changed: false };
+  const runsUrl = "https://api.github.com/repos/" + record.repo + "/actions/runs?branch=" + encodeURIComponent(record.branch) + "&event=workflow_dispatch&per_page=30";
+  const listed = await codeGhApi(env, runsUrl);
+  const runs = listed.data && Array.isArray(listed.data.workflow_runs) ? listed.data.workflow_runs : null;
+  if (!listed.ok || !runs) return { ok: false, changed: false, msg: listed.msg || "读取 Pages Preview workflow 状态失败" };
+  const run = runs.find((item) => String(item.display_title || "").includes(String(record.preview_request_id)) || String(item.name || "").includes(String(record.preview_request_id)));
+  if (!run) return { ok: true, changed: false, pending: true };
+  record.preview_run_id = String(run.id);
+  record.preview_run_url = String(run.html_url || "");
+  if (run.status === "completed") {
+    if (run.conclusion === "success") {
+      const candidate = codeTempPreview(record.branch, record.repo);
+      if (!candidate.startsWith("https://") || !candidate.endsWith(".zhineng-et5.pages.dev")) {
+        record.preview_status = "failed";
+        record.preview_url = "";
+        record.preview_error = "Pages Preview workflow 已成功，但返回的分支预览地址不合法";
+      } else {
+        record.preview_status = "ready";
+        record.preview_url = candidate;
+        record.preview_error = "";
+      }
+    } else {
+      record.preview_status = "failed";
+      record.preview_url = "";
+      record.preview_error = "Pages Preview workflow 失败：" + String(run.conclusion || "unknown");
+    }
+  } else {
+    record.preview_status = "pending";
+  }
+  record.preview_status_updated_at = new Date().toISOString();
+  return { ok: true, changed: true, state: run.status === "completed" ? run.conclusion : run.status, run_id: record.preview_run_id };
+}
 async function codeWorkbenchWorkerPreviewRefresh(env, record) {
   if (!record || record.preview_mode !== "worker" || !record.preview_request_id) return { ok: true, changed: false };
   const deploymentsUrl = "https://api.github.com/repos/tianxin1300/openmanus-gateway/deployments?ref=main&environment=workbench-preview&per_page=100";
@@ -613,9 +646,9 @@ async function codeWorkbenchWorkerPreviewCleanup(env, user, repo, record) {
   return { ok: false, pending: true, msg: "Worker Preview 正在清理，临时分支暂时保留" };
 }
 function codeTempPreview(branch, repo) {
-  if (String(repo || "") !== "tianxin1300/openmanus-gateway") return "";
-  const slug = String(branch || "").replace(/\//g, "-").replace(/[^A-Za-z0-9-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase();
-  return slug ? "https://zhineng-et5.pages.dev/branch-" + slug : "";
+  if (String(repo || "").toLowerCase() !== "tianxin1300/openmanus-gateway") return "";
+  const slug = String(branch || "").replace(/\//g, "-").replace(/[^A-Za-z0-9-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 28).replace(/-+$/g, "");
+  return slug ? "https://" + slug + ".zhineng-et5.pages.dev" : "";
 }
 async function codeCreateTempBranch(env, repo, project, base = "main") {
   const safeBase = codeVerifyRef(base);
@@ -768,9 +801,10 @@ async function codeWorkbenchBranchCurrent(env, user, repo) {
     }
     return { ok: false, active: false, repo, msg: "GitHub 临时分支状态检查失败，已保留本地分支记录：" + (ref.msg || ("HTTP " + ref.status)) };
   }
-  if (record.preview_mode === "worker" && record.preview_request_id &&
-      (record.preview_status === "pending" || record.preview_cleanup_status === "pending")) {
-    const refreshed = await codeWorkbenchWorkerPreviewRefresh(env, record);
+  if (record.preview_request_id && (record.preview_status === "pending" || (record.preview_mode === "worker" && record.preview_cleanup_status === "pending"))) {
+    const refreshed = record.preview_mode === "worker"
+      ? await codeWorkbenchWorkerPreviewRefresh(env, record)
+      : (record.preview_mode === "pages" ? await codeWorkbenchPagesPreviewRefresh(env, record) : { ok: true, changed: false });
     if (refreshed.ok && refreshed.changed) {
       await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 });
     }
@@ -793,7 +827,7 @@ async function codeWorkbenchBranchCreateUnlocked(env, user, body = {}) {
   const made = await codeCreateTempBranch(env, repo, project, base);
   if (!made.ok) return made;
   const previewConfig = typeof codePreviewConfig === "function" ? codePreviewConfig(repo) : null;
-  const record = { project, repo, branch: made.branch, baseBranch: made.base, baseCommit: made.sha, created_by: String(user), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), status: "active", preview_mode: previewConfig ? previewConfig.mode : "none", preview_supported: !!previewConfig, preview_status: "idle", preview_url: codeTempPreview(made.branch, repo) };
+  const record = { project, repo, branch: made.branch, baseBranch: made.base, baseCommit: made.sha, created_by: String(user), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), status: "active", preview_mode: previewConfig ? previewConfig.mode : "none", preview_supported: !!previewConfig, preview_status: "idle", preview_url: "" };
   try {
     await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 });
   } catch (error) {
@@ -929,22 +963,30 @@ async function codeWorkbenchBranchPreviewUnlocked(env, user, repo) {
     await env.KV.put(codeWorkbenchBranchKey(user, repo), JSON.stringify(current), { expirationTtl: 2592000 });
     return { ok: true, preview_url: "", preview_status: "pending", request_id: requestId, branch: current.branch, state: "dispatched", msg: "Worker Preview 已启动，等待部署完成并通过 HTTP 200 验证" };
   }
-  const requestId = "workbench-preview-" + Date.now().toString(36);
+  if (current.preview_status === "ready" && current.preview_url) {
+    return { ok: true, preview_url: current.preview_url, request_id: current.preview_request_id, branch: current.branch, state: "ready", preview_status: "ready" };
+  }
+  if (current.preview_status === "pending") {
+    return { ok: true, preview_url: "", request_id: current.preview_request_id, branch: current.branch, state: "pending", preview_status: "pending", msg: "Pages Preview 正在部署和验证，请稍后刷新" };
+  }
+  const requestId = "workbench-preview-" + Date.now().toString(36) + "-" + rand(8);
   const dispatched = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/actions/workflows/deploy-branch-preview.yml/dispatches", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ref: current.branch, inputs: { request_id: requestId, ref: current.branch } })
   });
   if (!dispatched.ok) return { ok: false, msg: "预览部署启动失败：" + dispatched.msg };
-  current.preview_url = codeTempPreview(current.branch, repo);
+  current.preview_url = "";
   current.preview_request_id = requestId;
   current.preview_status = "pending";
   current.preview_mode = "pages";
   current.preview_supported = true;
+  current.preview_run_id = "";
+  current.preview_run_url = "";
   current.preview_started_at = new Date().toISOString();
   current.preview_started_by = String(user);
   current.preview_events = [...(Array.isArray(current.preview_events) ? current.preview_events : []), { actor: String(user), request_id: requestId, at: current.preview_started_at, mode: "pages" }].slice(-100);
   await env.KV.put(codeWorkbenchBranchKey(user, repo), JSON.stringify(current), { expirationTtl: 2592000 });
-  return { ok: true, preview_url: current.preview_url, request_id: requestId, branch: current.branch, state: "dispatched", preview_status: "pending" };
+  return { ok: true, preview_url: "", request_id: requestId, branch: current.branch, state: "dispatched", preview_status: "pending", msg: "Pages Preview 已启动，等待分支预览地址通过 HTTP 200 和 Playwright 验证" };
 }
 async function codeWorkbenchBranchPreview(env, user, repo) {
   return codeWorkbenchWithLock(env, user, repo, "preview", () => codeWorkbenchBranchPreviewUnlocked(env, user, repo));
