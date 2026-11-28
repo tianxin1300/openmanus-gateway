@@ -716,12 +716,12 @@ test('ACCEPTANCE LOCK-CLEANUP-01: failed or cancelled claim releases its operati
 
   const pending = { id: 'task-one', project: 'p', repo: 'tianxin1300/openmanus-gateway', branch: 'code/task-one',
     edits: [{ path: 'a.js', old: 'a', new: 'b' }], created_at: Date.now() };
-  assert.equal((await call('create', { pending })).ok, true);
-  const claimArgs = { pending_id: 'task-one', project: 'p', operation_id: 'op-one', version: 1, yes: true };
+  assert.equal((await call('create', { repo: pending.repo, pending })).ok, true);
+  const claimArgs = { repo: pending.repo, pending_id: 'task-one', project: 'p', operation_id: 'op-one', version: 1, yes: true };
   assert.equal((await call('claim', claimArgs)).claimed, true);
   const duplicate = await call('claim', claimArgs);
   assert.equal(duplicate.in_progress, true, 'duplicate click while active is blocked by the operation lock');
-  const finished = await call('finish', { pending_id: 'task-one', operation_id: 'op-one', status: 'failed',
+  const finished = await call('finish', { repo: pending.repo, pending_id: 'task-one', operation_id: 'op-one', status: 'failed',
     result: { ok: false, reply: 'simulated push failure' }, edits: pending.edits });
   assert.equal(finished.ok, true);
   let stored = await storage.get('claim');
