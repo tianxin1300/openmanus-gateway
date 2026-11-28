@@ -923,7 +923,7 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
       try {
         const savedHistory = await codeHistoryLoad(env, user, repo);
         if (!savedHistory.some((item) => item && item.commit_sha === record.commit_sha)) {
-          await codeHistorySave(env, user, repo, [record.history_row, ...savedHistory]);
+          await codeHistorySave(env, user, [record.history_row, ...savedHistory]);
         }
       } catch (historyError) {
         return { ok: false, merged: true, history_saved: false, branch_deleted: false, msg: "GitHub 已合并，但历史记录补写仍失败；临时分支保留：" + (historyError && historyError.message || "历史写入失败") };
