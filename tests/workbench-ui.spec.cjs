@@ -48,6 +48,9 @@ async function installApiFixtures(page, state) {
       body: JSON.stringify(data)
     });
 
+    if (path.endsWith("/repos") && method === "GET") {
+      return json({ ok: true, source: "CODE_REPOS", items: [{ full_name: REPO, owner: "tianxin1300", repo: "openmanus-gateway", label: "openmanus-gateway" }] });
+    }
     if (path.endsWith("/branch/current")) {
       return json(state.active || state.discardRecovery
         ? { ok: true, active: true, repo: REPO, branch: BRANCH, baseBranch: "main", baseCommit: "base-sha", project: "openmanus-gateway", status: state.discardRecovery ? "discard_history_failed" : state.branchStatus, discard_recovery: state.discardRecovery, branch_deleted: state.discardRecovery }
