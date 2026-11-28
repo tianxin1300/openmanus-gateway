@@ -496,7 +496,7 @@ test('ACCEPTANCE IDEMPOTENCY-01: repeated create reuses one branch and repeated 
       throw new Error('unexpected ' + url);
     },
     codeMergeTempBranch: async () => { mergeCalls++; return { ok: true, data: { sha: 'once-only-sha' } }; },
-    codeHistoryLoad: async () => history, codeHistorySave: async (_e, _u, _repo, rows) => history.splice(0, history.length, ...rows),
+    codeHistoryLoad: async () => history, codeHistorySave: async (_e, _u, rows) => history.splice(0, history.length, ...rows),
     codeDeleteBranch: async () => ({ ok: true }), codeGitRefUrl: (r, ref) => 'https://api.github.com/repos/' + r + '/git/ref/' + ref,
     codeVerifyRef: x => x, codePathOk: () => true
   });
@@ -591,7 +591,7 @@ test('ACCEPTANCE CLEANUP-01: failed deletion retains recoverable state; successf
     codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
     codeDeleteBranch: async () => { deletes++; return deleteFails ? { ok: false, status: 500, msg: 'simulated failure' } : { ok: true }; },
     codeHistoryLoad: async () => history,
-    codeHistorySave: async (_env, _user, _repo, rows) => { history.splice(0, history.length, ...rows); }
+    codeHistorySave: async (_env, _user, rows) => { history.splice(0, history.length, ...rows); }
   });
   const env = { KV: kv };
   const failed = await discard(env, 'owner', { repo, branch: record.branch });
