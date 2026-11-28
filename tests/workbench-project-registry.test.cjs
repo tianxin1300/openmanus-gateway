@@ -106,7 +106,7 @@ function loadFileReader(fetchImpl) {
     codeGhHeaders: () => ({ Authorization: 'Bearer test-only' }),
     T: () => ({})
   };
-  vm.runInNewContext(source + '\\nglobalThis.out = { codeGetFile };', sandbox);
+  vm.runInNewContext(source + '\nglobalThis.out = { codeGetFile };', sandbox);
   return sandbox.out.codeGetFile;
 }
 
