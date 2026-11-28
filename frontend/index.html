@@ -6433,7 +6433,7 @@ async function previewWorkbenchBranch() {
 }
 async function switchWorkbenchProject(repoFull) {
   if (!WORKBENCH_PROJECTS[repoFull]) return;
-  if (dirty && !confirm("切换项目会丢弃当前文件未保存的修改，继续？")) { g("wb-project").value = workbenchRepoFull(); return; }
+  if (dirty && !confirm("切换项目会丢弃当前文件未保存的修改，继续？")) { g("wb-project").value = REPO.owner + "/" + REPO.repo; return; }
   const project = WORKBENCH_PROJECTS[repoFull];
   REPO.owner = project.owner; REPO.repo = project.repo; REPO.branch = "main";
   activeBranchRecord = null; Object.keys(workbenchDecisions).forEach(key => delete workbenchDecisions[key]); FILE = "frontend/index.html"; curSha = null; dirty = false;
