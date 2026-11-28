@@ -5937,7 +5937,7 @@ const bestPlace = (list, q) => {
 <div id="wb" role="dialog" aria-hidden="true" aria-label="开发台">
   <div id="wb-bar">
     <strong>开发台</strong>
-    <select id="wb-project" aria-label="选择项目"><option value="openmanus-gateway">聚合体</option><option value="jiuyibanlv">就医伴侣</option></select>
+    <select id="wb-project" aria-label="选择项目" disabled><option value="">正在读取 CODE_REPOS 授权仓库…</option></select>
     <span id="wb-file">frontend/index.html</span><span id="wb-branch">尚未创建临时分支</span><span id="wb-state"></span>
     <span class="sp"></span>
     <button id="wb-reload" class="sec" type="button" title="重新从 GitHub 读取 index.html（会丢掉未保存的修改）">重新读取</button>
@@ -6169,10 +6169,7 @@ async function mcpPut(path, content, message, sha) {
   return JSON.stringify({ content: { sha: result.sha || "" }, audit_saved: result.audit_saved !== false, audit_warning: result.audit_warning || "" });
 }
 
-const WORKBENCH_PROJECTS = {
-  "openmanus-gateway": { label: "聚合体", owner: "tianxin1300", repo: "openmanus-gateway" },
-  "jiuyibanlv": { label: "就医伴侣", owner: "tianxin1300", repo: "jiuyibanlv" }
-};
+const WORKBENCH_PROJECTS = Object.create(null);
 let activeBranchRecord = null, workbenchFiles = [], workbenchChanges = [];
 const workbenchDecisions = Object.create(null);
 function workbenchRepoFull() { return REPO.owner + "/" + REPO.repo; }
@@ -6187,6 +6184,38 @@ async function wbApi(path, options = {}) {
   }
   return data;
 }
+async function loadWorkbenchProjects() {
+  const select = g("wb-project");
+  const preferred = workbenchRepoFull();
+  const data = await wbApi("/api/code/projects", { cache: "no-store" });
+  const projects = Array.isArray(data.projects) ? data.projects.filter(p => p && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(String(p.repo || ""))) : [];
+  Object.keys(WORKBENCH_PROJECTS).forEach(key => delete WORKBENCH_PROJECTS[key]);
+  select.replaceChildren();
+  projects.forEach(project => {
+    const parts = project.repo.split("/");
+    const item = { label: String(project.label || project.repo), owner: parts[0], repo: parts[1], full: project.repo };
+    WORKBENCH_PROJECTS[project.repo] = item;
+    const option = document.createElement("option");
+    option.value = project.repo;
+    option.textContent = item.label === project.repo ? project.repo : item.label + " · " + project.repo;
+    select.appendChild(option);
+  });
+  if (!projects.length) {
+    select.disabled = true;
+    const option = document.createElement("option"); option.value = ""; option.textContent = "没有授权仓库"; select.appendChild(option);
+    REPO.owner = ""; REPO.repo = ""; REPO.branch = "main"; activeBranchRecord = null;
+    updateWorkbenchBranchUI();
+    return false;
+  }
+  const selected = WORKBENCH_PROJECTS[preferred] ? preferred : projects[0].repo;
+  select.value = selected; select.disabled = false;
+  REPO.owner = WORKBENCH_PROJECTS[selected].owner;
+  REPO.repo = WORKBENCH_PROJECTS[selected].repo;
+  REPO.branch = "main";
+  activeBranchRecord = null;
+  updateWorkbenchBranchUI();
+  return true;
+}
 function updateWorkbenchBranchUI() {
   const active = !!(activeBranchRecord && activeBranchRecord.branch);
   const label = g("wb-branch");
@@ -6200,6 +6229,7 @@ function updateWorkbenchBranchUI() {
 }
 async function ensureWorkbenchBranch() {
   const repo = workbenchRepoFull();
+  if (!WORKBENCH_PROJECTS[repo]) throw new Error("当前仓库不在 CODE_REPOS 授权列表中，已阻止创建分支或写入。");
   const current = await wbApi("/api/code/branch/current?repo=" + encodeURIComponent(repo), { cache: "no-store" });
   let record = current.active ? current : null;
   if (!record) {
@@ -6400,10 +6430,10 @@ async function previewWorkbenchBranch() {
     if (result.preview_url) window.open(result.preview_url, "_blank", "noopener");
   } catch (error) { say("临时预览启动失败：" + (error.message || String(error)), true); }
 }
-async function switchWorkbenchProject(repoName) {
-  if (!WORKBENCH_PROJECTS[repoName]) return;
-  if (dirty && !confirm("切换项目会丢弃当前文件未保存的修改，继续？")) { g("wb-project").value = REPO.repo; return; }
-  const project = WORKBENCH_PROJECTS[repoName];
+async function switchWorkbenchProject(repoFull) {
+  if (!WORKBENCH_PROJECTS[repoFull]) return;
+  if (dirty && !confirm("切换项目会丢弃当前文件未保存的修改，继续？")) { g("wb-project").value = workbenchRepoFull(); return; }
+  const project = WORKBENCH_PROJECTS[repoFull];
   REPO.owner = project.owner; REPO.repo = project.repo; REPO.branch = "main";
   activeBranchRecord = null; Object.keys(workbenchDecisions).forEach(key => delete workbenchDecisions[key]); FILE = "frontend/index.html"; curSha = null; dirty = false;
   if (g("wb-file")) g("wb-file").textContent = FILE;
@@ -6991,8 +7021,9 @@ async function runBoth() {
 /* ---------------- 打开 / 关闭 ---------------- */
 async function openWb() {
   document.body.classList.add("wb-open"); g("wb").setAttribute("aria-hidden", "false"); amdOn();
-  if (!inited) { inited = true; say("正在加载编辑器 …"); await initEditor(); }
   try {
+    if (!await loadWorkbenchProjects()) { say("当前没有可管理的仓库。请先在 Worker 的 CODE_REPOS 白名单中配置 owner/repo。", true); return; }
+    if (!inited) { inited = true; say("正在加载编辑器 …"); await initEditor(); }
     await ensureWorkbenchBranch();
     await Promise.all([loadFile(), loadWorkbenchTree(), loadWorkbenchChanges(), loadWorkbenchVersions()]);
   } catch (error) { say("开发台初始化失败：" + (error.message || String(error)), true); }
