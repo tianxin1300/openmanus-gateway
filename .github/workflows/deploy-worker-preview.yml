@@ -318,6 +318,18 @@ jobs:
           compatibility_date = "2024-11-01"
           EOF
 
+      - name: Mark cleanup in progress
+        uses: actions/github-script@v7
+        env:
+          DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner, repo: context.repo.repo,
+              deployment_id: Number(process.env.DEPLOYMENT_ID), state: "in_progress",
+              description: "Deleting Worker Preview and isolated KV namespace"
+            });
+
       - name: Delete Worker Preview
         id: delete_preview
         env:
