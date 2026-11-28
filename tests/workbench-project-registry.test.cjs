@@ -67,7 +67,7 @@ test('P2-PROJECT-005: authenticated project-list endpoint returns only CODE_REPO
 
 test('P2-PROJECT-006: Workbench builds its project selector from the authenticated Worker response', () => {
   assert.match(frontend, /id="wb-project" aria-label="选择项目" disabled/);
-  assert.match(frontend, /wbApi\("\/api\/code\/repos"/);
+  assert.match(frontend, /wbApi\("\/api\/code\/projects"/);
   assert.match(frontend, /WORKBENCH_PROJECTS = Object\.create\(null\)/);
   assert.doesNotMatch(frontend, /<option value="openmanus-gateway">聚合体<\/option>/);
   assert.match(frontend, /if \(!WORKBENCH_PROJECTS\[repo\]\) throw new Error/);
@@ -92,5 +92,5 @@ test('P2-PROJECT-008: code-mode project selector is populated from CODE_REPOS an
 test('P2-PROJECT-009: no hard-coded fallback allowlist remains in Worker authorization', () => {
   const guard = between(worker, 'const codeRepoList =', 'const codePathOk');
   assert.doesNotMatch(guard, /CODE_REPOS\s*\|\|\s*[\"'][^\"']+[\"']/);
-  assert.match(guard, /getKeys\(env && env\.CODE_REPOS\)/);
+  assert.match(guard, /String\(env && env\.CODE_REPOS \|\| ""\)/);
 });
