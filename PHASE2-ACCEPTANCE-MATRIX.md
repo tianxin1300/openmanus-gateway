@@ -29,13 +29,13 @@
 
 | 模块 | 必须达到的能力 | 当前实现与证据 | 当前判定 | 未闭环事项 |
 |---|---|---|---|---|
-| M1 AI 对话与任务入口 | 自然语言需求进入代码模式；识别目标项目；分析文件；形成可执行修改计划；模型实际执行修改；失败上下文可恢复 | 代码模式、模型供应商/调用逻辑及工作台入口已有代码；相关 Node 测试纳入 #69/#102 的 npm test。当前两个完整运行没有证明本轮真实调用外部模型并完成一项端到端开发任务 | **部分实现** | 需要隔离测试任务证明真实模型调用、文件读取、修改产物与任务 ID 的绑定；验证失败/超时后上下文可恢复。不能用 mock 模型测试代替 |
-| M2 多项目管理 | 项目列表唯一来自 Worker `CODE_REPOS`；未授权项目失败关闭；项目/分支/待处理修改/历史/记忆/运行记录互相隔离 | P2-PROJECT-001～009、P2-READ-001～004、P2-PEND-001～007、P2-HISTORY-001～006、P2-MEM-001～007；#102 增加运行索引/日志仓库隔离。共 33 项项目隔离专属测试 + 10 项运行记录隔离测试，均包含在 #102 的 268 项通过中 | **代码级已覆盖；部署级部分实现** | 生产 CODE_REPOS 值未核验；真实 Cloudflare DO 多项目隔离/并发尚未由 Worker Preview 证明；运行记录跨项目隔离尚未做真实部署环境验证 |
+| M1 AI 对话与任务入口 | 自然语言需求进入代码模式；识别目标项目；分析文件；形成可执行修改计划；模型实际执行修改；失败上下文可恢复 | 代码模式、模型供应商/调用逻辑及工作台入口已有代码；相关 Node 测试纳入 #69/#102 的 npm test。PR #60 的隔离 Worker/Pages 预览在 SHA `00a290b...` 上通过真实模型 smoke：模型生成故意失败的临时补丁、修复源码、保留回归测试并由 Actions 重验；当前 PR #60 head `45a2294...` 的配对预览和令牌 API E2E 通过，但该次真实模型 smoke 被跳过。#69/#102 的测试运行本身没有调用真实模型 | **部分实现** | 需在当前 PR #60 head 复跑真实模型 smoke，并将任务 ID 与 #69/#102 工作台链路打通；不能把旧 SHA smoke 当作当前 head 验收 |
+| M2 多项目管理 | 项目列表唯一来自 Worker `CODE_REPOS`；未授权项目失败关闭；项目/分支/待处理修改/历史/记忆/运行记录互相隔离 | P2-PROJECT-001～009、P2-READ-001～004、P2-PEND-001～007、P2-HISTORY-001～006、P2-MEM-001～007；#102 增加运行索引/日志仓库隔离。共 33 项项目隔离专属测试 + 10 项运行记录隔离测试，均包含在 #102 的 268 项通过中 | **代码级已覆盖；部署级部分实现** | 生产 CODE_REPOS 值未核验；PR #60 曾部署独立 Worker Preview 与专用 KV，但未证明 #69/#102 的多项目 DO 隔离；运行记录跨项目隔离尚未做真实部署环境验证 |
 | M3 代码编辑审核 | 文件树/读取、差异、逐文件接受/拒绝；重命名/删除/新增正确恢复；失败后保留可重试状态 | WORKBENCH-04、08、12、16；Playwright 覆盖重命名拒绝、拒绝失败重试、合并冲突保留差异、文件拒绝失败恢复等场景；#102 前端增加按 repo 查询运行历史/日志 | **隔离逻辑与浏览器交互已覆盖；真实多项目页面联调部分验证** | 需在真实隔离 Worker Preview 验证认证、CODE_REPOS、文件读取、DO claim 和审核写入共同工作；逐文件审核结果与 task_id 的全链路关联尚未证明 |
 | M4 Git 版本管理 | 临时分支隔离 main；禁止直接写 main；幂等创建/合并；冲突保护；失败重试、回滚、合并后恢复 | WORKBENCH-01～05、07、09、11、13～15；#69/#102 的 GitHub API E2E 使用临时 refs/PR，验证分支/PR 生命周期和 merge/CAS；运行后清理临时 refs，检查 main SHA 未变 | **隔离模拟 + 真实 GitHub API E2E 已覆盖；生产合并未执行** | 真实账号权限/仓库规则的生产条件仍未验收；不得因 E2E 通过而合并任何 Draft PR |
-| M5 自动化验证 | 测试、构建、浏览器验证；失败可定位；修复后重新验证；验证结果绑定提交 | #102 run 执行 `npm test` 268/268、`npm run build` 成功；Playwright 4 个项目成功；Actions run 记录 SHA。失败定位后由 AI 自动修复并重跑的完整闭环尚未由该运行证明 | **验证执行已实现；AI 自动修复闭环部分实现/未验收** | 需用隔离故障注入证明真实日志进入模型、模型改临时分支、再次运行测试并以新 SHA 关联结果；不得把 mock repair 测试算作真实模型闭环 |
+| M5 自动化验证 | 测试、构建、浏览器验证；失败可定位；修复后重新验证；验证结果绑定提交 | #102 run 执行 `npm test` 268/268、`npm run build` 成功；Playwright 4 个项目成功；Actions run 记录 SHA。另有 PR #60 真实模型故障注入 smoke：run #46071525169 在 SHA `00a290b...` 上通过，Actions 复验修复后的精确提交并清理临时分支；当前 PR #60 head 的 smoke 在 #46072407265 中被跳过 | **验证执行已实现；AI 自动修复闭环部分实现/未验收** | 在当前 PR #60 head 复跑 smoke；再验证模型修复结果是否能在 #69/#102 任务链中按同一 task_id 追踪；不要把早期 SHA smoke 计作当前 head 通过 |
 | M6 任务追踪 | 任务 ID 贯穿需求、项目、分支、AI 修改、审核、提交、Actions Run、日志、预览和交付；状态由真实事件驱动 | 现有状态链测试覆盖 generated/submitted/verified/deploying/deployed/online-health；#102 的 RUN-ISOLATION-01～10 验证 repo/user 隔离、项目/分支/commit/task/Actions 元数据、旧记录不猜项目归属 | **部分实现** | 当前证据未证明同一个 task_id 从自然语言入口贯穿到审核、commit、Actions、预览和最终交付；现有六阶段状态链不等于用户定义的十二状态完整状态机 |
-| M7 独立预览与交付 | 每个项目/分支有独立预览；预览对应同一提交；用户验收后才允许合并部署；部署后真实健康检查 | #69/#102 test-project 执行隔离 Pages Preview，日志含 curl HTTP 200 探测；Playwright 在预览地址执行。工作台预览范围测试存在。当前 run 未包含隔离 Worker Preview/真实 DO 部署；生产部署保持禁用/未触发 | **Pages Preview 已验证；Worker Preview 与完整交付未验证** | 必须逐项目验证 Pages/Worker 预览配置与提交对应关系；验证预览与 task/branch/SHA 绑定；生产部署、线上健康和用户确认流程均待后续授权阶段 |
+| M7 独立预览与交付 | 每个项目/分支有独立预览；预览对应同一提交；用户验收后才允许合并部署；部署后真实健康检查 | #69/#102 test-project 执行隔离 Pages Preview，curl HTTP 200 与浏览器 E2E 通过。PR #60 另有同一 SHA 的配对 Worker + Pages Preview，自动化令牌 API E2E 通过，早期 SHA 的模型修复 smoke 也成功；但这不等于 #69/#102 动态项目分支已完成 Worker Preview/DO 隔离验收；生产部署未执行 | **Pages Preview 已验证；Worker Preview 在 PR #60 隔离栈已验证，#69/#102 项目隔离 Worker Preview 未验证** | 必须逐项目验证 #69/#102 的 Pages/Worker 预览配置与提交对应关系；验证预览与 task/branch/SHA 绑定；生产部署、线上健康和用户确认流程均待后续授权阶段 |
 
 ## 3. 第二阶段专属测试清单
 
@@ -113,14 +113,16 @@
 |---|---|---|
 | PR #69 完整 Node 测试 | Run #46159210395，258 passed / 0 failed / 0 skipped | 通过 |
 | PR #102 完整 Node 测试 | Run #46164842866，268 passed / 0 failed / 0 skipped | 通过 |
+| PR #60 自动化令牌配对预览 | Run #46072407265，head `45a2294...`；Worker 与 Pages 从同一 SHA 部署；automation-token API E2E 成功；本次模型 smoke skipped | 通过（令牌与配对预览）；当前 head 真实模型 smoke 未执行 |
+| PR #60 真实模型修复 smoke | Run #46071525169，SHA `00a290b...`；真实模型生成临时失败补丁、修复源码、保留测试、Actions 重验精确提交、清理临时分支 | 通过（早期隔离 SHA；不可代表当前 head）|
 | 仓库内构建检查 | 两次基线 run 的 `npm run build`（Worker/前端 JS 语法检查）成功 | 通过 |
 | Cloudflare Workers Builds 外部检查 | #69 head、#102 head 与本矩阵 head 的 `Workers Builds: openmanus-gateway` 状态均为 failure；#69 PR 记录该失败在其 base `466aa18...` 上也存在 | **失败（外部 Cloudflare 检查）**；不得与仓库内 `npm run build` 混为一谈 |
 | Pages Preview | 两次 run 的隔离 Pages 部署与 HTTP 探测步骤成功 | 通过（仅 Pages） |
 | 浏览器 E2E | Chromium iPhone 14、WebKit iPhone 14、WebKit iPhone 13 Pro、WebKit iPad 9th generation 四个项目步骤成功；测试文件定义 10 个场景 | 通过（指定模拟设备/浏览器） |
 | 真实 GitHub PR 生命周期 E2E | Actions job 步骤成功，使用临时 PR/ref 并清理 | 通过（临时资源） |
 | Workbench Merge/CAS GitHub API E2E | Actions job 步骤成功，真实 GitHub API 临时 refs 验证合并与冲突 | 通过（临时资源） |
-| Cloudflare Worker Preview / 真实 Durable Object | 上述 run 的 job steps 未包含 Worker Preview/DO 部署验证 | 未验证 |
-| 真实模型开发闭环 | 上述 run 未证明真实模型服务完成端到端修改 | 未验证 |
+| Cloudflare Worker Preview / 真实 Durable Object | #69/#102 对应运行未部署 Worker Preview；PR #60 曾在专用 KV 上部署配对 Worker Preview，但未验证 #69/#102 的多项目 DO 隔离 | 部分验证（范围不同）|
+| 真实模型开发闭环 | PR #60 run #46071525169 证明真实模型在隔离 Worker 上完成受控故障修复；该成功对应早期 SHA `00a290b...`，当前 PR #60 head 的 smoke skipped，且未证明 task_id 贯穿 #69/#102 | 部分验证（早期隔离 SHA）|
 | 生产合并/部署/健康 | PR 均 Draft；未执行生产操作 | 未执行 |
 
 ## 6. 已发现的文档与验收风险
@@ -129,7 +131,7 @@
 2. ACCEPTANCE.md 的 WORKBENCH-01～17 与 P2-PROJECT/READ/PEND/HISTORY/MEM、PR #102 RUN-ISOLATION 是不同维度；不得把全部编号当作同一测试总数重复相加。
 3. #69/#102 的 test-project 成功包含 Pages Preview 和 GitHub API E2E，但不包含 Worker Preview/生产 DO E2E。另：Cloudflare Workers Builds 外部检查在 #69、#102 和本矩阵 head 上均显示 failure；仓库内 `npm run build` 成功并不能覆盖或解释该外部失败。#69 PR 描述记录该外部失败在其 base commit 上也存在。
 4. #102 修改 `worker.js` 的范围仅限运行记录索引、日志键和查询隔离；后续发现其他 Worker 缺口，必须另行确认授权，不能借此扩大修改范围。
-5. 真实模型调用、AI 自动修复后重验、任务 ID 贯穿十二状态仍是第二阶段关键未闭环项。对当前 PR #102 前端 `frontend/index.html` 的静态核查：全文没有 `task_id` 或 `taskId` 字段；临时分支创建请求只提交 `repo`、`project`、`base`。此外，PR #102 的 \`codeRunIndexSummary\` 使用 \`record.task_id || record.request_id || ""\`，因此当调用方未提供独立 task_id 时，索引中的 task_id 只是运行 request_id 的回退值，不能证明存在独立任务实体。结合 UI 无 task_id 字段、创建分支不传 task_id，当前任务 ID 全链路关联缺口已由前后端代码路径共同确认。
+5. 真实模型调用/自动修复已有 PR #60 隔离 smoke 成功证据（run #46071525169，SHA `00a290b...`），但当前 PR #60 head 的 smoke 被跳过；该结果尚未证明 #69/#102 当前 head 的同一任务链。任务 ID 贯穿十二状态仍是关键未闭环项。对当前 PR #102 前端 `frontend/index.html` 的静态核查：全文没有 `task_id` 或 `taskId` 字段；临时分支创建请求只提交 `repo`、`project`、`base`。此外，PR #102 的 \`codeRunIndexSummary\` 使用 \`record.task_id || record.request_id || ""\`，因此当调用方未提供独立 task_id 时，索引中的 task_id 只是运行 request_id 的回退值，不能证明存在独立任务实体。结合 UI 无 task_id 字段、创建分支不传 task_id，当前任务 ID 全链路关联缺口已由前后端代码路径共同确认。
 
 ## 7. 下一步按单缺口闭环
 
