@@ -536,7 +536,7 @@ async function codeWorkbenchPagesPreviewRefresh(env, record) {
   if (run.status === "completed") {
     if (run.conclusion === "success") {
       const candidate = codeTempPreview(record.branch, record.repo);
-      if (!candidate.startsWith("https://zhineng-et5.pages.dev/branch-code-") || candidate.includes("?") || candidate.includes("#")) {
+      if (!/^https:\/\/code-[a-z0-9-]{1,28}\.zhineng-et5\.pages\.dev$/.test(candidate)) {
         record.preview_status = "failed";
         record.preview_url = "";
         record.preview_error = "Pages Preview workflow 已成功，但返回的分支预览地址不合法";
@@ -647,8 +647,8 @@ async function codeWorkbenchWorkerPreviewCleanup(env, user, repo, record) {
 }
 function codeTempPreview(branch, repo) {
   if (String(repo || "") !== "tianxin1300/openmanus-gateway") return "";
-  const slug = String(branch || "").replace(/\//g, "-").replace(/[^A-Za-z0-9-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase();
-  return slug ? "https://zhineng-et5.pages.dev/branch-" + slug : "";
+  const slug = String(branch || "").replace(/\//g, "-").replace(/[^A-Za-z0-9-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 28).replace(/-+$/g, "");
+  return slug ? "https://" + slug + ".zhineng-et5.pages.dev" : "";
 }
 async function codeCreateTempBranch(env, repo, project, base = "main") {
   const safeBase = codeVerifyRef(base);
