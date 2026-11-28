@@ -125,7 +125,7 @@ test('ACCEPTANCE REVIEW-01: rejected file is absent from the final merge diff', 
     codeMergeTempBranch: async () => { mergedFiles = { ...branch }; Object.assign(main, branch); return { ok: true, data: { sha: 'merged-sha' } }; },
     codeDeleteBranch: async () => ({ ok: true }),
     codeHistoryLoad: async () => history,
-    codeHistorySave: async (_env, _user, rows) => { history.splice(0, history.length, ...rows); },
+    codeHistorySave: async (_env, _user, _repo, rows) => { history.splice(0, history.length, ...rows); },
     codeGitRefUrl: (repo, ref) => 'https://api.github.com/repos/' + repo + '/git/ref/' + ref,
     codeVerifyRef: x => x
   });
@@ -1030,7 +1030,7 @@ test('ACCEPTANCE MERGE-HISTORY-RECOVERY-01: history failure is retried without m
   const savedHistory = [];
   const h = makeMergeHarness({
     globals: {
-      codeHistorySave: async (_env, _user, rows) => { saveCalls++; if (saveCalls === 1) throw new Error('history KV unavailable'); savedHistory.splice(0, savedHistory.length, ...rows); },
+      codeHistorySave: async (_env, _user, _repo, rows) => { saveCalls++; if (saveCalls === 1) throw new Error('history KV unavailable'); savedHistory.splice(0, savedHistory.length, ...rows); },
       codeDeleteBranch: async () => { deleteCalls++; return { ok: true }; }
     }
   });
