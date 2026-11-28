@@ -614,3 +614,21 @@ npm test
 **通过判定：** 87 个新增 `node:test` 用例全部执行并通过；`npm test` 总数以 Actions TAP 实际输出为准；`npm run build` 必须通过。若测试失败，保留真实失败日志，先修复测试夹具/断言，不通过弱化预期或删除用例来变绿。模拟测试结果不得标记为真实 GitHub/DO 验收通过。
 
 **本阶段安全边界：** 独立分支 `code/workbench-acceptance-phase1-20261128`；只允许改 `ACCEPTANCE.md` 与 `tests/workbench-acceptance-phase1.test.cjs`。PR #32、PR #60 不修改；不合并、不部署生产。
+
+
+## 18. 第二阶段：动态项目注册表与 CODE_REPOS 唯一准入（P2-PROJECT-001～P2-PROJECT-009）
+
+**目标：** 工作台与代码模式项目选择器只能展示 Worker 环境变量 `CODE_REPOS` 明确授权的仓库；未授权仓库不得读取文件、创建分支或执行任何写操作。
+
+**实现范围：**
+- 新增登录保护的 `GET /api/code/projects`，只返回 Worker 的 `CODE_REPOS` 解析结果。
+- `CODE_REPOS` 未配置或为空时，授权仓库列表为空；不再使用代码内置仓库作为默认授权。
+- 工作台和代码模式选择器均从该 API 动态加载，不再把两个固定仓库写死为项目注册表。
+- 工作台文件读取统一经 Worker 的 `/api/code/file`，并返回文件 SHA；不再通过独立 MCP 文件读取通道绕过 Worker 仓库白名单。
+- 分支创建、保存、文件树、审核、合并、丢弃和代码助手项目解析继续由 `codeRepoOk` 执行白名单校验。
+
+**测试：** `tests/workbench-project-registry.test.cjs` 的 P2-PROJECT-001～009 覆盖空白名单拒绝、格式过滤、大小写去重、动态项目列表、未授权项目拒绝、登录保护、前端动态加载、文件读取路径与无默认授权。既有项目切换测试已更新为使用完整 `owner/repo` 标识。
+
+**测试类型边界：** 这些测试验证真实源码函数与前端请求契约，但项目列表使用隔离环境变量，不读取线上 Worker Secret；不代表已核验生产环境实际配置了哪些仓库，也不代表对任意仓库执行过真实 GitHub 写操作。
+
+**预览边界：** 本次仅完成动态授权仓库列表和读写准入收口。独立 Pages 预览仍需逐仓库确认部署工作流、Cloudflare Pages 项目和预览 URL 契约；不得因仓库进入 `CODE_REPOS` 就假定它已具备可部署预览。
