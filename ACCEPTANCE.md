@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前关键测试源文件静态声明数：`code-mode-providers.test.cjs` 87、`workbench-acceptance.test.cjs` 49、`workbench-project-registry.test.cjs` 9、`workbench-project-read.test.cjs` 4、`code-pending-isolation.test.cjs` 7、`code-history-isolation.test.cjs` 5、`code-memory-isolation.test.cjs` 7。静态声明数不替代运行统计；完整 Node TAP 以 Actions 输出为准。最近一次完整 PR 验收 Run #46157255162（SHA `598678b`）为 257 项通过、0 项失败、0 项跳过。Playwright UI 文件有 10 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
+> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前关键测试源文件静态声明数：`code-mode-providers.test.cjs` 87、`workbench-acceptance.test.cjs` 49、`workbench-project-registry.test.cjs` 9、`workbench-project-read.test.cjs` 4、`code-pending-isolation.test.cjs` 7、`code-history-isolation.test.cjs` 5、`code-memory-isolation.test.cjs` 7。静态声明数不替代运行统计；完整 Node TAP 以 Actions 输出为准。最近一次完整 PR 验收 Run #46158155695（SHA `0187fa4`）为 258 项通过、0 项失败、0 项跳过。Playwright UI 文件有 10 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
 
 ## 1. 唯一执行入口与判定规则
 
@@ -403,7 +403,7 @@ npm test
 | 合并 CAS 与 Git ref 边界 | `ACCEPTANCE MERGE-CAS-01`～`MERGE-CAS-07`、`ACCEPTANCE GIT-REF-WRITE-01`、`ACCEPTANCE WORKBENCH-CAS-CONFLICT-01` |
 | 多项目切换 | `ACCEPTANCE WORKBENCH-PROJECT-01`、`ACCEPTANCE WORKBENCH-PROJECT-02` |
 
-**计数说明：** 上述分组对应文件内 49 个静态 `test(...)` 声明。实际运行数以 `npm test` 的 TAP 汇总为准；最近一次完整 PR 验收 Run #46157255162 输出 257 项通过、0 项失败、0 项跳过。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
+**计数说明：** 上述分组对应文件内 49 个静态 `test(...)` 声明。实际运行数以 `npm test` 的 TAP 汇总为准；最近一次完整 PR 验收 Run #46158155695 输出 258 项通过、0 项失败、0 项跳过。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
 
 ### 14.2 Playwright UI E2E（10 个场景 × 2 个浏览器项目）
 
@@ -475,7 +475,7 @@ npm test
 
 ## 17. 第一阶段扩展验收（P1-001～P1-087）
 
-**完成情况：** P1-001～P1-087 共 87 项已纳入验收；当前完整 Node 测试集已扩展至 257 项，超过原定约 220 项目标。每项必须给出输入、操作、预期结果和失败判据；新增 P1 测试不修改 `worker.js`、前端业务代码、工作流或部署配置。
+**完成情况：** P1-001～P1-087 共 87 项已纳入验收；当前完整 Node 测试集已扩展至 258 项，超过原定约 220 项目标。每项必须给出输入、操作、预期结果和失败判据；新增 P1 测试不修改 `worker.js`、前端业务代码、工作流或部署配置。
 
 **测试类型边界：** P1-001～P1-078 调用从当前 `worker.js` 提取的真实函数，但 GitHub API、KV、Durable Object 均使用隔离模拟依赖；P1-079～P1-087 是对当前工作台前端源码入口/请求契约的静态存在性检查。它们属于 Node 自动化测试，不是实际 GitHub 分支/PR 操作，也不是真实 Durable Object 部署验收。真实 GitHub 与真实 DO 仍需单独环境验证，不计入本阶段模拟测试通过数。
 
@@ -699,7 +699,8 @@ npm test
 - `P2-HISTORY-002`：保存一个项目历史时，不写入另一个项目的记录。
 - `P2-HISTORY-003`：旧版用户级历史迁移时，仅按当前仓库过滤。
 - `P2-HISTORY-004`：非白名单仓库不能读取或保存历史。
-- `P2-HISTORY-005`：前端历史查询与回滚请求均携带当前仓库。\n- `P2-HISTORY-006`：兼容旧三参数历史写入调用时，从记录中推导仓库，并仍然执行白名单与仓库过滤。
+- `P2-HISTORY-005`：前端历史查询与回滚请求均携带当前仓库。
+- `P2-HISTORY-006`：兼容旧三参数历史写入调用时，从记录中推导仓库，并仍然执行白名单与仓库过滤。
 
 **通过条件：** 六项专属测试全部通过；`npm test` 与 `npm run build` 成功。
 
