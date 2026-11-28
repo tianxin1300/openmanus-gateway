@@ -1582,14 +1582,14 @@ test('ACCEPTANCE WORKBENCH-AUTH-ROUTE-01: workbench HTTP routes reject missing, 
 
 function makeProjectSwitchHarness({ dirty: initialDirty, confirmResult }) {
   const calls = [];
-  const projectSelect = { value: 'openmanus-gateway' };
+  const projectSelect = { value: 'tianxin1300/openmanus-gateway' };
   const fileLabel = { textContent: 'old/path.js' };
   const decisions = { 'old/path.js': true, 'other.js': false };
   const oldRecord = { repo: 'tianxin1300/openmanus-gateway', branch: 'code/old-project' };
   const sandbox = {
     WORKBENCH_PROJECTS: {
-      'openmanus-gateway': { owner: 'tianxin1300', repo: 'openmanus-gateway' },
-      jiuyibanlv: { owner: 'tianxin1300', repo: 'jiuyibanlv' }
+      'tianxin1300/openmanus-gateway': { owner: 'tianxin1300', repo: 'openmanus-gateway' },
+      'tianxin1300/jiuyibanlv': { owner: 'tianxin1300', repo: 'jiuyibanlv' }
     },
     REPO: { owner: 'tianxin1300', repo: 'openmanus-gateway', branch: 'code/old-project' },
     dirty: initialDirty,
@@ -1620,14 +1620,14 @@ function makeProjectSwitchHarness({ dirty: initialDirty, confirmResult }) {
 
 test('ACCEPTANCE WORKBENCH-PROJECT-01: cancelling a dirty project switch preserves the current branch and edits', async () => {
   const h = makeProjectSwitchHarness({ dirty: true, confirmResult: false });
-  await h.sandbox.__switchProject('jiuyibanlv');
+  await h.sandbox.__switchProject('tianxin1300/jiuyibanlv');
   assert.deepEqual({ ...h.sandbox.REPO }, { owner: 'tianxin1300', repo: 'openmanus-gateway', branch: 'code/old-project' });
   assert.equal(h.sandbox.activeBranchRecord, h.oldRecord);
   assert.deepEqual({ ...h.decisions }, { 'old/path.js': true, 'other.js': false });
   assert.equal(h.sandbox.FILE, 'old/path.js');
   assert.equal(h.sandbox.curSha, 'old-file-sha');
   assert.equal(h.sandbox.dirty, true);
-  assert.equal(h.projectSelect.value, 'openmanus-gateway');
+  assert.equal(h.projectSelect.value, 'tianxin1300/openmanus-gateway');
   assert.equal(h.calls.some(call => call[0] === 'ensure-branch'), false);
 });
 
