@@ -67,6 +67,10 @@ async function requeueForModelPool(issueNumber, reason, detail = {}) {
   await labels(issueNumber, ["bot:ready"], ["bot:running", "bot:failed"]);
   log("issue_requeued", { issue: issueNumber, reason });
 }
+function selectQueueIssue(found) {
+  const candidate = Array.isArray(found) ? found.find(item => item && !item.pull_request) : found;
+  return candidate && !candidate.pull_request && candidate.state === "open" ? candidate : null;
+}
 async function main() {
   if (!repository || !token || !backend || !userToken) throw new Error("Missing required environment configuration");
   await fs.mkdir(logDir, { recursive: true });
@@ -77,11 +81,11 @@ async function main() {
 
   const query = requestedIssue
     ? `/repos/${repository}/issues/${encodeURIComponent(requestedIssue)}`
-    : `/repos/${repository}/issues?state=open&labels=bot%3Aready&sort=created&direction=asc&per_page=1`;
+    : `/repos/${repository}/issues?state=open&labels=bot%3Aready&sort=created&direction=asc&per_page=100`;
   const found = await gh(query);
-  const issue = Array.isArray(found) ? found.find(item => !item.pull_request) : found;
-  if (!issue || issue.pull_request) {
-    log("queue_empty");
+  const issue = selectQueueIssue(found);
+  if (!issue) {
+    log(requestedIssue ? "issue_not_open_or_not_found" : "queue_empty", requestedIssue ? { issue: requestedIssue } : {});
     await fs.writeFile(logFile, logLines.join("\n") + "\n");
     return;
   }

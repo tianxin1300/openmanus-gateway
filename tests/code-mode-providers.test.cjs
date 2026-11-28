@@ -1635,10 +1635,10 @@ test('Cron Issue Agent: codeLLM rotates existing providers with 60-second per-mo
   assert.ok(agent.includes('signal: AbortSignal.timeout(8 * 60 * 1000)'));
   assert.ok(agent.includes('全部限流超时，下一轮再试'));
   assert.ok(agent.includes('await labels(issueNumber, ["bot:ready"], ["bot:running", "bot:failed"])'));
-  assert.ok(agent.includes('per_page=1'));
+  assert.ok(agent.includes('per_page=100'));
   assert.ok(workflow.includes('timeout-minutes: 10'));
   assert.ok(docs.includes('Schedule: every 30 minutes'));
-  assert.ok(docs.includes('per_page=1'));
+  assert.ok(docs.includes('per_page=100'));
   assert.doesNotMatch(agent, /CODE_OR_MODELS|CODE_GROQ_MODELS|CODE_NVIDIA_MODELS/);
 });
 
@@ -1722,4 +1722,123 @@ test('Cron Issue Agent: exhausted model pool restores bot:ready and logs the ret
   assert.equal(events[0].details.message, '全部限流超时，下一轮再试');
   assert.equal(events[1].event, 'issue_requeued');
   assert.equal(events[1].details.reason, 'model_pool_exhausted');
+});
+
+test('Cron Issue Agent: queue selection skips pull requests and rejects closed issues', () => {
+  const agent = fs.readFileSync(path.join(root, '.github/scripts/issue-agent.mjs'), 'utf8');
+  const start = agent.indexOf('function selectQueueIssue(');
+  const end = agent.indexOf('async function main()', start);
+  assert.ok(start >= 0 && end > start, 'queue selection helper source must exist');
+  const sandbox = {};
+  vm.runInNewContext(agent.slice(start, end) + '\nglobalThis.selectQueueIssue = selectQueueIssue;', sandbox);
+  const selected = sandbox.selectQueueIssue([
+    { number: 41, state: 'open', pull_request: { url: 'https://api.github.com/repos/x/y/pulls/41' } },
+    { number: 42, state: 'open', labels: [{ name: 'bot:ready' }] }
+  ]);
+  assert.equal(selected.number, 42);
+  assert.equal(sandbox.selectQueueIssue([{ number: 43, state: 'open', pull_request: {} }]), null);
+  assert.equal(sandbox.selectQueueIssue({ number: 44, state: 'closed' }), null);
+});
+
+async function runCronIssueAgentMock(mode = 'success', issueNumber = '') {
+  const agentPath = path.join(root, '.github/scripts/issue-agent.mjs');
+  let source = fs.readFileSync(agentPath, 'utf8');
+  source = source.split(String.fromCharCode(10)).filter(line => !line.startsWith("import fs from ") && !line.startsWith("import path from ")).join(String.fromCharCode(10));
+  const bottom = source.lastIndexOf('main().catch(async error => {');
+  assert.ok(bottom >= 0, 'agent entrypoint must exist');
+  source = source.slice(0, bottom) + 'globalThis.__run = main();';
+  const calls = [], writes = [], stdout = [];
+  const mockFs = {
+    mkdir: async () => {},
+    writeFile: async (file, data) => writes.push({ file, data: String(data) })
+  };
+  const mockPath = { join: (...parts) => parts.join('/') };
+  const jsonResponse = (data, status = 200) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => JSON.stringify(data)
+  });
+  const issue = { number: 42, state: 'open', title: 'queue fixture', html_url: 'https://github.com/owner/repo/issues/42', body: '只做分析', labels: [{ name: 'bot:ready' }] };
+  const fetchMock = async (urlValue, options = {}) => {
+    const url = String(urlValue), method = options.method || 'GET', body = options.body ? JSON.parse(options.body) : null;
+    calls.push({ url, method, headers: options.headers || {}, body });
+    if (url.startsWith('https://worker.example/')) {
+      assert.equal(options.headers.Authorization, 'Bearer user-secret');
+      if (mode === 'timeout') throw Object.assign(new Error('model request timed out'), { name: 'TimeoutError' });
+      const content = mode === 'pool' ? '❌ 代码模型都没接上：全部限流超时' : '基于实际仓库上下文的分析结果。';
+      return jsonResponse({ choices: [{ message: { role: 'assistant', content } }] });
+    }
+    const parsed = new URL(url);
+    if (parsed.hostname !== 'api.github.com') throw new Error('unexpected external request: ' + url);
+    if (parsed.pathname === '/repos/owner/repo/labels' && method === 'POST') return jsonResponse({ name: body.name }, 201);
+    if (parsed.pathname === '/repos/owner/repo/issues' && method === 'GET') {
+      return jsonResponse([
+        { number: 41, state: 'open', pull_request: { url: 'https://api.github.com/repos/owner/repo/pulls/41' }, labels: [{ name: 'bot:ready' }] },
+        issue
+      ]);
+    }
+    if (parsed.pathname === '/repos/owner/repo/issues/44' && method === 'GET') return jsonResponse({ number: 44, state: 'closed', title: 'closed issue', labels: [] });
+    if (parsed.pathname === '/repos/owner/repo/issues/42/labels' && method === 'POST') return jsonResponse(body.labels.map(name => ({ name })), 200);
+    if (parsed.pathname.startsWith('/repos/owner/repo/issues/42/labels/') && method === 'DELETE') return jsonResponse({}, 200);
+    if (parsed.pathname === '/repos/owner/repo/issues/42/comments' && method === 'POST') return jsonResponse({ id: 9001, body: body.body }, 201);
+    if (parsed.pathname === '/repos/owner/repo/issues/44/labels' || parsed.pathname === '/repos/owner/repo/issues/44/comments') throw new Error('closed issue must not be mutated');
+    return jsonResponse({});
+  };
+  const sandbox = {
+    fs: mockFs, path: mockPath, fetch: fetchMock, URL, AbortSignal,
+    process: {
+      env: {
+        GITHUB_REPOSITORY: 'owner/repo', GH_TOKEN: 'gh-secret',
+        OPENMANUS_API_URL: 'https://worker.example', OPENMANUS_USER_TOKEN: 'user-secret',
+        ISSUE_NUMBER: issueNumber, RUN_ID: 'mock-run-1'
+      },
+      stdout: { write: value => stdout.push(String(value)) },
+      exitCode: 0
+    }
+  };
+  vm.runInNewContext(source, sandbox, { timeout: 1500 });
+  await sandbox.__run;
+  return { calls, writes, stdout: stdout.join(''), exitCode: sandbox.process.exitCode };
+}
+
+test('Cron Issue Agent mock E2E: skips a pull request, processes one open Issue, and never exposes tokens', async () => {
+  const result = await runCronIssueAgentMock('success');
+  const issueComments = result.calls.filter(c => c.url.includes('/issues/42/comments') && c.method === 'POST');
+  const issueMutations = result.calls.filter(c => c.url.includes('/issues/42/labels'));
+  const backend = result.calls.find(c => c.url.startsWith('https://worker.example/'));
+  assert.equal(issueComments.length, 1);
+  assert.ok(issueMutations.length >= 3);
+  assert.equal(backend.body.model, 'claude-sonnet-4-5');
+  assert.equal(backend.body.provider, 'OpenRouter');
+  assert.equal(backend.body.code_mode, undefined);
+  assert.ok(result.stdout.includes('"issue_claimed"'));
+  assert.ok(result.stdout.includes('"issue_completed"'));
+  assert.ok(!result.stdout.includes('gh-secret'));
+  assert.ok(!result.stdout.includes('user-secret'));
+  assert.ok(!result.writes[0].data.includes('gh-secret'));
+  assert.ok(!result.writes[0].data.includes('user-secret'));
+});
+
+test('Cron Issue Agent mock E2E: exhausted model pool restores bot:ready without a failure comment', async () => {
+  const result = await runCronIssueAgentMock('pool');
+  assert.equal(result.calls.filter(c => c.url.includes('/issues/42/comments') && c.method === 'POST').length, 0);
+  assert.ok(result.calls.some(c => c.url.endsWith('/issues/42/labels') && c.method === 'POST' && c.body.labels.includes('bot:ready')));
+  assert.ok(result.stdout.includes('全部限流超时，下一轮再试'));
+  assert.ok(result.stdout.includes('"issue_requeued"'));
+  assert.ok(!result.stdout.includes('"issue_failed"'));
+});
+
+test('Cron Issue Agent mock E2E: model timeout restores bot:ready without processing another Issue', async () => {
+  const result = await runCronIssueAgentMock('timeout');
+  assert.equal(result.calls.filter(c => c.url.includes('/issues/42/comments') && c.method === 'POST').length, 0);
+  assert.ok(result.calls.some(c => c.url.endsWith('/issues/42/labels') && c.method === 'POST' && c.body.labels.includes('bot:ready')));
+  assert.ok(result.stdout.includes('"model_pool_exhausted"'));
+  assert.ok(!result.stdout.includes('"issue_failed"'));
+});
+
+test('Cron Issue Agent mock E2E: manually selected closed Issue is rejected before claim or backend call', async () => {
+  const result = await runCronIssueAgentMock('success', '44');
+  assert.ok(result.stdout.includes('"issue_not_open_or_not_found"'));
+  assert.equal(result.calls.some(c => c.url.startsWith('https://worker.example/')), false);
+  assert.equal(result.calls.some(c => c.url.includes('/issues/44/labels') || c.url.includes('/issues/44/comments')), false);
 });

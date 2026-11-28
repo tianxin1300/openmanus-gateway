@@ -12,6 +12,7 @@ on:
   push:
     branches:
       - code/cron-issue-agent-20261128
+      - code/cron-issue-queue-fix-20261129
 
 permissions:
   contents: read
