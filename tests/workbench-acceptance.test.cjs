@@ -496,7 +496,7 @@ test('ACCEPTANCE IDEMPOTENCY-01: repeated create reuses one branch and repeated 
       throw new Error('unexpected ' + url);
     },
     codeMergeTempBranch: async () => { mergeCalls++; return { ok: true, data: { sha: 'once-only-sha' } }; },
-    codeHistoryLoad: async () => history, codeHistorySave: async (_e, _u, _repo, rows) => history.splice(0, history.length, ...rows),
+    codeHistoryLoad: async () => history, codeHistorySave: async (_e, _u, rows) => history.splice(0, history.length, ...rows),
     codeDeleteBranch: async () => ({ ok: true }), codeGitRefUrl: (r, ref) => 'https://api.github.com/repos/' + r + '/git/ref/' + ref,
     codeVerifyRef: x => x, codePathOk: () => true
   });
@@ -1569,7 +1569,7 @@ test('ACCEPTANCE RENAME-REJECT-MERGE-01: real rename rejection restores the sour
       codeGitRefUrl: (_repo, ref) => 'https://api.github.com/repos/owner/repo/git/ref/' + ref,
       codeMergeTempBranch: async () => { mergeCalls++; return { ok: true, data: { sha: 'merged-rename-regression' } }; },
       codeHistoryLoad: async () => history,
-      codeHistorySave: async (_env, _user, _repo, rows) => { history.splice(0, history.length, ...rows); },
+      codeHistorySave: async (_env, _user, rows) => { history.splice(0, history.length, ...rows); },
       codeDeleteBranch: async () => ({ ok: true })
     }
   );
