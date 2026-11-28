@@ -135,7 +135,7 @@ jobs:
           set -euo pipefail
           npx --yes wrangler@4.135.0 preview --config wrangler.preview.toml --name "$PREVIEW_NAME" --ignore-base-config --json > /tmp/worker-preview.json
           cat /tmp/worker-preview.json
-          PREVIEW_URL="$(node -e 'const fs=require("node:fs");const s=fs.readFileSync("/tmp/worker-preview.json","utf8").replace(/\u001b\[[0-9;]*m/g,"");const m=s.match(/\{\s*"preview"\s*:/);if(!m)throw new Error("Wrangler JSON result was not found in command output");const d=JSON.parse(s.slice(m.index));const u=d.preview?.urls?.[0];if(!u)throw new Error("Wrangler JSON result did not contain preview.urls[0]");process.stdout.write(u);')"
+          PREVIEW_URL="$(node -e 'const fs=require("node:fs");const s=fs.readFileSync("/tmp/worker-preview.json","utf8");const start=s.indexOf("{\n  \"preview\":");if(start<0)throw new Error("Wrangler JSON result was not found in command output");const d=JSON.parse(s.slice(start));const u=d.preview?.urls?.[0];if(!u)throw new Error("Wrangler JSON result did not contain preview.urls[0]");process.stdout.write(u);')"
           case "$PREVIEW_URL" in https://*) ;; *) echo "Preview URL is not HTTPS" >&2; exit 1 ;; esac
           echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
           echo "PREVIEW_URL=$PREVIEW_URL" >> "$GITHUB_ENV"
