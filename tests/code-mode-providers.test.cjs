@@ -415,10 +415,10 @@ test('BUG-03/04/06: push confirmation uses Durable Object atomic claim and idemp
   // Must not fall back to the old non-atomic KV lock pattern
   assert.doesNotMatch(workerSource, /const key = "code:pend:" \+ user, lockKey/);
   // Feature-complete studio sends the four idempotency fields on confirm
-  assert.match(frontendStudioSource, /pending_id:\s*op\.pending_id/);
-  assert.match(frontendStudioSource, /version:\s*op\.version/);
-  assert.match(frontendStudioSource, /project:\s*op\.project/);
-  assert.match(frontendStudioSource, /operation_id:\s*operationId\(\)/);
+  assert.match(studioSource, /pending_id:\s*op\.pending_id/);
+  assert.match(studioSource, /version:\s*op\.version/);
+  assert.match(studioSource, /project:\s*op\.project/);
+  assert.match(studioSource, /operation_id:\s*operationId\(\)/);
   assert.match(frontendStudioSource, /repo: String\(p\.repo \|\| state\.project\)/);
 });
 
@@ -730,7 +730,7 @@ test('CodeClaimDO uses a versioned discard lock and only clears the locked pendi
   assert.ok(storage.value);
   const clear = await instance.fetch(new Request('https://code-claims/clear', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pending_id: 'discard-1', version: 1 })
+    body: JSON.stringify({ repo: 'owner/repo', pending_id: 'discard-1', version: 1 })
   }));
   assert.equal(clear.status, 200);
   assert.equal(storage.value, null);
