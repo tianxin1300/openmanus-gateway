@@ -6156,9 +6156,10 @@ async function callTool(tool, args) {
   return txt;
 }
 async function mcpGet(path) {
-  const tools = await mcpTools(), t = pickTool(tools, "get_file", /(get|read)_?file/i);
-  if (!t) throw new Error("MCP 里没有 get_file（现有工具：" + tools.map(x => x.name).join("、") + "）");
-  return parseFile(await callTool(t, mkArgs(t, {owner: REPO.owner, repo: REPO.repo, path, branch: REPO.branch})));
+  const result = await wbApi("/api/code/file?repo=" + encodeURIComponent(workbenchRepoFull()) + "&path=" + encodeURIComponent(path) + "&ref=" + encodeURIComponent(REPO.branch || "main"), { cache: "no-store" });
+  if (!result.exists) throw new Error("GitHub 文件不存在：" + path);
+  if (!result.sha) throw new Error("Worker 未返回文件 SHA，已拒绝继续编辑");
+  return { sha: result.sha, text: String(result.content || ""), path };
 }
 async function mcpPut(path, content, message, sha) {
   if (!activeBranchRecord || activeBranchRecord.discard_recovery || REPO.branch !== activeBranchRecord.branch || !/^code\//.test(REPO.branch)) throw new Error("当前分支不可保存：请先完成临时分支审计清理，或创建新的临时分支。");
