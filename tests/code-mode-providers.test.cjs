@@ -27,10 +27,11 @@ function loadCodePendingDiscard({ pending, deleteBranch, claimCall, kvDelete }) 
   assert.ok(start >= 0 && end > start, 'codePendingDiscard source must exist');
   const source = workerSource.slice(start, end);
   const sandbox = {
+    codePendingRepo: (_env, repo) => String(repo || pending.repo).toLowerCase(),
     codePendingLoad: async () => pending,
     codeClaimState: async () => ({ ok: true, pending, version: 1 }),
     codeDeleteBranch: deleteBranch,
-    codeClaimCall: claimCall,
+    codeClaimCall: async (_env, _user, _repo, action, body) => claimCall(_env, _user, action, body),
     CODE_PENDING_TTL_MS: 600000,
     env: null,
     console
@@ -44,7 +45,7 @@ function loadFrontendForceClear(stubs) {
   const end = frontendStudioSource.indexOf('  /* ---------- 读取待推送的修改 ---------- */', start);
   assert.ok(start >= 0 && end > start, 'frontend force-clear handlers must exist');
   const source = frontendStudioSource.slice(start, end);
-  const sandbox = { api: stubs.api, busy: stubs.busy, say: stubs.say, hide: stubs.hide, toast: stubs.toast };
+  const sandbox = { api: stubs.api, busy: stubs.busy, say: stubs.say, hide: stubs.hide, toast: stubs.toast, currentPending: { repo: "owner/repo" }, state: { project: "owner/repo" } };
   vm.runInNewContext(source + String.fromCharCode(10) + 'globalThis.testForceClear = forceClear;', sandbox);
   return sandbox.testForceClear;
 }
@@ -191,14 +192,14 @@ test('rollback creates a new commit and never force-moves the base branch', () =
   assert.match(rollback, /treeChanges\.push\(entry \?/);
   assert.match(rollback, /拒绝执行整仓库回滚/);
   assert.match(rollback, /force: false/);
-  assert.match(rollback, /codePushGuard\(env, user, repo, "frontend\/index\.html"\)/);
+  assert.match(rollback, /codePushGuard\(env, user, targetRepo, "frontend\/index\.html"\)/);
   assert.doesNotMatch(rollback, /force: true/);
   assert.doesNotMatch(rollback, /sha: item\.previous_sha, force/);
 });
 
 test('workbench review UI: history, branch tree and per-file decisions are wired to backend actions', () => {
   assert.match(frontendStudioSource, /function showHistory\(/);
-  assert.match(frontendStudioSource, /api\("\/api\/code\/history"/);
+  assert.match(frontendStudioSource, /api\("\/api\/code\/history\?repo=/);
   assert.match(frontendStudioSource, /\/api\/code\/tree\?repo=/);
   assert.match(frontendStudioSource, /p\.branch \|\| p\.baseBranch/);
   assert.match(frontendStudioSource, /accepted_paths: yes \? selectedPaths\(\) : null/);
@@ -229,7 +230,8 @@ test('temporary branch preview is built from the staged branch and uses the Page
   assert.match(workerSource, /claim\.pending\.staged_on_branch/);
   assert.match(workerSource, /OpenManus: reject/);
   assert.match(workerSource, /codeTempPreview\(branch, repo\)/);
-  assert.match(workerSource, /zhineng-et5\.pages\.dev\/branch-/);
+  assert.match(workerSource, /return slug \? "https:\/\/" \+ slug \+ "\.zhineng-et5\.pages\.dev" : ""/);
+  assert.match(workerSource, /slice\(0, 28\)/);
   const previewMiddleware = fs.readFileSync(path.join(root, "frontend/functions/_middleware.js"), "utf8");
   assert.ok(previewMiddleware.includes("branch-(code-[a-z0-9-]+)"));
   assert.match(previewMiddleware, /branchAlias \+ "\.zhineng\.pages\.dev"/);
@@ -404,7 +406,7 @@ test('BUG-03/04/06: push confirmation uses Durable Object atomic claim and idemp
   assert.match(wrangler, /name = "CODE_CLAIMS"/);
   assert.match(wrangler, /class_name = "CodeClaimDO"/);
   assert.match(workerSource, /export class CodeClaimDO/);
-  assert.match(workerSource, /codeClaimCall\(env, user, "claim"/);
+  assert.match(workerSource, /codeClaimCall\(env, user, scopeRepo, "claim"/);
   // Required claim fields exist (wording of error message may vary)
   assert.match(workerSource, /pending_id.*version.*project.*operation_id|operation_id.*pending_id/);
   assert.match(workerSource, /p\.status = "applying"/);
@@ -412,11 +414,11 @@ test('BUG-03/04/06: push confirmation uses Durable Object atomic claim and idemp
   assert.match(workerSource, /current\.claims\[operationId\]/);
   // Must not fall back to the old non-atomic KV lock pattern
   assert.doesNotMatch(workerSource, /const key = "code:pend:" \+ user, lockKey/);
-  // Feature-complete studio sends the four idempotency fields on confirm
-  assert.match(studioSource, /pending_id:\s*op\.pending_id/);
-  assert.match(studioSource, /version:\s*op\.version/);
-  assert.match(studioSource, /project:\s*op\.project/);
-  assert.match(studioSource, /operation_id:\s*operationId\(\)/);
+  // Active dynamic workbench sends the selected repository with the versioned decision.
+  assert.match(frontendStudioSource, /pending_id: String\(p\.pending_id \|\| p\.id\)/);
+  assert.match(frontendStudioSource, /version: Number\(p\.version\)/);
+  assert.match(frontendStudioSource, /project: String\(p\.project\)/);
+  assert.match(frontendStudioSource, /repo: String\(p\.repo \|\| state\.project\)/);
 });
 
 test('Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions', () => {
@@ -559,8 +561,8 @@ test('P0-01: local preview is started from the visible control', () => {
 });
 test('P0-02/03: expiry and force-clear lock pending before deleting the GitHub branch', () => {
   const discard = workerSource.slice(workerSource.indexOf('async function codePendingDiscard('), workerSource.indexOf('// v108：cron 扫 KV'));
-  assert.ok(discard.indexOf('codeClaimCall(env, user, "discard"') < discard.indexOf('codeDeleteBranch'));
-  assert.ok(discard.indexOf('codeDeleteBranch') < discard.indexOf('codeClaimCall(env, user, "clear"'));
+  assert.ok(discard.indexOf('codeClaimCall(env, user, scopeRepo, "discard"') < discard.indexOf('codeDeleteBranch'));
+  assert.ok(discard.indexOf('codeDeleteBranch') < discard.indexOf('codeClaimCall(env, user, scopeRepo, "clear"'));
   assert.match(discard, /discard-release/);
   assert.match(discard, /GitHub 临时分支删除失败，待处理记录已保留/);
   assert.match(workerSource, /上一项修改正在执行接受操作/);
@@ -687,7 +689,7 @@ test('CodeClaimDO atomically rejects discard while an accept operation is applyi
   const instance = new DO({ storage }, {});
   const response = await instance.fetch(new Request('https://code-claims/discard', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pending_id: 'busy-1', version: 1 })
+    body: JSON.stringify({ repo: 'owner/repo', pending_id: 'busy-1', version: 1 })
   }));
   const result = await response.json();
   assert.equal(response.status, 409);
@@ -715,19 +717,19 @@ test('CodeClaimDO uses a versioned discard lock and only clears the locked pendi
   const instance = new DO({ storage }, {});
   const lock = await instance.fetch(new Request('https://code-claims/discard', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pending_id: 'discard-1', version: 1 })
+    body: JSON.stringify({ repo: 'owner/repo', pending_id: 'discard-1', version: 1 })
   }));
   assert.equal(lock.status, 200);
   assert.equal(storage.value.pending.status, 'discarding');
   const staleClear = await instance.fetch(new Request('https://code-claims/clear', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pending_id: 'wrong-id', version: 1 })
+    body: JSON.stringify({ repo: 'owner/repo', pending_id: 'wrong-id', version: 1 })
   }));
   assert.equal(staleClear.status, 409);
   assert.ok(storage.value);
   const clear = await instance.fetch(new Request('https://code-claims/clear', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pending_id: 'discard-1', version: 1 })
+    body: JSON.stringify({ repo: 'owner/repo', pending_id: 'discard-1', version: 1 })
   }));
   assert.equal(clear.status, 200);
   assert.equal(storage.value, null);
@@ -1152,6 +1154,8 @@ for (const relativeFile of ['studio.js', 'frontend/studio.js']) {
     const context = vm.createContext({
       state, window, box: null, check() {}, hide() {},
       document: { readyState: 'complete' },
+      PROJECTS: [],
+      loadProjects() { return Promise.resolve(); },
       setTimeout() {},
       mountToggle() {
         mounts++;
@@ -1532,14 +1536,14 @@ test('ACCEPTANCE WORKBENCH-PROJECT-01: cancelling a dirty project switch preserv
   const end = frontendSource.indexOf('\ng("wb-file-search")', start);
   assert.ok(start >= 0 && end > start, "project switch handler exists");
   const state = {
-    WORKBENCH_PROJECTS: { second: { owner: "owner-b", repo: "second-project" } },
+    WORKBENCH_PROJECTS: { "owner-b/second-project": { owner: "owner-b", repo: "second-project" } },
     REPO: { owner: "owner-a", repo: "first-project", branch: "code/first-active" },
     activeBranchRecord: { branch: "code/first-active" },
     dirty: true,
     workbenchDecisions: { "src/app.js": true },
     FILE: "src/app.js",
     curSha: "old-sha",
-    select: { value: "second-project" },
+    select: { value: "owner-b/second-project" },
     confirmCalls: 0,
     branchCalls: 0
   };
@@ -1557,9 +1561,9 @@ test('ACCEPTANCE WORKBENCH-PROJECT-01: cancelling a dirty project switch preserv
     ensureWorkbenchBranch: async () => { state.branchCalls++; }
   };
   vm.runInNewContext(frontendSource.slice(start, end) + '\nglobalThis.testSwitchProject = switchWorkbenchProject;', sandbox);
-  await sandbox.testSwitchProject("second");
+  await sandbox.testSwitchProject("owner-b/second-project");
   assert.equal(state.confirmCalls, 1);
-  assert.equal(state.select.value, "first-project");
+  assert.equal(state.select.value, "owner-a/first-project");
   assert.equal(state.REPO.repo, "first-project");
   assert.equal(state.REPO.branch, "code/first-active");
   assert.equal(state.activeBranchRecord.branch, "code/first-active");
@@ -1579,11 +1583,11 @@ test('ACCEPTANCE WORKBENCH-PROJECT-02: switching projects clears old branch stat
     FILE: "old/file.js",
     curSha: "old-sha",
     dirty: false,
-    select: { value: "second-project" },
+    select: { value: "owner-b/second-project" },
     fileLabel: { textContent: "old/file.js" }
   };
   const sandbox = {
-    WORKBENCH_PROJECTS: { second: { owner: "owner-b", repo: "second-project" } },
+    WORKBENCH_PROJECTS: { "owner-b/second-project": { owner: "owner-b", repo: "second-project" } },
     REPO: state.REPO,
     get activeBranchRecord() { return state.activeBranchRecord; },
     set activeBranchRecord(value) { state.activeBranchRecord = value; },
@@ -1609,7 +1613,7 @@ test('ACCEPTANCE WORKBENCH-PROJECT-02: switching projects clears old branch stat
     say: message => calls.push("error:" + message)
   };
   vm.runInNewContext(frontendSource.slice(start, end) + '\nglobalThis.testSwitchProject = switchWorkbenchProject;', sandbox);
-  await sandbox.testSwitchProject("second");
+  await sandbox.testSwitchProject("owner-b/second-project");
   assert.equal(state.REPO.owner, "owner-b");
   assert.equal(state.REPO.repo, "second-project");
   assert.equal(state.REPO.branch, "code/second-active");
@@ -1935,4 +1939,23 @@ test('workbench history loads on tab open and exposes full both Runner state', (
   assert.ok(script.includes('任务 KV 持久化记录'));
   assert.ok(!script.includes('else renderVerifyResult({...j,state:j.state||x.state,fromHistory:true})'));
   assert.ok(script.includes('历史记录加载失败'));
+});
+
+test('dynamic workbench repository registry is sourced only from CODE_REPOS and fails closed', () => {
+  const start = workerSource.indexOf('const codeRepoList = (env) =>');
+  const end = workerSource.indexOf('const codePathOk =', start);
+  assert.ok(start >= 0 && end > start, 'CODE_REPOS registry guard exists');
+  const source = workerSource.slice(start, end);
+  const sandbox = { getKeys: value => String(value || '').split(',').map(x => x.trim()).filter(Boolean) };
+  vm.runInNewContext(source + '\nglobalThis.testRepoList = codeRepoList; globalThis.testRepoOk = codeRepoOk;', sandbox);
+  assert.deepEqual(Array.from(sandbox.testRepoList({})), [], 'missing CODE_REPOS returns no authorized repositories');
+  assert.equal(sandbox.testRepoOk({}, 'tianxin1300/openmanus-gateway'), false, 'missing CODE_REPOS denies access');
+  const env = { CODE_REPOS: 'tianxin1300/openmanus-gateway, other/second-repo, tianxin1300/openmanus-gateway, invalid' };
+  assert.deepEqual(Array.from(sandbox.testRepoList(env)), ['tianxin1300/openmanus-gateway', 'other/second-repo']);
+  assert.equal(sandbox.testRepoOk(env, 'OTHER/SECOND-REPO'), true, 'repository matching is case-insensitive');
+  assert.equal(sandbox.testRepoOk(env, 'other/not-authorized'), false, 'unlisted repository is denied');
+  assert.match(workerSource, /path === "\/api\/code\/projects"/, 'authenticated project-list endpoint exists');
+  assert.match(frontendSource, /wbApi\("\/api\/code\/projects"/, 'Workbench loads its project list from the Worker');
+  assert.match(frontendSource, /const WORKBENCH_PROJECTS = Object\.create\(null\)/, 'Workbench does not maintain a second hard-coded allowlist');
+  assert.doesNotMatch(frontendSource, /const WORKBENCH_PROJECTS = \{\s*"openmanus-gateway"/, 'static project allowlist is removed');
 });

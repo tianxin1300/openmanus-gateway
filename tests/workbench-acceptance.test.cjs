@@ -216,8 +216,8 @@ test('ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restore
       throw new Error('unexpected rollback API ' + url);
     }
   });
-  const rolled = await rollback({}, 'owner', { id: 'history-1' });
-  assert.equal(rolled.ok, true);
+  const rolled = await rollback({}, 'owner', { repo: 'tianxin1300/openmanus-gateway', id: 'history-1' });
+  assert.equal(rolled.ok, true, JSON.stringify(rolled));
   assert.equal(createdCommit.tree, 'restored-tree');
   assert.equal(createdCommit.parents[0], 'current-commit');
   assert.equal(movedRef, 'rollback-commit');
@@ -228,8 +228,10 @@ test('ACCEPTANCE WORKBENCH-PREVIEW-AUDIT-01: preview dispatch records the authen
   const record = { ok: true, repo: 'tianxin1300/openmanus-gateway', branch: 'code/preview', baseBranch: 'main', active: true };
   const preview = runFunction(sourceOf('async function codeWorkbenchBranchPreviewUnlocked(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchBranchPreviewUnlocked', {
     codePushGuard: () => '',
+    codePreviewConfig: () => ({ mode: 'pages' }),
     codeWorkbenchBranchCurrent: async () => record,
     codeTempPreview: () => 'https://preview.example.test',
+    rand: () => 'abcdef12',
     codeWorkbenchBranchKey: () => 'key',
     codeGhApi: async () => ({ ok: true }),
   });
@@ -238,8 +240,70 @@ test('ACCEPTANCE WORKBENCH-PREVIEW-AUDIT-01: preview dispatch records the authen
   assert.equal(result.ok, true);
   assert.equal(record.preview_started_by, 'owner');
   assert.equal(record.preview_events[0].actor, 'owner');
-  assert.equal(record.preview_url, 'https://preview.example.test');
+  assert.equal(record.preview_url, '');
+  assert.equal(record.preview_status, 'pending');
+  assert.ok(record.preview_request_id);
 });
+
+
+
+test('ACCEPTANCE WORKBENCH-PAGES-PREVIEW-01: Pages preview is pending until its matching Actions run succeeds', async () => {
+  const repo = 'tianxin1300/openmanus-gateway';
+  const record = { repo, branch: 'code/pages-preview', preview_mode: 'pages', preview_request_id: 'request-pages-12345678', preview_status: 'pending' };
+  const refresh = runFunction(sourceOf('async function codeWorkbenchPagesPreviewRefresh(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchPagesPreviewRefresh', {
+    codeGhApi: async (_env, url) => {
+      assert.match(url, /actions\/runs\?branch=code%2Fpages-preview&event=workflow_dispatch/);
+      return { ok: true, data: { workflow_runs: [{
+        id: 8801, name: 'branch preview', display_title: 'branch preview · code/pages-preview · request-pages-12345678',
+        status: 'completed', conclusion: 'success', html_url: 'https://github.com/tianxin1300/openmanus-gateway/actions/runs/8801'
+      }] } };
+    },
+    codeTempPreview: () => 'https://code-pages-preview.zhineng-et5.pages.dev'
+  });
+  const result = await refresh({}, record);
+  assert.equal(result.ok, true);
+  assert.equal(record.preview_status, 'ready');
+  assert.equal(record.preview_url, 'https://code-pages-preview.zhineng-et5.pages.dev');
+  assert.equal(record.preview_run_id, '8801');
+});
+
+test('ACCEPTANCE WORKBENCH-PAGES-PREVIEW-02: failed Pages workflow never exposes a preview URL', async () => {
+  const record = { repo: 'tianxin1300/openmanus-gateway', branch: 'code/pages-preview', preview_mode: 'pages', preview_request_id: 'request-pages-12345678', preview_status: 'pending' };
+  const refresh = runFunction(sourceOf('async function codeWorkbenchPagesPreviewRefresh(', 'async function codeWorkbenchBranchPreview('), 'codeWorkbenchPagesPreviewRefresh', {
+    codeGhApi: async () => ({ ok: true, data: { workflow_runs: [{
+      id: 8802, display_title: 'branch preview · request-pages-12345678', status: 'completed', conclusion: 'failure'
+    }] } }),
+    codeTempPreview: () => 'https://code-pages-preview.zhineng-et5.pages.dev'
+  });
+  await refresh({}, record);
+  assert.equal(record.preview_status, 'failed');
+  assert.equal(record.preview_url, '');
+  assert.match(record.preview_error, /workflow 失败/);
+});
+
+
+test('ACCEPTANCE WORKBENCH-PREVIEW-SCOPE-01: Workbench only exposes this repository Pages preview', () => {
+  const previewConfig = runFunction(sourceOf('const codePreviewConfig = (repo) =>', 'async function codeWorkbenchPagesPreviewRefresh'), 'codePreviewConfig', {});
+  const config = previewConfig('tianxin1300/openmanus-gateway');
+  assert.equal(config.mode, 'pages');
+  assert.equal(config.workflow_repo, 'tianxin1300/openmanus-gateway');
+  assert.equal(config.workflow_file, 'deploy-branch-preview.yml');
+  assert.equal(previewConfig('owner-b/second-project'), null);
+  assert.doesNotMatch(worker, /codeWorkbenchWorkerPreview/);
+  assert.doesNotMatch(frontend, /preview_mode === "worker"|Worker 预览|Worker Preview/);
+});
+
+
+test('ACCEPTANCE WORKBENCH-PAGES-PREVIEW-03: Pages workflow verifies the same bounded branch alias exposed by Workbench', () => {
+  const workflow = fs.readFileSync(path.join(root, '.github/workflows/deploy-branch-preview.yml'), 'utf8');
+  assert.match(workflow, /github\.event\.inputs\.request_id/);
+  assert.match(workflow, /slug\.slice|strip\("-"\)\[:28\]/);
+  assert.match(workflow, /zhineng-et5\.pages\.dev/);
+  assert.match(workflow, /Verify preview HTTP 200 with curl/);
+  assert.match(workflow, /Verify preview opens with Playwright/);
+  assert.match(workflow, /Take a peek over at/);
+});
+
 
 test('ACCEPTANCE WORKBENCH-SAVE-CAS-01: editor saves share the repository lock and reject stale file SHA', async () => {
   let currentSha = 'a'.repeat(40), writes = 0;
@@ -286,13 +350,14 @@ test('ACCEPTANCE WORKBENCH-ROLLBACK-LOCK-01: history rollback acquires the repos
   const calls = [];
   const rollback = runFunction(sourceOf('async function codeRollbackUnlocked(', 'const CODE_DEPLOY_WORKFLOW'), 'codeRollback', {
     codeHistoryLoad: async () => [{ id: 'history-locked', repo: 'owner/repo', previous_sha: 'previous' }],
+    codeRepoOk: () => true,
     codeWorkbenchWithLock: async (_env, user, repo, operation, run) => {
       calls.push({ user, repo, operation });
       return { ok: true, locked: true };
     }
   });
-  const result = await rollback({}, 'owner', { id: 'history-locked' });
-  assert.equal(result.ok, true);
+  const result = await rollback({}, 'owner', { repo: 'owner/repo', id: 'history-locked' });
+  assert.equal(result.ok, true, JSON.stringify(result));
   assert.equal(result.locked, true);
   assert.deepEqual(calls, [{ user: 'owner', repo: 'owner/repo', operation: 'rollback' }]);
 });
@@ -526,7 +591,7 @@ test('ACCEPTANCE CLEANUP-01: failed deletion retains recoverable state; successf
     codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
     codeDeleteBranch: async () => { deletes++; return deleteFails ? { ok: false, status: 500, msg: 'simulated failure' } : { ok: true }; },
     codeHistoryLoad: async () => history,
-    codeHistorySave: async (_env, _user, rows) => { history.splice(0, history.length, ...rows); }
+    codeHistorySave: async (_env, _user, _repo, rows) => { history.splice(0, history.length, ...rows); }
   });
   const env = { KV: kv };
   const failed = await discard(env, 'owner', { repo, branch: record.branch });
@@ -567,7 +632,7 @@ test('ACCEPTANCE DISCARD-AUDIT-RECOVERY-01: deleted branches retain a durable au
     codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
     codeDeleteBranch: async () => { deletes++; return deletes === 1 ? { ok: true } : { ok: false, status: 404 }; },
     codeHistoryLoad: async () => history,
-    codeHistorySave: async (_env, _user, rows) => {
+    codeHistorySave: async (_env, _user, _repo, rows) => {
       if (auditFails) { auditFails = false; throw new Error('simulated history outage'); }
       history.splice(0, history.length, ...rows);
     }
@@ -652,26 +717,26 @@ test('ACCEPTANCE LOCK-CLEANUP-01: failed or cancelled claim releases its operati
 
   const pending = { id: 'task-one', project: 'p', repo: 'tianxin1300/openmanus-gateway', branch: 'code/task-one',
     edits: [{ path: 'a.js', old: 'a', new: 'b' }], created_at: Date.now() };
-  assert.equal((await call('create', { pending })).ok, true);
-  const claimArgs = { pending_id: 'task-one', project: 'p', operation_id: 'op-one', version: 1, yes: true };
+  assert.equal((await call('create', { repo: pending.repo, pending })).ok, true);
+  const claimArgs = { repo: pending.repo, pending_id: 'task-one', project: 'p', operation_id: 'op-one', version: 1, yes: true };
   assert.equal((await call('claim', claimArgs)).claimed, true);
   const duplicate = await call('claim', claimArgs);
   assert.equal(duplicate.in_progress, true, 'duplicate click while active is blocked by the operation lock');
-  const finished = await call('finish', { pending_id: 'task-one', operation_id: 'op-one', status: 'failed',
+  const finished = await call('finish', { repo: pending.repo, pending_id: 'task-one', operation_id: 'op-one', status: 'failed',
     result: { ok: false, reply: 'simulated push failure' }, edits: pending.edits });
   assert.equal(finished.ok, true);
   let stored = await storage.get('claim');
   assert.deepEqual(Object.keys(stored.claims), [], 'failed operation releases its lock');
   assert.equal(stored.pending.status, 'failed');
 
-  const discarded = await call('discard', { pending_id: 'task-one', version: stored.version });
+  const discarded = await call('discard', { repo: pending.repo, pending_id: 'task-one', version: stored.version });
   assert.equal(discarded.discarding, true);
-  const cleared = await call('clear', { pending_id: 'task-one', version: stored.version });
+  const cleared = await call('clear', { repo: pending.repo, pending_id: 'task-one', version: stored.version });
   assert.equal(cleared.cleared, true);
   assert.equal(await storage.get('claim'), undefined, 'cancel clears the review state and lock record');
 
   const next = { ...pending, id: 'task-two', branch: 'code/task-two' };
-  const createdAgain = await call('create', { pending: next });
+  const createdAgain = await call('create', { repo: next.repo, pending: next });
   assert.equal(createdAgain.ok, true, 'a new task can claim the cleared state');
 });
 
@@ -1582,14 +1647,14 @@ test('ACCEPTANCE WORKBENCH-AUTH-ROUTE-01: workbench HTTP routes reject missing, 
 
 function makeProjectSwitchHarness({ dirty: initialDirty, confirmResult }) {
   const calls = [];
-  const projectSelect = { value: 'openmanus-gateway' };
+  const projectSelect = { value: 'tianxin1300/openmanus-gateway' };
   const fileLabel = { textContent: 'old/path.js' };
   const decisions = { 'old/path.js': true, 'other.js': false };
   const oldRecord = { repo: 'tianxin1300/openmanus-gateway', branch: 'code/old-project' };
   const sandbox = {
     WORKBENCH_PROJECTS: {
-      'openmanus-gateway': { owner: 'tianxin1300', repo: 'openmanus-gateway' },
-      jiuyibanlv: { owner: 'tianxin1300', repo: 'jiuyibanlv' }
+      'tianxin1300/openmanus-gateway': { owner: 'tianxin1300', repo: 'openmanus-gateway' },
+      'owner-b/second-project': { owner: 'owner-b', repo: 'second-project' }
     },
     REPO: { owner: 'tianxin1300', repo: 'openmanus-gateway', branch: 'code/old-project' },
     dirty: initialDirty,
@@ -1620,32 +1685,32 @@ function makeProjectSwitchHarness({ dirty: initialDirty, confirmResult }) {
 
 test('ACCEPTANCE WORKBENCH-PROJECT-01: cancelling a dirty project switch preserves the current branch and edits', async () => {
   const h = makeProjectSwitchHarness({ dirty: true, confirmResult: false });
-  await h.sandbox.__switchProject('jiuyibanlv');
+  await h.sandbox.__switchProject('owner-b/second-project');
   assert.deepEqual({ ...h.sandbox.REPO }, { owner: 'tianxin1300', repo: 'openmanus-gateway', branch: 'code/old-project' });
   assert.equal(h.sandbox.activeBranchRecord, h.oldRecord);
   assert.deepEqual({ ...h.decisions }, { 'old/path.js': true, 'other.js': false });
   assert.equal(h.sandbox.FILE, 'old/path.js');
   assert.equal(h.sandbox.curSha, 'old-file-sha');
   assert.equal(h.sandbox.dirty, true);
-  assert.equal(h.projectSelect.value, 'openmanus-gateway');
+  assert.equal(h.projectSelect.value, 'tianxin1300/openmanus-gateway');
   assert.equal(h.calls.some(call => call[0] === 'ensure-branch'), false);
 });
 
 test('ACCEPTANCE WORKBENCH-PROJECT-02: switching projects clears old branch state and loads the new project branch', async () => {
   const h = makeProjectSwitchHarness({ dirty: true, confirmResult: true });
-  await h.sandbox.__switchProject('jiuyibanlv');
-  assert.deepEqual({ ...h.sandbox.REPO }, { owner: 'tianxin1300', repo: 'jiuyibanlv', branch: 'code/new-project' });
-  assert.deepEqual({ ...h.sandbox.activeBranchRecord }, { repo: 'tianxin1300/jiuyibanlv', branch: 'code/new-project' });
+  await h.sandbox.__switchProject('owner-b/second-project');
+  assert.deepEqual({ ...h.sandbox.REPO }, { owner: 'owner-b', repo: 'second-project', branch: 'code/new-project' });
+  assert.deepEqual({ ...h.sandbox.activeBranchRecord }, { repo: 'owner-b/second-project', branch: 'code/new-project' });
   assert.deepEqual({ ...h.decisions }, {});
   assert.equal(h.sandbox.FILE, 'frontend/index.html');
   assert.equal(h.sandbox.curSha, null);
   assert.equal(h.sandbox.dirty, false);
   assert.equal(h.fileLabel.textContent, 'frontend/index.html');
-  assert.deepEqual(h.calls.filter(call => call[0] === 'ensure-branch'), [['ensure-branch', 'tianxin1300/jiuyibanlv']]);
+  assert.deepEqual(h.calls.filter(call => call[0] === 'ensure-branch'), [['ensure-branch', 'owner-b/second-project']]);
   assert.deepEqual(h.calls.filter(call => ['load-file', 'load-tree', 'load-changes', 'load-versions'].includes(call[0])).map(call => call.slice(0, 2)), [
-    ['load-file', 'tianxin1300/jiuyibanlv'],
-    ['load-tree', 'tianxin1300/jiuyibanlv'],
-    ['load-changes', 'tianxin1300/jiuyibanlv'],
-    ['load-versions', 'tianxin1300/jiuyibanlv']
+    ['load-file', 'owner-b/second-project'],
+    ['load-tree', 'owner-b/second-project'],
+    ['load-changes', 'owner-b/second-project'],
+    ['load-versions', 'owner-b/second-project']
   ]);
 });

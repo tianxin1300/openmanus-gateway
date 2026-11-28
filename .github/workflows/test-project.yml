@@ -61,7 +61,7 @@ jobs:
         if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/code/')) }}
         run: npm install --no-save --no-package-lock --no-audit --no-fund @playwright/test@1.56.1 wrangler@4 && npx playwright --version
 
-      - name: Install Chromium and WebKit for iPhone emulation
+      - name: Install Chromium and WebKit for iPhone and iPad emulation
         if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/code/')) }}
         run: npx playwright install --with-deps chromium webkit
 
@@ -100,6 +100,14 @@ jobs:
       - name: Playwright UI E2E · WebKit · iPhone 14
         if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/code/')) }}
         run: npx playwright test --project=webkit-iphone
+
+      - name: Playwright UI E2E · WebKit · iPhone 13 Pro
+        if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/code/')) }}
+        run: npx playwright test --project=webkit-iphone13pro
+
+      - name: Playwright UI E2E · WebKit · iPad 9th generation
+        if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/code/')) }}
+        run: npx playwright test --project=webkit-ipad9
 
       - name: Upload Playwright reports and screenshots
         if: ${{ always() && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'e2e/workbench-')) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/code/'))) }}

@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前测试源文件快照：`code-mode-providers.test.cjs` 有 87 个静态 `test(...)` 声明；`workbench-acceptance.test.cjs` 有 49 个静态 `test(...)` 声明。静态声明数不替代运行统计；`npm test` 的实际总数、通过、失败和跳过数量，以本次 Node TAP 输出为准。最近一次已核实的 Run #372 为 133 项通过、0 项失败、0 项跳过。Playwright UI 文件有 10 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
+> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前关键测试源文件静态声明数：`code-mode-providers.test.cjs` 87、`workbench-acceptance.test.cjs` 49、`workbench-project-registry.test.cjs` 9、`workbench-project-read.test.cjs` 4、`code-pending-isolation.test.cjs` 7、`code-history-isolation.test.cjs` 5、`code-memory-isolation.test.cjs` 7。静态声明数不替代运行统计；完整 Node TAP 以 Actions 输出为准。最近一次完整 PR 验收 Run #46158528428（SHA `47a6cf4`）为 258 项通过、0 项失败、0 项跳过。Playwright UI 文件有 10 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
 
 ## 1. 唯一执行入口与判定规则
 
@@ -403,7 +403,7 @@ npm test
 | 合并 CAS 与 Git ref 边界 | `ACCEPTANCE MERGE-CAS-01`～`MERGE-CAS-07`、`ACCEPTANCE GIT-REF-WRITE-01`、`ACCEPTANCE WORKBENCH-CAS-CONFLICT-01` |
 | 多项目切换 | `ACCEPTANCE WORKBENCH-PROJECT-01`、`ACCEPTANCE WORKBENCH-PROJECT-02` |
 
-**计数说明：** 上述分组对应文件内 49 个静态 `test(...)` 声明。实际运行数以 `npm test` 的 TAP 汇总为准；最近一次 Run #372 输出 133 项通过、0 项失败、0 项跳过。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
+**计数说明：** 上述分组对应文件内 49 个静态 `test(...)` 声明。实际运行数以 `npm test` 的 TAP 汇总为准；最近一次完整 PR 验收 Run #46158528428 输出 258 项通过、0 项失败、0 项跳过。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
 
 ### 14.2 Playwright UI E2E（10 个场景 × 2 个浏览器项目）
 
@@ -475,7 +475,7 @@ npm test
 
 ## 17. 第一阶段扩展验收（P1-001～P1-087）
 
-**目标：** 在现有实际 `npm test` 基线 133 项上新增 87 项，目标约 220 项。每项必须给出输入、操作、预期结果和失败判据。新增测试只修改验收测试与本文件，不修改 `worker.js`、前端业务代码、工作流或部署配置。
+**完成情况：** P1-001～P1-087 共 87 项已纳入验收；当前完整 Node 测试集已扩展至 258 项，超过原定约 220 项目标。每项必须给出输入、操作、预期结果和失败判据；新增 P1 测试不修改 `worker.js`、前端业务代码、工作流或部署配置。
 
 **测试类型边界：** P1-001～P1-078 调用从当前 `worker.js` 提取的真实函数，但 GitHub API、KV、Durable Object 均使用隔离模拟依赖；P1-079～P1-087 是对当前工作台前端源码入口/请求契约的静态存在性检查。它们属于 Node 自动化测试，不是实际 GitHub 分支/PR 操作，也不是真实 Durable Object 部署验收。真实 GitHub 与真实 DO 仍需单独环境验证，不计入本阶段模拟测试通过数。
 
@@ -614,3 +614,119 @@ npm test
 **通过判定：** 87 个新增 `node:test` 用例全部执行并通过；`npm test` 总数以 Actions TAP 实际输出为准；`npm run build` 必须通过。若测试失败，保留真实失败日志，先修复测试夹具/断言，不通过弱化预期或删除用例来变绿。模拟测试结果不得标记为真实 GitHub/DO 验收通过。
 
 **本阶段安全边界：** 独立分支 `code/workbench-acceptance-phase1-20261128`；只允许改 `ACCEPTANCE.md` 与 `tests/workbench-acceptance-phase1.test.cjs`。PR #32、PR #60 不修改；不合并、不部署生产。
+
+## 18. 第二阶段：动态项目注册表与 CODE_REPOS 唯一准入（P2-PROJECT-001～009）
+
+**目标：** 工作台与代码模式项目选择器只能展示 Worker 环境变量 `CODE_REPOS` 明确授权的仓库；未授权仓库不得读取文件、创建分支或执行任何写操作。
+
+**实现范围：**
+- 新增登录保护的 `GET /api/code/projects`，只返回 Worker 的 `CODE_REPOS` 解析结果。
+- `CODE_REPOS` 未配置或为空时，授权仓库列表为空；不再使用代码内置仓库作为默认授权。
+- 工作台和代码模式选择器均从该 API 动态加载，不再把两个固定仓库写死为项目注册表。
+- 工作台文件读取统一经 Worker 的 `/api/code/file`，并返回文件 SHA；不再通过独立 MCP 文件读取通道绕过 Worker 仓库白名单。
+- 分支创建、保存、文件树、审核、合并、丢弃和代码助手项目解析继续由 `codeRepoOk` 执行白名单校验。
+
+**测试：** `tests/workbench-project-registry.test.cjs`：
+- `P2-PROJECT-001`：未配置 `CODE_REPOS` 时，授权列表为空。
+- `P2-PROJECT-002`：只接受合法 owner/repo 项，大小写重复项去重。
+- `P2-PROJECT-003`：项目注册表严格对应白名单输入。
+- `P2-PROJECT-004`：未授权仓库不能进入代码助手项目注册表。
+- `P2-PROJECT-005`：登录保护的 `GET /api/code/projects` 只返回白名单项目。
+- `P2-PROJECT-006`：工作台项目选择器读取 `GET /api/code/projects`，不使用固定项目选项。
+- `P2-PROJECT-007`：工作台文件读取使用 Worker 文件 API，并携带返回的 SHA。
+- `P2-PROJECT-008`：代码模式项目选择器读取 `GET /api/code/projects`；空列表或读取失败时禁用代码模式。
+- `P2-PROJECT-009`：Worker 仓库授权逻辑不包含默认仓库回退清单。
+
+既有项目切换测试已更新为使用完整 `owner/repo` 标识。
+
+**测试类型边界：** 这些测试验证真实源码函数与前端请求契约，但项目列表使用隔离环境变量，不读取线上 Worker Secret；不代表已核验生产环境实际配置了哪些仓库，也不代表对任意仓库执行过真实 GitHub 写操作。
+
+**预览边界：** 本次仅完成动态授权仓库列表和读写准入收口。独立 Pages 预览仍需逐仓库确认部署工作流、Cloudflare Pages 项目和预览 URL 契约；不得因仓库进入 `CODE_REPOS` 就假定它已具备可部署预览。
+
+## 19. 第二阶段：工作台文件读取白名单闭环（P2-READ-001～004）
+
+**目标：** 工作台读取文件必须经过已登录的 Worker API，并由 Worker 的 `CODE_REPOS` 唯一准入规则授权；不允许前端通过独立 MCP 文件读取通道绕过仓库白名单。
+
+**自动化测试：**
+- `P2-READ-001`：`CODE_REPOS` 未配置时，文件读取在任何 GitHub 请求前被拒绝。
+- `P2-READ-002`：目标仓库不在 `CODE_REPOS` 时，文件读取在任何 GitHub 请求前被拒绝。
+- `P2-READ-003`：白名单内文件读取使用指定临时分支 ref，并返回文件 SHA 与内容。
+- `P2-READ-004`：工作台 `mcpGet` 通过已登录的 `/api/code/file` 读取；路由先验证登录身份，再调用受 `codeRepoOk` 保护的 `codeGetFile`。
+
+**通过条件：** 四项全部执行并通过；未授权仓库不得触发 GitHub 文件读取；合法读取必须返回 SHA，供后续保存时进行版本一致性校验。
+
+**测试边界：** `P2-READ-001～003` 使用隔离 fetch 模拟验证 Worker 实际读取函数；`P2-READ-004` 核对前端读取入口与 Worker 路由契约。它们不代表线上 Worker Secret、真实 GitHub 令牌或生产环境配置已验收。
+
+
+## 20. 第二阶段：多项目待处理修改与审核 claim 隔离（P2-PEND-001～007）
+
+**目标：** 同一登录用户在多个 CODE_REPOS 授权仓库中同时存在待处理修改时，待处理记录、Durable Object claim、确认、拒绝、丢弃和清理必须严格按仓库隔离；切换项目不得读取或操作另一个项目的待处理内容。
+
+**实现约束：**
+- Durable Object 身份由规范化后的用户 ID 与 owner/repo 共同组成，不允许仅按用户 ID 共用一个待处理记录。
+- 每次加载、创建、claim、finish、discard、clear 均必须携带并核验同一个白名单仓库作用域。
+- Worker 必须验证待处理记录内的 repo 与当前仓库作用域一致；Durable Object 对跨仓库 claim/finish/discard/clear 请求失败关闭。
+- 工作台项目切换时清除旧项目的待处理预览，并重新按新项目加载；确认/丢弃请求必须携带所选项目仓库。
+- 不允许通过 KV 旧键或缺少 repo 的请求回退到跨项目共享状态。
+
+**自动化测试：** `tests/code-pending-isolation.test.cjs`：
+- `P2-PEND-001`：DO 身份按用户与规范化仓库隔离；不同用户或不同仓库使用不同 DO ID，非白名单仓库无 DO。
+- `P2-PEND-002`：同一用户在两个授权项目分别创建待处理记录，读取结果互不覆盖。
+- `P2-PEND-003`：对一个仓库创建的待处理记录，不能通过另一个仓库作用域 claim。
+- `P2-PEND-004`：项目创建、替换清理和确认流程统一传递仓库作用域。
+- `P2-PEND-005`：pending 查询与 force-clear API 必须提供明确仓库作用域。
+- `P2-PEND-006`：工作台 UI 发送当前选择仓库，切换项目时刷新待处理预览。
+- `P2-PEND-007`：丢弃清理只删除当前用户与当前仓库的 KV 待处理键，不触碰其他项目记录。
+
+**通过条件：** 七项专属测试全部通过，且 `npm test` 与 `npm run build` 成功。任何缺少仓库作用域或仓库不匹配的操作必须拒绝，不得跨项目读取、覆盖或清理。
+
+**测试边界：** Node 测试直接提取 Worker Durable Object 类与辅助函数，使用隔离 storage/fetch 模拟；它证明代码路径的仓库隔离逻辑，不等同于 Cloudflare 已部署 Durable Object 的真实网络并发验收。真实多项目部署仍需在隔离 Worker Preview 上验证，生产配置与生产数据不参与。
+
+
+## 21. 第二阶段：工作台历史版本与回滚的多项目隔离（P2-HISTORY-001～006）
+
+**目标：** 同一用户在多个 CODE_REPOS 授权仓库中的提交历史、丢弃审计和回滚入口必须按用户与仓库隔离；项目 A 的历史不能显示在项目 B，也不能通过 B 的回滚请求操作 A 的提交。
+
+**实现约束：**
+- 历史 KV key 由用户与规范化 owner/repo 共同组成。
+- 读取、写入历史必须先验证仓库在 CODE_REPOS 白名单内，并过滤记录 repo。
+- 旧版用户级历史迁移时，只把 repo 与当前项目匹配的记录复制到项目级 key；不把其他项目记录带入。
+- 历史查询 API 必须要求 repo；回滚请求必须同时提交 repo 与历史记录 ID，并在同一项目作用域内解析记录。
+- 工作台历史列表和回滚请求使用当前选中的项目仓库。
+
+**自动化测试：** `tests/code-history-isolation.test.cjs`：
+- `P2-HISTORY-001`：历史 key 按用户和规范化仓库隔离。
+- `P2-HISTORY-002`：保存一个项目历史时，不写入另一个项目的记录。
+- `P2-HISTORY-003`：旧版用户级历史迁移时，仅按当前仓库过滤。
+- `P2-HISTORY-004`：非白名单仓库不能读取或保存历史。
+- `P2-HISTORY-005`：前端历史查询与回滚请求均携带当前仓库。
+- `P2-HISTORY-006`：兼容旧三参数历史写入调用时，从记录中推导仓库，并仍然执行白名单与仓库过滤。
+
+**通过条件：** 六项专属测试全部通过；`npm test` 与 `npm run build` 成功。
+
+**测试边界：** 历史 KV 使用隔离模拟；不读取或修改生产用户历史。迁移逻辑只复制匹配当前仓库的记录，旧 key 保留供其他授权仓库后续迁移，不会由某一项目的清理操作删除。
+
+
+## 22. 第二阶段：项目聊天记忆的多项目隔离（P2-MEM-001～007）
+
+**目标：** 同一用户在不同 CODE_REPOS 仓库中的代码助手记忆必须彼此隔离；项目 A 的用户上下文、AI 回复和确认记录不得注入项目 B 的模型提示词。
+
+**实现约束：**
+- 记忆 KV key 同时包含用户标识和规范化 owner/repo。
+- 记忆读取、追加与保存均验证仓库属于 CODE_REPOS 白名单。
+- 代码助手按本次解析出的目标仓库读取和写入记忆；未指定仓库时只使用当前允许的默认项目。
+- 每个项目独立保留最近 20 条记忆。
+- 项目聊天记忆不得复用工作台提交历史的共享 KV key。
+
+**自动化测试：** `tests/code-memory-isolation.test.cjs`：
+- `P2-MEM-001`：记忆 key 按用户和规范化仓库隔离。
+- `P2-MEM-002`：项目 A 的记忆不会注入项目 B 的模型提示词。
+- `P2-MEM-003`：同一仓库内不同用户的记忆也彼此隔离。
+- `P2-MEM-004`：CODE_REPOS 白名单外的仓库不能读取或写入记忆。
+- `P2-MEM-005`：每个仓库独立保留最新 20 条记忆。
+- `P2-MEM-006`：代码助手确认、用户输入和 AI 回复记忆均写入解析后的目标仓库。
+- `P2-MEM-007`：项目聊天记忆不再读取或写入工作台共享历史 key。
+
+**通过条件：** 七项专属测试全部通过；完整测试集与构建成功。
+
+**测试边界：** 使用隔离 KV 模拟验证跨项目、跨用户隔离；不读取生产用户记忆，不写入生产 KV。

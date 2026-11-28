@@ -21,7 +21,7 @@
   if (window.__omStudio) return;
   window.__omStudio = true;
 
-  var KEY_ON = "om_code_mode", KEY_PROJ = "om_code_project", PROJECTS = ["聚合体", "就医伴侣"];
+  var KEY_ON = "om_code_mode", KEY_PROJ = "om_code_project", PROJECTS = [];
   var state = { on: false, project: window.OM_CODE_PROJECT || "聚合体" };
   var panelState = "";   // "" | "pending"（等你点推/不推）| "result"（已出结果，等你关掉）
 
@@ -30,8 +30,7 @@
     return null;
   }
   state.on = ls(KEY_ON) === "1";
-  var saved = ls(KEY_PROJ); if (saved && PROJECTS.indexOf(saved) >= 0) state.project = saved;
-  if (PROJECTS.indexOf(state.project) < 0) state.project = "聚合体";
+  var saved = ls(KEY_PROJ); if (saved) state.project = saved;
 
   function gw() { try { return typeof GATEWAY !== "undefined" ? GATEWAY : ""; } catch (e) { return ""; } }
   function loggedIn() { try { return typeof authToken === "undefined" ? true : !!authToken; } catch (e) { return true; } }
@@ -43,6 +42,42 @@
       return fetch(u, Object.assign({}, o, { headers: h }));
     };
     return f(gw() + path, opt || {});
+  }
+  function loadProjects() {
+    if (!loggedIn()) return;
+    return api("/api/code/projects", { cache: "no-store" }).then(function (response) {
+      return response.json().catch(function () { return { ok: false, msg: "项目列表响应不是 JSON" }; });
+    }).then(function (data) {
+      if (!data || data.ok !== true || !Array.isArray(data.projects)) throw new Error((data && data.msg) || "读取 CODE_REPOS 授权仓库失败");
+      PROJECTS = data.projects.filter(function (project) { return project && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(String(project.repo || "")); });
+      if (sel) {
+        sel.replaceChildren();
+        PROJECTS.forEach(function (project) {
+          var option = el("option", "", String(project.label || project.repo) + " · " + project.repo);
+          option.value = project.repo; sel.appendChild(option);
+        });
+        var selected = PROJECTS.find(function (project) { return project.repo === state.project || project.label === state.project; }) || PROJECTS[0];
+        state.project = selected ? selected.repo : "";
+        sel.value = state.project;
+        sel.disabled = !selected;
+        if (selected) ls(KEY_PROJ, state.project);
+      }
+      if (!PROJECTS.length) {
+        state.on = false; ls(KEY_ON, "0");
+        if (box) box.disabled = true;
+        if (hintEl) hintEl.textContent = "未配置 CODE_REPOS 授权仓库";
+        syncToggle();
+      } else {
+        if (box) box.disabled = false;
+        if (hintEl) hintEl.textContent = "仅显示 CODE_REPOS 授权仓库";
+        syncToggle();
+      }
+    }).catch(function (error) {
+      if (sel) sel.disabled = true;
+      if (box) box.disabled = true;
+      if (hintEl) hintEl.textContent = "授权项目列表读取失败：" + (error && error.message || error);
+      toast("代码项目列表读取失败，已禁用代码模式");
+    });
   }
 
   function el(tag, cls, text) {
@@ -140,15 +175,14 @@
     if (document.getElementById("om-code-toggle")) return;
     box = el("button", "om-chip"); box.id = "om-code-toggle"; box.type = "button";
     box.appendChild(document.createElement("i")); box.appendChild(el("span", "", "代码模式"));
-    sel = el("select"); sel.id = "om-code-project"; sel.setAttribute("aria-label", "代码模式要改的项目");
-    PROJECTS.forEach(function (p) { var o = el("option", "", p); o.value = p; sel.appendChild(o); });
+    sel = el("select"); sel.id = "om-code-project"; sel.setAttribute("aria-label", "代码模式要改的项目"); sel.disabled = true;
     sel.value = state.project;
     hintEl = el("span", "om-hint", "改完先预览，点「推」才推");
     var bothBtn = el("button", "", "同时启动"); bothBtn.id = "om-both-start"; bothBtn.type = "button";
     var bothStatus = el("span", ""); bothStatus.id = "om-both-status"; bothStatus.setAttribute("role", "status"); bothStatus.setAttribute("aria-live", "polite");
     var historyBtn = el("button", "om-refresh", "历史版本"); historyBtn.type = "button"; historyBtn.addEventListener("click", showHistory);
     bothBtn.addEventListener("click", startBoth);
-    sel.addEventListener("change", function () { state.project = sel.value; ls(KEY_PROJ, state.project); toast("代码模式：现在改「" + state.project + "」"); });
+    sel.addEventListener("change", function () { state.project = sel.value; ls(KEY_PROJ, state.project); currentPending = null; hide(); toast("代码模式：现在改「" + state.project + "」"); refreshPending(true); });
     box.addEventListener("click", function () {
       state.on = !state.on; ls(KEY_ON, state.on ? "1" : "0"); syncToggle();
       if (state.on) { toast("代码模式已开：之后每条消息都直接改「" + state.project + "」的代码"); check(); }
@@ -263,7 +297,7 @@
   function refreshPending(quiet) {
     if (refreshBusy) return Promise.resolve(); refreshBusy = true;
     if (stEl && !quiet) say("正在刷新待处理改动…");
-    return api("/api/code/pending", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
+    return api("/api/code/pending?repo=" + encodeURIComponent(state.project), { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
       if (j && j.ok && j.pending && j.pending.edits && j.pending.edits.length) { currentPending = j.pending; render(j.pending); if (panelCollapsed) { panel.hidden = true; if (reopenBtn) reopenBtn.classList.add("on"); } }
       else { currentPending = null; hide(); if (!quiet) toast("当前没有待处理的改动"); }
     }).catch(function (e) { if (!quiet) toast("刷新失败：" + (e && e.message || e)); })
@@ -285,7 +319,7 @@
   var fileDecision = {}, conflictChoices = {};
   function selectedPaths() { return Object.keys(fileDecision).filter(function (p) { return fileDecision[p] !== false; }); }
   function loadHistory(host) {
-    api("/api/code/history", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
+    api("/api/code/history?repo=" + encodeURIComponent(state.project), { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
       clear(host);
       (j.history || []).filter(function (h) { return h && h.commit_sha; }).slice(0, 30).forEach(function (h) {
         var row = el("div", "om-history-row");
@@ -294,7 +328,7 @@
         b.addEventListener("click", function () {
           if (!window.confirm("确定创建新回滚提交，恢复到这个版本之前的文件内容？不会重写或删除 main 历史。")) return;
           b.disabled = true;
-          api("/api/code/rollback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: h.id }) })
+          api("/api/code/rollback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: h.id, repo: String(h.repo || state.project) }) })
             .then(function (x) { return x.json(); }).then(function (d) { toast(d.reply || d.msg || (d.ok ? "回滚提交已创建" : "回滚失败")); if (d.ok) loadHistory(host); else b.disabled = false; })
             .catch(function () { b.disabled = false; toast("回滚请求失败，结果未确认"); });
         });
@@ -404,6 +438,7 @@
     var operationId = "studio-" + (window.crypto && typeof window.crypto.randomUUID === "function" ? window.crypto.randomUUID() : Date.now().toString(36) + "-" + Math.random().toString(36).slice(2));
     var payload = {
       yes: !!yes,
+      repo: String(p.repo || state.project),
       pending_id: String(p.pending_id || p.id),
       version: Number(p.version),
       project: String(p.project),
@@ -417,7 +452,7 @@
       .then(function (j) {
         var message = j.reply || j.msg || (j.ok ? "操作完成" : "操作失败");
         if (j.conflicts && j.conflicts.length) renderConflicts(j.conflicts);
-        return api("/api/code/pending", { cache: "no-store" }).then(function (r) { return r.json(); }).catch(function () { return null; }).then(function (pj) {
+        return api("/api/code/pending?repo=" + encodeURIComponent(state.project), { cache: "no-store" }).then(function (r) { return r.json(); }).catch(function () { return null; }).then(function (pj) {
           var still = !!(pj && pj.ok && pj.pending && pj.pending.edits && pj.pending.edits.length);
           if (still) currentPending = pj.pending;
           else if (j.ok) currentPending = null;
@@ -429,7 +464,7 @@
 
   /* ---------- v108：强制清空 / 自动过期时清服务器里的暂存 ---------- */
   function clearOnServer() {
-    return api("/api/code/force-clear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) })
+    return api("/api/code/force-clear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repo: String((currentPending && currentPending.repo) || state.project || "") }) })
       .then(function (r) { return r.json().catch(function () { return { ok: false, msg: "服务器返回的不是 JSON（HTTP " + r.status + "）" }; }); });
   }
   function forceClear() {
@@ -446,7 +481,7 @@
     refreshPending(true);
   }
 
-  function init() { mountToggle(); if (typeof document.getElementById === "function") { bothButton = document.getElementById("om-both-start"); bothStatusNode = document.getElementById("om-both-status"); if (bothStatusNode) refreshBothStatus(true); } if (state.on) setTimeout(check, 800); }
+  function init() { mountToggle(); var ready = loadProjects(); if (typeof document.getElementById === "function") { bothButton = document.getElementById("om-both-start"); bothStatusNode = document.getElementById("om-both-status"); if (bothStatusNode) refreshBothStatus(true); } Promise.resolve(ready).then(function () { if (state.on && PROJECTS.length) setTimeout(check, 800); }); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 
   window.omStudio = { state: state, check: check, hide: hide, enable: function () { if (!state.on && box) box.click(); }, disable: function () { if (state.on && box) box.click(); } };

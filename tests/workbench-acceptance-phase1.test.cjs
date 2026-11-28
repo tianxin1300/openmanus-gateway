@@ -25,7 +25,7 @@ function evaluate(source, expose, globals = {}) {
   return sandbox.__out;
 }
 const validators = evaluate(
-  sliceSource('const codeRepoOk', 'const codeVerifyKey') +
+  sliceSource('const codeRepoList = (env) =>', 'const codeVerifyKey') +
   sliceSource('function codePathProtected', '// 口令：消息里写'),
   'codeRepoOk,codePathOk,codeVerifyRef,codePathProtected,codePushGuard',
   { getKeys: value => String(value).split(',').map(x => x.trim()).filter(Boolean) }
@@ -139,7 +139,7 @@ testCase('063','历史回滚','history empty','reject','无历史记录返回失
 testCase('064','历史回滚','record without previous_sha','reject','无 previous_sha 不回滚','缺少版本指针仍执行',async()=>{const f=evaluate(rollbackSource,'codeRollback',{codeHistoryLoad:async()=>[{id:'x',repo:'owner/repo'}],codeVerifyRef:x=>x,codeRepoOk:()=>true,codePushGuard:()=>''});const r=await f.codeRollback({},'owner',{id:'x'});assert.equal(r.ok,false);});
 testCase('065','历史回滚','invalid repo in history','reject','仓库白名单检查失败','非白名单仓库可回滚',async()=>{const f=evaluate(rollbackSource,'codeRollback',{codeHistoryLoad:async()=>[{id:'x',repo:'bad/repo',previous_sha:'a'.repeat(40)}],codeVerifyRef:x=>x,codeRepoOk:()=>false,codePushGuard:()=>''});const r=await f.codeRollback({},'owner',{id:'x'});assert.equal(r.ok,false);});
 testCase('066','历史回滚','protected path guard','reject','回滚写入受权限 guard 约束','无权限身份可回滚',async()=>{const f=evaluate(rollbackSource,'codeRollback',{codeHistoryLoad:async()=>[{id:'x',repo:'owner/repo',previous_sha:'a'.repeat(40)}],codeVerifyRef:x=>x,codeRepoOk:()=>true,codePushGuard:()=> 'denied'});const r=await f.codeRollback({},'owner',{id:'x'});assert.equal(r.ok,false);});
-testCase('067','历史回滚','history files=[]','reject','无文件清单拒绝整仓回滚','缺失路径清单回滚整个仓库',async()=>{let calls=0;const f=evaluate(rollbackSource,'codeRollback',{codeHistoryLoad:async()=>[{id:'x',repo:'owner/repo',previous_sha:'a'.repeat(40),files:[]}],codeVerifyRef:x=>x,codeRepoOk:()=>true,codePushGuard:()=>'',codeGitRefUrl:()=>'/ref',codeGhApi:async()=>{calls++;return{ok:true}}});const r=await f.codeRollback({},'owner',{id:'x'});assert.equal(r.ok,false);assert.equal(calls,1);});
+testCase('067','历史回滚','history files=[]','reject','无文件清单拒绝整仓回滚','缺失路径清单回滚整个仓库',async()=>{let calls=0;const f=evaluate(rollbackSource,'codeRollback',{codeHistoryLoad:async()=>[{id:'x',repo:'owner/repo',previous_sha:'a'.repeat(40),files:[]}],codeVerifyRef:x=>x,codeRepoOk:()=>true,codePushGuard:()=>'',codeGitRefUrl:()=>'/ref',codeGhApi:async()=>{calls++;return{ok:true}}});const r=await f.codeRollback({},'owner',{repo:'owner/repo',id:'x'});assert.equal(r.ok,false);assert.equal(calls,1);});
 testCase('068','历史回滚','truncated Git tree','reject','树结果截断时不创建回滚 commit','不完整文件树仍提交',()=>{assert.match(rollbackSource,/data\.truncated/);assert.match(rollbackSource,/拒绝执行整仓库回滚/);});
 testCase('069','历史回滚','rollback commit parent','append-only','回滚新 commit 以当前 HEAD 为 parent','回滚重写历史指针',()=>{assert.match(rollbackSource,/parents:\s*\[currentSha\]/);});
 testCase('070','历史回滚','rollback path allowlist','path filtered','变更路径先经过 codePathOk','非法历史路径写入回滚树',()=>{assert.match(rollbackSource,/filter\(codePathOk\)/);});
@@ -150,11 +150,11 @@ const previewFns = evaluate(previewSource,'codeVerifyPreview');
 for(const [id,env,expected] of [
 ['071','{"CODE_PREVIEW_URL":"https://preview.example/run/{run_id}"}','https://preview.example/run/run%201'],['072','{"PREVIEW_URL":"http://preview.example/{run_id}"}','http://preview.example/run%201']
 ])testCase(id,'预览隔离',env,'codeVerifyPreview',expected,'不安全 URL 被返回或 run_id 未编码',()=>{const r=previewFns.codeVerifyPreview(JSON.parse(env),'run 1');assert.equal(r,expected);});
-testCase('073','预览隔离','repo=other/repo','reject','非配置仓库不触发 Pages 工作流','其他仓库触发预览部署',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/repo !== "tianxin1300\/openmanus-gateway"/);});
+testCase('073','预览隔离','repo=other/repo','reject','无预览配置的仓库不触发任何预览工作流','未配置仓库触发预览部署',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/const previewConfig = typeof codePreviewConfig === "function" \? codePreviewConfig\(repo\) : null/);assert.match(s,/if \(!previewConfig\) return/);assert.doesNotMatch(s,/previewConfig\.mode === "worker"/);assert.doesNotMatch(s,/codeWorkbenchWorkerPreview/);});
 testCase('074','预览隔离','preview dispatch HTTP 500','reject','部署启动失败返回失败','预览 dispatch 失败被报成功',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/if \(!dispatched\.ok\) return \{ ok: false/);});
 testCase('075','预览隔离','preview audit actor','audit','记录 preview_started_by 和 actor','预览操作无操作者记录',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/preview_started_by:\s*String\(user\)|preview_started_by = String\(user\)/);assert.match(s,/actor:\s*String\(user\)/);});
 testCase('076','预览隔离','preview event history cap','bounded','预览事件最多保留 100 条','审计事件无上限增长',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/slice\(-100\)/);});
-testCase('077','预览隔离','branch preview URL slug','safe slug','只为目标仓库生成 branch slug URL','其他仓库获得生产预览 URL',()=>{const s=sliceSource('function codeTempPreview','async function codeCreateTempBranch');assert.match(s,/tianxin1300\/openmanus-gateway/);assert.match(s,/branch-/);});
+testCase('077','预览隔离','branch preview URL slug','safe alias','只为目标仓库生成 Cloudflare Pages branch alias','其他仓库获得生产预览 URL',()=>{const s=sliceSource('function codeTempPreview','async function codeCreateTempBranch');assert.match(s,/tianxin1300\/openmanus-gateway/);assert.match(s,/zhineng-et5\.pages\.dev/);assert.match(s,/slice\(0, 28\)/);});
 testCase('078','预览隔离','main protection','preview uses active branch','dispatch ref 绑定活动临时分支','预览错误引用 main',()=>{const s=sliceSource('async function codeWorkbenchBranchPreviewUnlocked','async function codeWorkbenchBranchPreview(');assert.match(s,/ref: current\.branch/);});
 
 // 9. 文件树、搜索、逐文件审核、提交一致性：核对实际前端函数和后端路径契约。
