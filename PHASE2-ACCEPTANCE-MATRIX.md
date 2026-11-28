@@ -4,11 +4,11 @@
 - 范围：仅本仓库第二阶段；第三阶段另设附录，不计入第二阶段验收成绩。
 - 编制日期：2026-11-29
 - 本文件状态：**核查初版，不是最终验收通过声明**。
-- 基准代码：PR #69 head `4ffdac0baccc4402d06951370c15a2a3a0211868`；叠加 PR #102 head `a7071e68db2d1fc28c7a6c0bf6f67d758038363d`。
+- 基准代码：PR #69 head `4ffdac0baccc4402d06951370c15a2a3a0211868`；叠加 PR #102 最新 head `f87d36ee0f145c23b32f8015d61023a44091af0c`。
 - 分支关系：#102 base = #69 head；#69 base = `code/workbench-acceptance-phase1-20261128`。两者均 Draft、未合并。
 - 证据运行：
   - #69：[#46159210395](https://github.com/tianxin1300/openmanus-gateway/actions/runs/46159210395)，SHA `4ffdac0...`，Node TAP 258/258；Build、Pages 隔离预览、4 组浏览器项目、GitHub PR 生命周期 E2E、Workbench Merge/CAS GitHub API E2E 的步骤均成功。
-  - #102：[#46164842866](https://github.com/tianxin1300/openmanus-gateway/actions/runs/46164842866)，SHA `a7071e6...`，Node TAP 268/268（0 failed、0 skipped）；Build、Pages 隔离预览、4 组浏览器项目、GitHub PR 生命周期 E2E、Workbench Merge/CAS GitHub API E2E 的步骤均成功。
+  - #102 基线：[#46164842866](https://github.com/tianxin1300/openmanus-gateway/actions/runs/46164842866)，SHA `a7071e6...`，Node TAP 268/268。#102 最新修订：[#46176094995](https://github.com/tianxin1300/openmanus-gateway/actions/runs/46176094995)，SHA `f87d36e...`，Node TAP 269/269（0 failed、0 skipped）；Build、Pages 独立预览 HTTP 200、Chromium iPhone 14 / WebKit iPhone 14 / WebKit iPhone 13 Pro / WebKit iPad 9（各 10/10）、GitHub PR 生命周期 E2E、Workbench Merge/CAS 真实 GitHub API E2E 均成功。独立预览工作流 [#46176128343](https://github.com/tianxin1300/openmanus-gateway/actions/runs/46176128343) 成功。另一个 push 触发的 Pages Functions 发布步骤 [#46176089996](https://github.com/tianxin1300/openmanus-gateway/actions/runs/46176089996) 遇 Cloudflare `Unknown internal error occurred`；该外部平台异常单独记录，不覆盖 PR 完整验收结果。
 - 重要边界：以上运行证明的是对应提交的测试与临时环境结果；不代表生产 Worker、生产 Durable Object、生产 CODE_REPOS Secret 或生产部署已经验收。
 
 ## 1. 判定口径
@@ -78,7 +78,7 @@
 | 编号 | 验收点 | 结论依据 | 级别 |
 |---|---|---|---|
 | RUN-ISOLATION-01 | 同一用户不同授权仓库的索引隔离 | 专属测试通过 | L1 |
-| RUN-ISOLATION-02 | 摘要保留项目、分支、提交、任务、Actions 关联字段 | 专属测试通过 | L1 |
+| RUN-ISOLATION-02 | 摘要保留项目、分支、提交、任务、Actions 关联字段及 retry_count、子任务状态/结论/链接 | 最新提交专属断言通过 | L1 |
 | RUN-ISOLATION-03 | 同一 Actions Run ID 在不同仓库的日志键不冲突 | 专属测试通过 | L1 |
 | RUN-ISOLATION-04 | 跨仓库日志读取拒绝 | 专属测试通过 | L1 |
 | RUN-ISOLATION-05 | 未授权仓库不能列出/读取日志 | 专属测试通过 | L1 |
@@ -87,6 +87,7 @@
 | RUN-ISOLATION-08 | DO watcher 使用同一 repo-scoped index writer | 专属测试通过 | L1 |
 | RUN-ISOLATION-09 | 同仓库同 Actions Run ID 不同用户不冲突 | 专属测试通过 | L1 |
 | RUN-ISOLATION-10 | 短 SHA 不误标为分支或完整 head SHA | 专属测试通过 | L1 |
+| RUN-ISOLATION-11 | 父任务含成功与失败子任务时正确聚合为 failure、保留子任务结果并释放运行锁 | 最新提交真实执行 CodeRunnerDO watchdog 测试通过 | L1 |
 
 ## 4. 十二状态交付链核对
 
@@ -112,7 +113,7 @@
 | 项目 | 证据 | 结论 |
 |---|---|---|
 | PR #69 完整 Node 测试 | Run #46159210395，258 passed / 0 failed / 0 skipped | 通过 |
-| PR #102 完整 Node 测试 | Run #46164842866，268 passed / 0 failed / 0 skipped | 通过 |
+| PR #102 完整 Node 测试 | Run #46176094995，SHA `f87d36e...`，269 passed / 0 failed / 0 skipped | 通过 |
 | PR #60 自动化令牌配对预览 | Run #46072407265，head `45a2294...`；Worker 与 Pages 从同一 SHA 部署；automation-token API E2E 成功；本次模型 smoke skipped | 通过（令牌与配对预览）；当前 head 真实模型 smoke 未执行 |
 | PR #60 真实模型修复 smoke | Run #46071525169，SHA `00a290b...`；真实模型生成临时失败补丁、修复源码、保留测试、Actions 重验精确提交、清理临时分支 | 通过（早期隔离 SHA；不可代表当前 head）|
 | 仓库内构建检查 | 两次基线 run 的 `npm run build`（Worker/前端 JS 语法检查）成功 | 通过 |
