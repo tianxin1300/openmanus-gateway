@@ -796,6 +796,17 @@ async function codeWorkbenchBranchCurrent(env, user, repo) {
   if (!ref.ok) {
     if (ref.status === 404) {
       if (String(record.status || "").startsWith("discard_")) return { ok: true, active: true, ...record, branch_deleted: true, discard_recovery: true };
+      if (record.preview_mode === "worker" && record.preview_request_id) {
+        const previewCleanup = await codeWorkbenchWorkerPreviewCleanup(env, user, repo, record);
+        if (!previewCleanup.ok) {
+          await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }).catch(() => null);
+          return {
+            ok: false, active: true, repo, ...record, branch_deleted: true,
+            preview_cleanup_pending: !!previewCleanup.pending,
+            msg: previewCleanup.msg || "临时分支已不存在，但 Worker Preview 尚未确认清理；恢复记录已保留"
+          };
+        }
+      }
       await env.KV.delete(key);
       return { ok: true, active: false, repo, stale_branch_record: true };
     }
