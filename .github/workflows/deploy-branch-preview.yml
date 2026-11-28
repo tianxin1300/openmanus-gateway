@@ -1,5 +1,5 @@
 name: deploy-branch-preview
-run-name: branch preview · ${{ github.event.inputs.ref || github.ref_name }}
+run-name: branch preview · ${{ github.event.inputs.ref || github.ref_name }} · ${{ github.event.inputs.request_id || 'manual' }}
 
 on:
   workflow_dispatch:
@@ -71,13 +71,21 @@ jobs:
         run: |
           set -euo pipefail
           npx wrangler pages deploy . --project-name zhineng --branch "$DEPLOY_REF" --commit-dirty=true 2>&1 | tee /tmp/branch-preview-deploy.log
-          PREVIEW_URL="$(sed -nE 's/^.*Deployment alias URL: (https:\/\/[^[:space:]]+).*$/\1/p' /tmp/branch-preview-deploy.log | tail -n 1)"
-          if [ -z "$PREVIEW_URL" ]; then
-            echo "Could not determine the deployed Pages preview URL from Wrangler output." >&2
-            exit 1
-          fi
+          DEPLOYMENT_URL="$(sed -nE 's/^.*Take a peek over at (https:\/\/[^[:space:]]+).*$/\1/p' /tmp/branch-preview-deploy.log | tail -n 1)"
+          PREVIEW_URL="$(python3 - <<'PY'
+          import os, re
+          ref = os.environ["DEPLOY_REF"]
+          slug = re.sub(r"[^a-z0-9-]+", "-", ref.lower().replace("/", "-"))
+          slug = re.sub(r"-+", "-", slug).strip("-")[:28].rstrip("-")
+          if not slug:
+              raise SystemExit("Could not derive a Pages branch alias from DEPLOY_REF")
+          print("https://" + slug + ".zhineng-et5.pages.dev")
+          PY
+          )"
+          echo "DEPLOYMENT_URL=${DEPLOYMENT_URL:-not-reported-by-wrangler}" >> "$GITHUB_ENV"
           echo "PREVIEW_URL=$PREVIEW_URL" >> "$GITHUB_ENV"
-          echo "Preview URL: $PREVIEW_URL"
+          echo "Wrangler deployment URL: ${DEPLOYMENT_URL:-not-reported-by-wrangler}"
+          echo "Verified branch alias URL: $PREVIEW_URL"
       - name: Verify preview HTTP 200 with curl
         shell: bash
         run: |
@@ -123,4 +131,4 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          { echo "## Temporary Pages preview"; echo; echo "- Ref: $DEPLOY_REF"; echo "- Request: $DEPLOY_REQUEST_ID"; echo "- Result: ${{ job.status }}"; } >> "$GITHUB_STEP_SUMMARY"
+          { echo "## Temporary Pages preview"; echo; echo "- Ref: $DEPLOY_REF"; echo "- Request: $DEPLOY_REQUEST_ID"; echo "- Branch preview URL: ${PREVIEW_URL:-not-verified}"; echo "- Wrangler deployment URL: ${DEPLOYMENT_URL:-not-reported}"; echo "- Result: ${{ job.status }}"; } >> "$GITHUB_STEP_SUMMARY"
