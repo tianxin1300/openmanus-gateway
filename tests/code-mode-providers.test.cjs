@@ -192,14 +192,14 @@ test('rollback creates a new commit and never force-moves the base branch', () =
   assert.match(rollback, /treeChanges\.push\(entry \?/);
   assert.match(rollback, /拒绝执行整仓库回滚/);
   assert.match(rollback, /force: false/);
-  assert.match(rollback, /codePushGuard\(env, user, repo, "frontend\/index\.html"\)/);
+  assert.match(rollback, /codePushGuard\(env, user, targetRepo, "frontend\/index\.html"\)/);
   assert.doesNotMatch(rollback, /force: true/);
   assert.doesNotMatch(rollback, /sha: item\.previous_sha, force/);
 });
 
 test('workbench review UI: history, branch tree and per-file decisions are wired to backend actions', () => {
   assert.match(frontendStudioSource, /function showHistory\(/);
-  assert.match(frontendStudioSource, /api\("\/api\/code\/history"/);
+  assert.match(frontendStudioSource, /api\("\/api\/code\/history\?repo=/);
   assert.match(frontendStudioSource, /\/api\/code\/tree\?repo=/);
   assert.match(frontendStudioSource, /p\.branch \|\| p\.baseBranch/);
   assert.match(frontendStudioSource, /accepted_paths: yes \? selectedPaths\(\) : null/);
