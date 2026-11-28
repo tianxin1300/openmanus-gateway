@@ -1906,7 +1906,9 @@ async function codeChatEntry(env, user, text, history, o) {   // 返回 {ok, rep
   o = o && typeof o === "object" ? o : { inCode: !!o };
   const kind = codeShortcutKind(text), inCode = !!(o.inCode || o.forced);
   if (kind === "confirm") {
-    const pendingRepo = String(o.project || "");
+    const requestedProject = String(o.project || "");
+    const selectedProject = codeProjectRegistry(env).find((p) => p.repo.toLowerCase() === requestedProject.toLowerCase() || p.names.some((name) => name.toLowerCase() === requestedProject.toLowerCase()));
+    const pendingRepo = selectedProject ? selectedProject.repo : requestedProject;
     const pending = await codePendingLoad(env, user, pendingRepo);
     if (!pending) return null;
     return await codeConfirm(env, user, !/^\s*(不推|别推|取消)/.test(text), { repo: pendingRepo, pending_id: pending.id, version: pending.version, project: pending.project, operation_id: "chat-" + (crypto.randomUUID ? crypto.randomUUID() : rand(12)) });
@@ -10096,6 +10098,7 @@ export class CodeClaimDO {
     if (action === "create") {
       const current = await this.load(), incoming = body.pending;
       if (!incoming || !incoming.id || !incoming.project || !Array.isArray(incoming.edits) || !incoming.edits.length) return this.response({ ok: false, msg: "缺少有效 pending" }, 400);
+      if (!body.repo || String(incoming.repo || "").toLowerCase() !== String(body.repo).toLowerCase()) return this.response({ ok: false, msg: "待处理仓库与 Durable Object 项目作用域不一致" }, 403);
       if (current && current.pending && ["awaiting_approval", "applying", "discarding", "partial", "conflict", "failed"].includes(current.pending.status || "awaiting_approval")) return this.response({ ok: false, conflict: true, pending: current.pending, msg: "已有待处理修改" }, 409);
       incoming.status = "awaiting_approval"; incoming.version = 1; incoming.updatedAt = now;
       if (!incoming.created_at) incoming.created_at = now;   // v108：记录创建时间，10 分钟后自动过期
@@ -10109,7 +10112,7 @@ export class CodeClaimDO {
       if (!pendingId || !project || !operationId || !Number.isInteger(Number(body.version))) return this.response({ ok: false, msg: "pending_id、version、project、operation_id 都是必填项" }, 400);
       if (current && current.results && current.results[operationId]) return this.response({ ok: true, replayed: true, result: current.results[operationId] });
       if (current && current.claims && current.claims[operationId]) return this.response({ ok: false, replayed: true, in_progress: true, pending: true, msg: "相同操作正在处理，请等待第一次请求完成" }, 409);
-      if (!p || p.id !== pendingId || Number(current.version) !== Number(body.version) || p.project !== project) return this.response({ ok: false, conflict: true, pending: codePendingView(p), msg: "待推送内容已变化，请刷新预览后再操作" }, 409);
+      if (!p || String(p.repo || "").toLowerCase() !== String(body.repo || "").toLowerCase() || p.id !== pendingId || Number(current.version) !== Number(body.version) || p.project !== project) return this.response({ ok: false, conflict: true, pending: codePendingView(p), msg: "待推送内容已变化或不属于当前项目，请刷新预览后再操作" }, 409);
       if (!["awaiting_approval", "partial", "failed"].includes(p.status || "awaiting_approval")) return this.response({ ok: false, pending: true, busy: p.status === "applying", msg: p.status === "applying" ? "这项修改正在处理，请不要重复点击" : "这项修改当前不能确认" }, 409);
       current.claims[operationId] = { at: now, yes: body.yes === true };
       p.status = "applying"; p.updatedAt = now; p.operation_id = operationId;
@@ -10118,7 +10121,7 @@ export class CodeClaimDO {
     }
     if (action === "finish") {
       const current = await this.load(), p = current && current.pending, operationId = String(body.operation_id || "");
-      if (!current || !p || p.id !== String(body.pending_id || "") || p.operation_id !== operationId || !current.claims[operationId]) return this.response({ ok: false, msg: "操作已失效或不属于当前 claim" }, 409);
+      if (!current || !p || String(p.repo || "").toLowerCase() !== String(body.repo || "").toLowerCase() || p.id !== String(body.pending_id || "") || p.operation_id !== operationId || !current.claims[operationId]) return this.response({ ok: false, msg: "操作已失效或不属于当前项目 claim" }, 409);
       const result = body.result && typeof body.result === "object" ? body.result : { ok: false, reply: "操作完成" };
       p.status = String(body.status || (result.ok ? "applied" : "failed"));
       if (Array.isArray(body.edits)) p.edits = body.edits;
@@ -10130,7 +10133,7 @@ export class CodeClaimDO {
     if (action === "discard") {
       const current = await this.load(), p = current && current.pending;
       const pendingId = String(body.pending_id || ""), version = Number(body.version);
-      if (!current || !p || !pendingId || p.id !== pendingId || !Number.isInteger(version) || Number(current.version) !== version) return this.response({ ok: false, conflict: true, msg: "待处理内容已变化，拒绝丢弃" }, 409);
+      if (!current || !p || String(p.repo || "").toLowerCase() !== String(body.repo || "").toLowerCase() || !pendingId || p.id !== pendingId || !Number.isInteger(version) || Number(current.version) !== version) return this.response({ ok: false, conflict: true, msg: "待处理内容已变化或不属于当前项目，拒绝丢弃" }, 409);
       if (p.status === "applying" || Object.keys(current.claims || {}).length) return this.response({ ok: false, busy: true, msg: "这项修改正在执行接受操作，不能自动丢弃" }, 409);
       if (!["awaiting_approval", "partial", "conflict", "failed"].includes(p.status || "awaiting_approval")) return this.response({ ok: false, busy: true, msg: "当前状态不允许丢弃：" + p.status }, 409);
       p.discard_previous_status = p.status || "awaiting_approval";
@@ -10140,7 +10143,7 @@ export class CodeClaimDO {
     }
     if (action === "discard-release") {
       const current = await this.load(), p = current && current.pending;
-      if (!current || !p || p.id !== String(body.pending_id || "") || Number(current.version) !== Number(body.version) || p.status !== "discarding") return this.response({ ok: false, conflict: true, msg: "丢弃占位已变化，不能释放" }, 409);
+      if (!current || !p || String(p.repo || "").toLowerCase() !== String(body.repo || "").toLowerCase() || p.id !== String(body.pending_id || "") || Number(current.version) !== Number(body.version) || p.status !== "discarding") return this.response({ ok: false, conflict: true, msg: "丢弃占位已变化或不属于当前项目，不能释放" }, 409);
       p.status = p.discard_previous_status || "awaiting_approval";
       delete p.discard_previous_status;
       p.updatedAt = now;
@@ -10149,7 +10152,7 @@ export class CodeClaimDO {
     }
     if (action === "clear") {
       const current = await this.load(), p = current && current.pending;
-      if (!current || !p || p.id !== String(body.pending_id || "") || Number(current.version) !== Number(body.version) || p.status !== "discarding") return this.response({ ok: false, conflict: true, msg: "待处理内容已变化或正在执行，拒绝清除" }, 409);
+      if (!current || !p || String(p.repo || "").toLowerCase() !== String(body.repo || "").toLowerCase() || p.id !== String(body.pending_id || "") || Number(current.version) !== Number(body.version) || p.status !== "discarding") return this.response({ ok: false, conflict: true, msg: "待处理内容已变化、不属于当前项目或正在执行，拒绝清除" }, 409);
       if (Object.keys(current.claims || {}).length) return this.response({ ok: false, busy: true, msg: "存在执行中的接受操作，拒绝清除" }, 409);
       await this.storage.delete("claim");
       return this.response({ ok: true, cleared: true });
