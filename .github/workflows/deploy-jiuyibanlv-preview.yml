@@ -164,7 +164,7 @@ jobs:
           EOF
           # Deliberately omit production KV IDs, application secrets, and Cron triggers.
           ! grep -Fq "6f56242d19284338b3d2332d823e412d" wrangler.preview.toml
-          ! grep -Eq '(^|\n)\[triggers\]' wrangler.preview.toml
+          ! grep -Fq '[triggers]' wrangler.preview.toml
 
       - name: Create GitHub deployment record
         id: deployment
