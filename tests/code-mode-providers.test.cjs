@@ -1581,7 +1581,7 @@ test('ACCEPTANCE WORKBENCH-PROJECT-02: switching projects clears old branch stat
     FILE: "old/file.js",
     curSha: "old-sha",
     dirty: false,
-    select: { value: "second-project" },
+    select: { value: "owner-b/second-project" },
     fileLabel: { textContent: "old/file.js" }
   };
   const sandbox = {
