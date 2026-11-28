@@ -67,7 +67,7 @@ test('P2-HISTORY-003: legacy history is migrated only after filtering to the sel
 test('P2-HISTORY-004: unauthorized repositories return no history and cannot save', async () => {
   const api = harness(), kv = kvHarness();
   const env = { KV: kv, CODE_REPOS: 'owner/alpha' };
-  assert.deepEqual(await api.codeHistoryLoad(env, 'user-1', 'owner/beta'), []);
+  assert.equal((await api.codeHistoryLoad(env, 'user-1', 'owner/beta')).length, 0);
   await assert.rejects(() => api.codeHistorySave(env, 'user-1', 'owner/beta', [{ id: 'b1', repo: 'owner/beta' }]));
   assert.equal(kv.data.size, 0);
 });
