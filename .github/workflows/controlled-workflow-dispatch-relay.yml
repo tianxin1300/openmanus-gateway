@@ -1,5 +1,5 @@
 name: controlled-workflow-dispatch-relay
-run-name: Dispatch relay · ${{ github.event_name }} · ${{ inputs.target_workflow || 'comment-request' }}
+run-name: Dispatch relay · ${{ github.event_name }}
 
 on:
   workflow_dispatch:
@@ -41,6 +41,7 @@ jobs:
         id: request
         env:
           EVENT_NAME: ${{ github.event_name }}
+          CURRENT_REPOSITORY: ${{ github.repository }}
           MANUAL_WORKFLOW: ${{ inputs.target_workflow }}
           MANUAL_REF: ${{ inputs.target_ref }}
           MANUAL_INPUTS: ${{ inputs.target_inputs }}
@@ -53,6 +54,8 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           import base64, json, os, re
+          if os.environ.get("CURRENT_REPOSITORY") != "tianxin1300/openmanus-gateway":
+              raise SystemExit("Relay is restricted to tianxin1300/openmanus-gateway")
           if os.environ["EVENT_NAME"] == "issue_comment":
               if os.environ.get("COMMENT_NUMBER") != "77" or os.environ.get("COMMENT_IS_PULL_REQUEST") != "true":
                   raise SystemExit("Dispatch comments are accepted only on the relay PR thread")
@@ -128,10 +131,10 @@ jobs:
                   raise SystemExit("Branch Preview input ref must match target_ref")
               if "request_id" in inputs and len(str(inputs["request_id"])) > 160:
                   raise SystemExit("Invalid Branch Preview request ID")
-          if lower == "verify-project.yml" and "ref" in inputs and inputs["ref"] != ref:
-              raise SystemExit("Verification input ref must match target_ref")
-          if lower == "workbench-e2e-manual-trigger.yml" and "target_ref" in inputs and inputs["target_ref"] != ref:
-              raise SystemExit("Workbench E2E target_ref must match target_ref")
+          if lower == "verify-project.yml" and inputs.get("ref") != ref:
+              raise SystemExit("verify-project requires ref matching target_ref")
+          if lower == "workbench-e2e-manual-trigger.yml" and inputs.get("target_ref") != ref:
+              raise SystemExit("workbench-e2e requires target_ref matching target_ref")
           encoded = base64.b64encode(json.dumps({"workflow": filename, "ref": ref, "inputs": inputs}, separators=(",", ":")).encode()).decode()
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
               out.write("request_b64=" + encoded + "\n")
@@ -141,6 +144,7 @@ jobs:
       - name: Dispatch through GitHub API using repository secret
         env:
           DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          CURRENT_REPOSITORY: ${{ github.repository }}
           REQUEST_B64: ${{ steps.request.outputs.request_b64 }}
         shell: bash
         run: |
@@ -153,6 +157,8 @@ jobs:
           python3 - <<'PY'
           import base64, json, os, urllib.error, urllib.request
           repo = "tianxin1300/openmanus-gateway"
+          if os.environ.get("CURRENT_REPOSITORY") != repo:
+              raise SystemExit("Relay is restricted to tianxin1300/openmanus-gateway")
           token = os.environ["DISPATCH_TOKEN"]
           request = json.loads(base64.b64decode(os.environ["REQUEST_B64"]))
           headers = {
