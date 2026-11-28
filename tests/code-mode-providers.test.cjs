@@ -1534,14 +1534,14 @@ test('ACCEPTANCE WORKBENCH-PROJECT-01: cancelling a dirty project switch preserv
   const end = frontendSource.indexOf('\ng("wb-file-search")', start);
   assert.ok(start >= 0 && end > start, "project switch handler exists");
   const state = {
-    WORKBENCH_PROJECTS: { second: { owner: "owner-b", repo: "second-project" } },
+    WORKBENCH_PROJECTS: { "owner-b/second-project": { owner: "owner-b", repo: "second-project" } },
     REPO: { owner: "owner-a", repo: "first-project", branch: "code/first-active" },
     activeBranchRecord: { branch: "code/first-active" },
     dirty: true,
     workbenchDecisions: { "src/app.js": true },
     FILE: "src/app.js",
     curSha: "old-sha",
-    select: { value: "second-project" },
+    select: { value: "owner-b/second-project" },
     confirmCalls: 0,
     branchCalls: 0
   };
@@ -1559,9 +1559,9 @@ test('ACCEPTANCE WORKBENCH-PROJECT-01: cancelling a dirty project switch preserv
     ensureWorkbenchBranch: async () => { state.branchCalls++; }
   };
   vm.runInNewContext(frontendSource.slice(start, end) + '\nglobalThis.testSwitchProject = switchWorkbenchProject;', sandbox);
-  await sandbox.testSwitchProject("second");
+  await sandbox.testSwitchProject("owner-b/second-project");
   assert.equal(state.confirmCalls, 1);
-  assert.equal(state.select.value, "first-project");
+  assert.equal(state.select.value, "owner-a/first-project");
   assert.equal(state.REPO.repo, "first-project");
   assert.equal(state.REPO.branch, "code/first-active");
   assert.equal(state.activeBranchRecord.branch, "code/first-active");
@@ -1585,7 +1585,7 @@ test('ACCEPTANCE WORKBENCH-PROJECT-02: switching projects clears old branch stat
     fileLabel: { textContent: "old/file.js" }
   };
   const sandbox = {
-    WORKBENCH_PROJECTS: { second: { owner: "owner-b", repo: "second-project" } },
+    WORKBENCH_PROJECTS: { "owner-b/second-project": { owner: "owner-b", repo: "second-project" } },
     REPO: state.REPO,
     get activeBranchRecord() { return state.activeBranchRecord; },
     set activeBranchRecord(value) { state.activeBranchRecord = value; },
@@ -1611,7 +1611,7 @@ test('ACCEPTANCE WORKBENCH-PROJECT-02: switching projects clears old branch stat
     say: message => calls.push("error:" + message)
   };
   vm.runInNewContext(frontendSource.slice(start, end) + '\nglobalThis.testSwitchProject = switchWorkbenchProject;', sandbox);
-  await sandbox.testSwitchProject("second");
+  await sandbox.testSwitchProject("owner-b/second-project");
   assert.equal(state.REPO.owner, "owner-b");
   assert.equal(state.REPO.repo, "second-project");
   assert.equal(state.REPO.branch, "code/second-active");
