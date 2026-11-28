@@ -132,12 +132,19 @@
 2. ACCEPTANCE.md 的 WORKBENCH-01～17 与 P2-PROJECT/READ/PEND/HISTORY/MEM、PR #102 RUN-ISOLATION 是不同维度；不得把全部编号当作同一测试总数重复相加。
 3. #69/#102 的 test-project 成功包含 Pages Preview 和 GitHub API E2E，但不包含 Worker Preview/生产 DO E2E。另：Cloudflare Workers Builds 外部检查在 #69、#102 和本矩阵 head 上均显示 failure；仓库内 `npm run build` 成功并不能覆盖或解释该外部失败。#69 PR 描述记录该外部失败在其 base commit 上也存在。
 4. #102 修改 `worker.js` 的范围仅限运行记录索引、日志键和查询隔离；后续发现其他 Worker 缺口，必须另行确认授权，不能借此扩大修改范围。
-5. 真实模型调用/自动修复已有 PR #60 隔离 smoke 成功证据（run #46071525169，SHA `00a290b...`），但当前 PR #60 head 的 smoke 被跳过；该结果尚未证明 #69/#102 当前 head 的同一任务链。任务 ID 贯穿十二状态仍是关键未闭环项。对当前 PR #102 前端 `frontend/index.html` 的静态核查：全文没有 `task_id` 或 `taskId` 字段；临时分支创建请求只提交 `repo`、`project`、`base`。此外，PR #102 的 \`codeRunIndexSummary\` 使用 \`record.task_id || record.request_id || ""\`，因此当调用方未提供独立 task_id 时，索引中的 task_id 只是运行 request_id 的回退值，不能证明存在独立任务实体。结合 UI 无 task_id 字段、创建分支不传 task_id，当前任务 ID 全链路关联缺口已由前后端代码路径共同确认。
+5. 真实模型调用/自动修复已有 PR #60 隔离 smoke 成功证据（run #46071525169，SHA `00a290b...`），但当前 PR #60 head 的 smoke 被跳过；该结果尚未证明 #69/#102 当前 head 的同一任务链。任务 ID 贯穿十二状态仍是关键未闭环项，静态追踪已进一步确认断点：
+   - 前端主聊天请求 `/v1/chat/completions` 没有提交 `task_id`；代码助手 `/api/code` 的请求入口也没有独立任务 ID。
+   - AI `codeProject()` 在模型调用完成、准备创建临时分支后才生成 `pendingId`；它是待审核修改 ID，不是模型调用前创建并贯穿全程的 task_id。待处理记录保存 `id`，预览只派生 `preview_request_id = preview-{pendingId}`。
+   - 接受/拒绝入口携带 `pending_id`、`version`、`project`、`operation_id`；接受后历史记录另生成 `push-*` ID 并保存 commit SHA。`pending_id`、`operation_id`、历史 ID 各自有用途，当前没有共同 task_id 字段。
+   - 新工作台的 `/api/code/branch/create` 只收 `repo/project/base`；分支 KV 记录没有 task_id。`save-file`、`reject-file`、`merge` 只带 repo/branch/path/accepted_paths 等，未校验任务归属；Pages Preview 另生成 request_id。
+   - `/api/code/verify`、`deploy`、`both` 分别生成独立 request_id；`both` 以 `CODE_REPO` 配置仓库和传入 ref 启动，不从当前工作台 branch record 读取 task_id。Actions 子运行 ID、日志索引因此没有可信的任务主键关联。
+   - PR #102 的 `codeRunIndexSummary` 虽输出 `task_id`，但值为 `record.task_id || record.request_id || ""`；这是兼容性回退，不是任务实体。`frontend/index.html`、`tests/workbench-acceptance.test.cjs`、`tests/workbench-ui.spec.cjs` 当前均没有 task_id/taskId 字段或断言。
+   因此目前能分别追踪 pending、branch、preview request、Actions request/run、commit/history，但不能证明它们属于同一个任务。
 
 ## 7. 下一步按单缺口闭环
 
 优先顺序：
-1. **任务 ID 全链路关联**：先静态追踪需求入口、分支创建、pending/review、commit、Actions run、日志、Pages Preview 的 ID 字段；列出断点和最小测试，不先改 Worker。
+1. **任务 ID 全链路关联**：静态追踪已完成并确认上述断点。下一步先定义统一 task_id 生命周期和 API 契约，再补跨阶段测试；由于这会修改 PR #102 既定运行记录隔离范围之外的 Worker 路由/状态结构，必须单独取得用户对该 Worker 扩展范围的明确授权后再改代码。
 2. **真实 Worker Preview / DO**：在用户已授权的隔离预览流程内核验项目授权、文件读取、pending claim、历史/运行记录隔离；不接触生产。
 3. **真实模型调用与失败修复闭环**：用隔离任务和可控测试输入证明模型被真实调用、产物写入临时分支、失败日志回流、修复后重新验证。
 4. **修正文档契约漂移**：接口路径和验收文档统一；不改变功能行为。
