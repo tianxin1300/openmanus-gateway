@@ -57,7 +57,7 @@ function makeMergeHarness(options = {}) {
     codeGitRefUrl: (_repo, ref) => 'https://api.github.com/repos/owner/repo/git/ref/' + ref,
     codeMergeTempBranch: async () => { state.mergeCalls++; return { ok: true, data: { sha: 'merged-sha' } }; },
     codeHistoryLoad: async () => state.history,
-    codeHistorySave: async (_env, _user, _repo, rows) => { state.history = rows; },
+    codeHistorySave: async (_env, _user, rows) => { state.history = rows; },
     codeDeleteBranch: async () => { state.deleteCalls++; return { ok: true }; },
     ...options.globals
   });
@@ -125,7 +125,7 @@ test('ACCEPTANCE REVIEW-01: rejected file is absent from the final merge diff', 
     codeMergeTempBranch: async () => { mergedFiles = { ...branch }; Object.assign(main, branch); return { ok: true, data: { sha: 'merged-sha' } }; },
     codeDeleteBranch: async () => ({ ok: true }),
     codeHistoryLoad: async () => history,
-    codeHistorySave: async (_env, _user, _repo, rows) => { history.splice(0, history.length, ...rows); },
+    codeHistorySave: async (_env, _user, rows) => { history.splice(0, history.length, ...rows); },
     codeGitRefUrl: (repo, ref) => 'https://api.github.com/repos/' + repo + '/git/ref/' + ref,
     codeVerifyRef: x => x
   });
@@ -179,7 +179,7 @@ test('ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restore
   let createdCommit, movedRef;
   const rollback = runFunction(sourceOf('async function codeRollbackUnlocked(', 'const CODE_DEPLOY_WORKFLOW'), 'codeRollback', {
     codeHistoryLoad: async () => rows,
-    codeHistorySave: async (_env, _user, _repo, next) => { rows.splice(0, rows.length, ...next); },
+    codeHistorySave: async (_env, _user, next) => { rows.splice(0, rows.length, ...next); },
     codeVerifyRef: x => x, codeRepoOk: () => true, codePushGuard: () => '',
     codeWorkbenchWithLock: async (_env, _user, _repo, operation, run) => { assert.equal(operation, 'rollback'); return run(); },
     codePathOk: p => typeof p === 'string' && !!p && !p.includes('..') && !p.startsWith('/'),
@@ -454,7 +454,7 @@ test('ACCEPTANCE PERMISSION-01: unauthorized identities cannot create, save, rev
       throw new Error('unexpected ' + url);
     },
     codeMergeTempBranch: async () => ({ ok: true, data: { sha: 'merged-sha' } }),
-    codeHistoryLoad: async () => history, codeHistorySave: async (_e, _u, _repo, rows) => history.splice(0, history.length, ...rows),
+    codeHistoryLoad: async () => history, codeHistorySave: async (_e, _u, rows) => history.splice(0, history.length, ...rows),
     codeDeleteBranch: async () => ({ ok: true }), codeGitRefUrl: (r, ref) => 'https://api.github.com/repos/' + r + '/git/ref/' + ref,
     codeVerifyRef: x => x, codePathOk: () => true
   });
@@ -496,7 +496,7 @@ test('ACCEPTANCE IDEMPOTENCY-01: repeated create reuses one branch and repeated 
       throw new Error('unexpected ' + url);
     },
     codeMergeTempBranch: async () => { mergeCalls++; return { ok: true, data: { sha: 'once-only-sha' } }; },
-    codeHistoryLoad: async () => history, codeHistorySave: async (_e, _u, _repo, rows) => history.splice(0, history.length, ...rows),
+    codeHistoryLoad: async () => history, codeHistorySave: async (_e, _u, rows) => history.splice(0, history.length, ...rows),
     codeDeleteBranch: async () => ({ ok: true }), codeGitRefUrl: (r, ref) => 'https://api.github.com/repos/' + r + '/git/ref/' + ref,
     codeVerifyRef: x => x, codePathOk: () => true
   });
@@ -591,7 +591,7 @@ test('ACCEPTANCE CLEANUP-01: failed deletion retains recoverable state; successf
     codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
     codeDeleteBranch: async () => { deletes++; return deleteFails ? { ok: false, status: 500, msg: 'simulated failure' } : { ok: true }; },
     codeHistoryLoad: async () => history,
-    codeHistorySave: async (_env, _user, _repo, rows) => { history.splice(0, history.length, ...rows); }
+    codeHistorySave: async (_env, _user, rows) => { history.splice(0, history.length, ...rows); }
   });
   const env = { KV: kv };
   const failed = await discard(env, 'owner', { repo, branch: record.branch });
@@ -632,7 +632,7 @@ test('ACCEPTANCE DISCARD-AUDIT-RECOVERY-01: deleted branches retain a durable au
     codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
     codeDeleteBranch: async () => { deletes++; return deletes === 1 ? { ok: true } : { ok: false, status: 404 }; },
     codeHistoryLoad: async () => history,
-    codeHistorySave: async (_env, _user, _repo, rows) => {
+    codeHistorySave: async (_env, _user, rows) => {
       if (auditFails) { auditFails = false; throw new Error('simulated history outage'); }
       history.splice(0, history.length, ...rows);
     }
@@ -1030,7 +1030,7 @@ test('ACCEPTANCE MERGE-HISTORY-RECOVERY-01: history failure is retried without m
   const savedHistory = [];
   const h = makeMergeHarness({
     globals: {
-      codeHistorySave: async (_env, _user, _repo, rows) => { saveCalls++; if (saveCalls === 1) throw new Error('history KV unavailable'); savedHistory.splice(0, savedHistory.length, ...rows); },
+      codeHistorySave: async (_env, _user, rows) => { saveCalls++; if (saveCalls === 1) throw new Error('history KV unavailable'); savedHistory.splice(0, savedHistory.length, ...rows); },
       codeDeleteBranch: async () => { deleteCalls++; return { ok: true }; }
     }
   });
@@ -1569,7 +1569,7 @@ test('ACCEPTANCE RENAME-REJECT-MERGE-01: real rename rejection restores the sour
       codeGitRefUrl: (_repo, ref) => 'https://api.github.com/repos/owner/repo/git/ref/' + ref,
       codeMergeTempBranch: async () => { mergeCalls++; return { ok: true, data: { sha: 'merged-rename-regression' } }; },
       codeHistoryLoad: async () => history,
-      codeHistorySave: async (_env, _user, _repo, rows) => { history.splice(0, history.length, ...rows); },
+      codeHistorySave: async (_env, _user, rows) => { history.splice(0, history.length, ...rows); },
       codeDeleteBranch: async () => ({ ok: true })
     }
   );
