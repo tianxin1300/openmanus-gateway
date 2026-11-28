@@ -29,7 +29,7 @@ test('P2-PROJECT-001: CODE_REPOS is the sole allowlist; unset means no repositor
   const { codeRepoList, codeRepoOk } = loadRegistry();
   assert.deepEqual(Array.from(codeRepoList({})), []);
   assert.equal(codeRepoOk({}, 'tianxin1300/openmanus-gateway'), false);
-  assert.equal(codeRepoOk({}, 'tianxin1300/jiuyibanlv'), false);
+  assert.equal(codeRepoOk({}, 'owner/private-app'), false);
 });
 
 test('P2-PROJECT-002: parse only valid owner/repo entries and deduplicate case-insensitively', () => {
@@ -91,6 +91,50 @@ test('P2-PROJECT-008: code-mode project selector is populated from CODE_REPOS an
 
 test('P2-PROJECT-009: no hard-coded fallback allowlist remains in Worker authorization', () => {
   const guard = between(worker, 'const codeRepoList =', 'const codePathOk');
-  assert.doesNotMatch(guard, /tianxin1300\/openmanus-gateway,tianxin1300\/jiuyibanlv/);
+  assert.doesNotMatch(guard, /CODE_REPOS\s*\|\|\s*[\"'][^\"']+[\"']/);
   assert.match(guard, /String\(env && env\.CODE_REPOS \|\| ""\)/);
+});
+
+function loadFileReader(fetchImpl) {
+  const source =
+    between(worker, 'const codeRepoList =', 'const CODE_PROJECTS =') +
+    between(worker, 'async function codeGetFile(', 'async function codeFileTree(');
+  const sandbox = {
+    Set, Map, String, TextDecoder, Uint8Array, atob,
+    fetch: fetchImpl,
+    codeGhUrl: (repo, path) => 'https://api.github.com/repos/' + repo + '/contents/' + path,
+    codeGhHeaders: () => ({ Authorization: 'Bearer test-only' }),
+    T: () => ({})
+  };
+  vm.runInNewContext(source + '\\nglobalThis.out = { codeGetFile };', sandbox);
+  return sandbox.out.codeGetFile;
+}
+
+test('P2-PROJECT-010: file reader rejects empty or unlisted CODE_REPOS before any GitHub request', async () => {
+  let calls = 0;
+  const read = loadFileReader(async () => { calls++; throw new Error('GitHub must not be called'); });
+  const noAllowlist = await read({ GH_PAT: 'test-only' }, 'owner/allowed', 'README.md', 'main');
+  const unlisted = await read({ GH_PAT: 'test-only', CODE_REPOS: 'owner/allowed' }, 'owner/denied', 'README.md', 'main');
+  assert.equal(noAllowlist.ok, false);
+  assert.equal(unlisted.ok, false);
+  assert.match(unlisted.msg, /不在允许名单/);
+  assert.equal(calls, 0);
+});
+
+test('P2-PROJECT-011: file reader fetches only allowlisted paths and returns the current file SHA', async () => {
+  let requested = '';
+  const read = loadFileReader(async (url) => {
+    requested = String(url);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ type: 'file', content: 'aGVsbG8=', sha: 'abc123', size: 5 })
+    };
+  });
+  const result = await read({ GH_PAT: 'test-only', CODE_REPOS: 'owner/allowed' }, 'owner/allowed', 'README.md', 'code/task-1');
+  assert.equal(requested, 'https://api.github.com/repos/owner/allowed/contents/README.md?ref=code%2Ftask-1');
+  assert.equal(result.ok, true);
+  assert.equal(result.exists, true);
+  assert.equal(result.sha, 'abc123');
+  assert.equal(result.text, 'hello');
 });
