@@ -639,9 +639,21 @@ async function codeMergeTempBranch(env, repo, branch, base, message, expectedBas
   if (!moved.ok) return { ok: false, status: moved.status, conflict: true, cas_rejected: true, msg: "目标分支在合并计算期间发生变化；GitHub 拒绝非 fast-forward 更新，未覆盖新提交：" + moved.msg };
   return { ok: true, status: 200, data: { sha: commitSha, commit: { tree: { sha: mergeTreeSha }, parents: [{ sha: expectedBaseSha }, { sha: expectedHeadSha }] } }, cas: true };
 }
-const codeHistoryKey = (user) => "code:history:" + String(user || "").slice(0, 160);
-async function codeHistoryLoad(env, user) { return env.KV ? (await env.KV.get(codeHistoryKey(user), "json").catch(() => null) || []) : []; }
-async function codeHistorySave(env, user, rows) { if (env.KV) await env.KV.put(codeHistoryKey(user), JSON.stringify(rows.slice(0, 20)), { expirationTtl: 31536000 }); }
+const codeHistoryKey = (user, repo) => "code:history:" + String(user || "").slice(0, 120) + ":" + String(repo || "").trim().toLowerCase().slice(0, 160);
+async function codeHistoryLoad(env, user, repo) {
+  if (!env.KV || !codeRepoOk(env, repo)) return [];
+  const scoped = await env.KV.get(codeHistoryKey(user, repo), "json").catch(() => null);
+  if (Array.isArray(scoped)) return scoped.filter((row) => row && String(row.repo || "").toLowerCase() === String(repo).trim().toLowerCase());
+  const legacy = await env.KV.get("code:history:" + String(user || "").slice(0, 160), "json").catch(() => null);
+  const migrated = Array.isArray(legacy) ? legacy.filter((row) => row && String(row.repo || "").toLowerCase() === String(repo).trim().toLowerCase()).slice(0, 20) : [];
+  if (migrated.length) await env.KV.put(codeHistoryKey(user, repo), JSON.stringify(migrated), { expirationTtl: 31536000 }).catch(() => {});
+  return migrated;
+}
+async function codeHistorySave(env, user, repo, rows) {
+  if (!env.KV || !codeRepoOk(env, repo)) throw new Error("历史记录仓库不在 CODE_REPOS 授权名单内");
+  const scoped = (Array.isArray(rows) ? rows : []).filter((row) => row && String(row.repo || "").toLowerCase() === String(repo).trim().toLowerCase());
+  await env.KV.put(codeHistoryKey(user, repo), JSON.stringify(scoped.slice(0, 20)), { expirationTtl: 31536000 });
+}
 const codeWorkbenchBranchKey = (user, repo) => "code:workbench-branch:" + String(user || "").slice(0, 120) + ":" + String(repo || "").slice(0, 120);
 async function codeWorkbenchLockCall(env, repo, action, body) {
   if (!env.CODE_CLAIMS) return { ok: false, configured: false, msg: "CODE_CLAIMS Durable Object 未绑定" };
@@ -870,9 +882,9 @@ async function codeWorkbenchBranchDiscardUnlocked(env, user, body = {}) {
   if (!deleted.ok && deleted.status !== 404) return { ok: false, msg: "GitHub 删除临时分支失败，记录保留：" + deleted.msg };
   const auditId = "workbench-discard-" + record.branch;
   try {
-    const history = await codeHistoryLoad(env, user);
+    const history = await codeHistoryLoad(env, user, repo);
     if (!history.some((row) => row && row.id === auditId)) {
-      await codeHistorySave(env, user, [{ id: auditId, kind: "workbench_discard", action: "discard", actor: String(user), repo, project: record.project, branch: record.branch, at: new Date().toISOString() }, ...history]);
+      await codeHistorySave(env, user, repo, [{ id: auditId, kind: "workbench_discard", action: "discard", actor: String(user), repo, project: record.project, branch: record.branch, at: new Date().toISOString() }, ...history]);
     }
   } catch (auditError) {
     record.status = "discard_history_failed";
@@ -906,9 +918,9 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
   if (["merged_cleanup_failed", "merged_history_failed", "merged_record_cleanup_failed"].includes(record.status)) {
     if (record.status === "merged_history_failed" && record.history_row) {
       try {
-        const savedHistory = await codeHistoryLoad(env, user);
+        const savedHistory = await codeHistoryLoad(env, user, repo);
         if (!savedHistory.some((item) => item && item.commit_sha === record.commit_sha)) {
-          await codeHistorySave(env, user, [record.history_row, ...savedHistory]);
+          await codeHistorySave(env, user, repo, [record.history_row, ...savedHistory]);
         }
       } catch (historyError) {
         return { ok: false, merged: true, history_saved: false, branch_deleted: false, msg: "GitHub 已合并，但历史记录补写仍失败；临时分支保留：" + (historyError && historyError.message || "历史写入失败") };
@@ -985,10 +997,10 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
     commitSha = String(after.data && after.data.object && after.data.object.sha || "");
   }
   if (!commitSha) return { ok: false, merged: true, msg: "GitHub 已合并，但读取合并提交 SHA 失败；临时分支保留，需人工核对。" };
-  const history = await codeHistoryLoad(env, user);
+  const history = await codeHistoryLoad(env, user, repo);
   const row = { id: "workbench-" + Date.now().toString(36), kind: "commit", actor: String(user), repo, project: record.project, baseBranch: record.baseBranch, commit_sha: commitSha, previous_sha: previousSha, at: new Date().toISOString(), summary: String(body.summary || "开发台推送"), files, preview_url: record.preview_url || "" };
   try {
-    await codeHistorySave(env, user, [row, ...history]);
+    await codeHistorySave(env, user, repo, [row, ...history]);
   } catch (historyError) {
     record.status = "merged_history_failed"; record.commit_sha = commitSha; record.history_row = row; record.updated_at = new Date().toISOString();
     try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); } catch (_) {}
@@ -1044,7 +1056,7 @@ async function codeMemoryPrompt(env, user, repo) {   // 只注入当前仓库的
   return "\\n\\n【上下文记忆：当前仓库最近 20 条对话 / 接受 / 拒绝】\\n" + hist + "\\n\\n【最近 5 个 commit】\\n" + commits + "\\n\\n【仓库文件列表】\\n" + files + "\\n\\n硬规则：你上一次已经拒绝过删 worker.js，不要再生成删 worker.js 的改动；也不要再重复用户已经拒绝过的改法。";
 }
 async function codeRollbackUnlocked(env, user, body) {
-  const rows = await codeHistoryLoad(env, user), item = rows.find((x) => x.id === String(body && body.id || "")) || rows[Number(body && body.index)];
+  const repo = String(body && body.repo || ""), rows = await codeHistoryLoad(env, user, repo), item = rows.find((x) => x.id === String(body && body.id || "")) || rows[Number(body && body.index)];
   if (!item || !item.previous_sha) return { ok: false, msg: "没有可回滚的上一版本" };
   const repo = item.repo, base = codeVerifyRef(item.baseBranch || "main");
   if (!codeRepoOk(env, repo) || !base) return { ok: false, msg: "回滚目标不合法" };
@@ -1096,15 +1108,17 @@ async function codeRollbackUnlocked(env, user, body) {
   });
   if (!moved.ok) return { ok: false, msg: "回滚提交已创建，但分支未更新（可能有并发提交）：" + moved.msg };
   const rec = { id: "rollback-" + Date.now().toString(36), actor: String(user), repo, project: item.project, baseBranch: base, commit_sha: newSha, previous_sha: currentSha, target_sha: item.previous_sha, summary: "回滚：" + item.summary, files: item.files || [], at: new Date().toISOString(), rollback: true };
-  await codeHistorySave(env, user, [rec, ...rows]);
+  await codeHistorySave(env, user, repo, [rec, ...rows]);
   return { ok: true, ...rec, reply: "已创建回滚提交并恢复到目标版本内容：" + newSha.slice(0, 12) };
 }
 async function codeRollback(env, user, body) {
-  const rows = await codeHistoryLoad(env, user);
+  const repo = String(body && body.repo || "");
+  if (!codeRepoOk(env, repo)) return { ok: false, msg: "回滚仓库不在 CODE_REPOS 授权名单内" };
+  const rows = await codeHistoryLoad(env, user, repo);
   const item = rows.find((x) => x.id === String(body && body.id || "")) || rows[Number(body && body.index)];
-  if (!item || !item.repo) return { ok: false, msg: "没有可回滚的历史记录" };
-  const resolvedBody = { ...(body || {}), id: item.id };
-  return codeWorkbenchWithLock(env, user, item.repo, "rollback", () => codeRollbackUnlocked(env, user, resolvedBody));
+  if (!item || String(item.repo || "").toLowerCase() !== repo.toLowerCase()) return { ok: false, msg: "当前项目没有可回滚的历史记录" };
+  const resolvedBody = { ...(body || {}), repo, id: item.id };
+  return codeWorkbenchWithLock(env, user, repo, "rollback", () => codeRollbackUnlocked(env, user, resolvedBody));
 }
 const CODE_DEPLOY_WORKFLOW = "deploy-project.yml";
 const CODE_WORKER_DEPLOY_WORKFLOW = "deploy-worker.yml";
@@ -1870,8 +1884,8 @@ async function codeConfirm(env, user, yes, input = {}) {
     if (!paths.length) {
       const merged = await codeMergeTempBranch(env, pend.repo, pend.branch, pend.baseBranch || String(env.CODE_PUSH_BRANCH || "main"), "AI: " + pend.summary);
       if (!merged.ok) return await finish("conflict", { ok: false, pending: true, conflict: true, reply: "冲突解决后仍无法合并：" + merged.msg }, pend.edits);
-      const rows = await codeHistoryLoad(env, user), record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: pend.baseBranch || "main", commit_sha: String((merged.data && merged.data.sha) || ""), previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: Object.keys(files), preview_url: pend.preview_url || codeTempPreview(pend.branch, pend.repo) };
-      await codeHistorySave(env, user, [record, ...rows]);
+      const rows = await codeHistoryLoad(env, user, pend.repo), record = { id: "push-" + Date.now().toString(36), repo: pend.repo, project: pend.project, baseBranch: pend.baseBranch || "main", commit_sha: String((merged.data && merged.data.sha) || ""), previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: Object.keys(files), preview_url: pend.preview_url || codeTempPreview(pend.branch, pend.repo) };
+      await codeHistorySave(env, user, pend.repo, [record, ...rows]);
       const removed = await codeDeleteBranch(env, pend.repo, pend.branch);
       return await finish("applied", { ok: true, pushed: true, consumed: true, status: "applied", merged: true, commit_sha: record.commit_sha, branch_deleted: !!removed.ok, history_id: record.id, reply: "✅ 冲突已解决并合并到 " + (pend.baseBranch || "main") }, []);
     }
@@ -1892,9 +1906,9 @@ async function codeConfirm(env, user, yes, input = {}) {
     const merged = await codeMergeTempBranch(env, pend.repo, pend.branch, pend.baseBranch || String(env.CODE_PUSH_BRANCH || "main"), "AI: " + pend.summary);
     if (!merged.ok) return await finish("conflict", { ok: false, pending: true, conflict: true, status: "conflict", reply: lines.join("\n") + "\n❌ 临时分支未能合并到 " + (pend.baseBranch || "main") + "：" + merged.msg + "。临时分支仍保留，可重试或删除。" }, pend.edits);
     const commitSha = String((merged.data && merged.data.sha) || "");
-    const rows = await codeHistoryLoad(env, user);
+    const rows = await codeHistoryLoad(env, user, pend.repo);
     const record = { id: "push-" + Date.now().toString(36), actor: String(user), repo: pend.repo, project: pend.project, baseBranch: pend.baseBranch || "main", commit_sha: commitSha, previous_sha: pend.baseCommit || "", at: new Date().toISOString(), summary: pend.summary, files: paths, preview_url: pend.preview_url || codeTempPreview(pend.branch, pend.repo) };
-    await codeHistorySave(env, user, [record, ...rows]);
+    await codeHistorySave(env, user, pend.repo, [record, ...rows]);
     const removed = await codeDeleteBranch(env, pend.repo, pend.branch);
     return await finish("applied", { ok: true, pushed: true, consumed: true, status: "applied", merged: true, commit_sha: commitSha, branch_deleted: !!removed.ok, history_id: record.id, reply: lines.join("\n") + "\n✅ 已合并到 " + (pend.baseBranch || "main") + (removed.ok ? "，临时分支已删除。" : "；临时分支删除失败，请稍后清理：" + removed.msg) }, []);
   } catch (e) {
@@ -9689,7 +9703,9 @@ async function handle(request, env, ctx) {
     if (path === "/api/code/history" && request.method === "GET") {
       const user = await userFromReq(request, env, url, "");
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
-      return json({ ok: true, history: await codeHistoryLoad(env, user) });
+      const repo = String(url.searchParams.get("repo") || "");
+      if (!codeRepoOk(env, repo)) return json({ ok: false, msg: "项目不在 CODE_REPOS 授权名单内" }, 403);
+      return json({ ok: true, history: await codeHistoryLoad(env, user, repo) });
     }
     if (path === "/api/code/rollback" && request.method === "POST") {
       const b = await request.json().catch(() => ({})), user = await userFromReq(request, env, url, String(b.token || ""));
