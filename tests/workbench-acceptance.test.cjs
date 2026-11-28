@@ -443,6 +443,18 @@ test('ACCEPTANCE WORKBENCH-WORKER-PREVIEW-07: Workbench UI exposes pending and v
 });
 
 
+
+test('ACCEPTANCE WORKBENCH-PAGES-PREVIEW-03: Pages workflow verifies the same bounded branch alias exposed by Workbench', () => {
+  const workflow = fs.readFileSync(path.join(root, '.github/workflows/deploy-branch-preview.yml'), 'utf8');
+  assert.match(workflow, /github\.event\.inputs\.request_id/);
+  assert.match(workflow, /slug\.slice|strip\("-"\)\[:28\]/);
+  assert.match(workflow, /zhineng-et5\.pages\.dev/);
+  assert.match(workflow, /Verify preview HTTP 200 with curl/);
+  assert.match(workflow, /Verify preview opens with Playwright/);
+  assert.match(workflow, /Take a peek over at/);
+});
+
+
 test('ACCEPTANCE WORKBENCH-SAVE-CAS-01: editor saves share the repository lock and reject stale file SHA', async () => {
   let currentSha = 'a'.repeat(40), writes = 0;
   const lockOperations = [];
