@@ -119,8 +119,13 @@ jobs:
               allowed = required | {"deployment_id", "kv_namespace_id"}
               if not required.issubset(inputs) or set(inputs) - allowed:
                   raise SystemExit("Worker Preview inputs do not match the approved schema")
-              if inputs["action"] not in {"create", "delete"} or inputs["repository"] != "tianxin1300/openmanus-gateway" or inputs["ref"] != ref:
+              if inputs["action"] not in {"create", "delete"} or inputs["repository"] != "tianxin1300/openmanus-gateway":
                   raise SystemExit("Worker Preview target identity mismatch")
+              if not isinstance(inputs["ref"], str) or not inputs["ref"].startswith("code/") or not re.fullmatch(r"[A-Za-z0-9._/-]{1,120}", inputs["ref"]) or any(p in ("", ".", "..") for p in inputs["ref"].split("/")):
+                  raise SystemExit("Invalid Worker Preview project ref")
+              # The workflow_dispatch ref selects where the workflow definition lives
+              # (main); inputs.ref independently selects the project branch to preview.
+
               if not re.fullmatch(r"[A-Za-z0-9._:-]{8,160}", str(inputs["request_id"])) or not re.fullmatch(r"wb-[a-z0-9][a-z0-9-]{1,48}", str(inputs["preview_name"])):
                   raise SystemExit("Invalid Worker Preview request identity")
               if inputs["action"] == "delete":
