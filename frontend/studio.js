@@ -182,7 +182,7 @@
     var bothStatus = el("span", ""); bothStatus.id = "om-both-status"; bothStatus.setAttribute("role", "status"); bothStatus.setAttribute("aria-live", "polite");
     var historyBtn = el("button", "om-refresh", "历史版本"); historyBtn.type = "button"; historyBtn.addEventListener("click", showHistory);
     bothBtn.addEventListener("click", startBoth);
-    sel.addEventListener("change", function () { state.project = sel.value; ls(KEY_PROJ, state.project); toast("代码模式：现在改「" + state.project + "」"); });
+    sel.addEventListener("change", function () { state.project = sel.value; ls(KEY_PROJ, state.project); currentPending = null; hide(); toast("代码模式：现在改「" + state.project + "」"); refreshPending(true); });
     box.addEventListener("click", function () {
       state.on = !state.on; ls(KEY_ON, state.on ? "1" : "0"); syncToggle();
       if (state.on) { toast("代码模式已开：之后每条消息都直接改「" + state.project + "」的代码"); check(); }
