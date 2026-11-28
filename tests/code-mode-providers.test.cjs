@@ -1953,8 +1953,8 @@ test('dynamic workbench repository registry is sourced only from CODE_REPOS and 
   assert.deepEqual(Array.from(sandbox.testRepoList(env)), ['tianxin1300/openmanus-gateway', 'other/second-repo']);
   assert.equal(sandbox.testRepoOk(env, 'OTHER/SECOND-REPO'), true, 'repository matching is case-insensitive');
   assert.equal(sandbox.testRepoOk(env, 'other/not-authorized'), false, 'unlisted repository is denied');
-  assert.match(workerSource, /path === "\/api\/code\/repos"/, 'authenticated repository-list endpoint exists');
-  assert.match(frontendSource, /wbApi\("\/api\/code\/repos"/, 'Workbench loads its project list from the Worker');
+  assert.match(workerSource, /path === "\/api\/code\/projects"/, 'authenticated project-list endpoint exists');
+  assert.match(frontendSource, /wbApi\("\/api\/code\/projects"/, 'Workbench loads its project list from the Worker');
   assert.match(frontendSource, /const WORKBENCH_PROJECTS = Object\.create\(null\)/, 'Workbench does not maintain a second hard-coded allowlist');
   assert.doesNotMatch(frontendSource, /const WORKBENCH_PROJECTS = \{\s*"openmanus-gateway"/, 'static project allowlist is removed');
 });
