@@ -290,6 +290,7 @@ test('ACCEPTANCE WORKBENCH-PREVIEW-SCOPE-01: Workbench only exposes this reposit
   assert.equal(config.workflow_file, 'deploy-branch-preview.yml');
   assert.equal(previewConfig('owner-b/second-project'), null);
   assert.doesNotMatch(worker, /codeWorkbenchWorkerPreview/);
+  assert.doesNotMatch(frontend, /preview_mode === "worker"|Worker 预览|Worker Preview/);
 });
 
 
