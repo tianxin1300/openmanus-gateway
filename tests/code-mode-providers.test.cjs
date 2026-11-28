@@ -27,7 +27,8 @@ function loadCodePendingDiscard({ pending, deleteBranch, claimCall, kvDelete }) 
   assert.ok(start >= 0 && end > start, 'codePendingDiscard source must exist');
   const source = workerSource.slice(start, end);
   const sandbox = {
-    codePendingRepo: (_env, repo) => String(repo || pending.repo).toLowerCase(),\n    codePendingLoad: async () => pending,
+    codePendingRepo: (_env, repo) => String(repo || pending.repo).toLowerCase(),
+    codePendingLoad: async () => pending,
     codeClaimState: async () => ({ ok: true, pending, version: 1 }),
     codeDeleteBranch: deleteBranch,
     codeClaimCall: async (_env, _user, _repo, action, body) => claimCall(_env, _user, action, body),
