@@ -1058,25 +1058,25 @@ async function codeMemoryPrompt(env, user, repo) {   // 只注入当前仓库的
 async function codeRollbackUnlocked(env, user, body) {
   const repo = String(body && body.repo || ""), rows = await codeHistoryLoad(env, user, repo), item = rows.find((x) => x.id === String(body && body.id || "")) || rows[Number(body && body.index)];
   if (!item || !item.previous_sha) return { ok: false, msg: "没有可回滚的上一版本" };
-  const repo = item.repo, base = codeVerifyRef(item.baseBranch || "main");
-  if (!codeRepoOk(env, repo) || !base) return { ok: false, msg: "回滚目标不合法" };
-  const guard = codePushGuard(env, user, repo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
+  const targetRepo = String(item.repo || "").trim().toLowerCase(), base = codeVerifyRef(item.baseBranch || "main");
+  if (!targetRepo || targetRepo !== String(repo).trim().toLowerCase() || !codeRepoOk(env, targetRepo) || !base) return { ok: false, msg: "回滚目标不合法" };
+  const guard = codePushGuard(env, user, targetRepo, "frontend/index.html"); if (guard) return { ok: false, msg: guard };
 
   // 回滚不移动/重写历史指针：用目标旧版本的 tree 创建一个以当前 HEAD 为父提交的新 commit。
-  const head = await codeGhApi(env, codeGitRefUrl(repo, "heads/" + base));
+  const head = await codeGhApi(env, codeGitRefUrl(targetRepo, "heads/" + base));
   const currentSha = String(head.data && head.data.object && head.data.object.sha || "");
   if (!head.ok || !currentSha) return { ok: false, msg: "读取当前分支失败：" + (head.msg || "没有 commit SHA") };
-  const currentCommit = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/commits/" + encodeURIComponent(currentSha));
+  const currentCommit = await codeGhApi(env, "https://api.github.com/repos/" + targetRepo + "/git/commits/" + encodeURIComponent(currentSha));
   const currentTree = String(currentCommit.data && currentCommit.data.tree && currentCommit.data.tree.sha || "");
   if (!currentCommit.ok || !currentTree) return { ok: false, msg: "读取当前文件树失败：" + (currentCommit.msg || "没有 tree SHA") };
-  const target = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/commits/" + encodeURIComponent(item.previous_sha));
+  const target = await codeGhApi(env, "https://api.github.com/repos/" + targetRepo + "/git/commits/" + encodeURIComponent(item.previous_sha));
   const targetTree = String(target.data && target.data.tree && target.data.tree.sha || "");
   if (!target.ok || !targetTree) return { ok: false, msg: "读取回滚目标版本失败：" + (target.msg || "没有 tree SHA") };
   const changedPaths = Array.isArray(item.files) ? [...new Set(item.files.map((p) => String(p || "")).filter(codePathOk))] : [];
   if (!changedPaths.length) return { ok: false, msg: "该历史记录没有可核验的文件清单，拒绝执行整仓库回滚" };
   const [currentTreeData, targetTreeData] = await Promise.all([
-    codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/trees/" + encodeURIComponent(currentTree) + "?recursive=1"),
-    codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/trees/" + encodeURIComponent(targetTree) + "?recursive=1")
+    codeGhApi(env, "https://api.github.com/repos/" + targetRepo + "/git/trees/" + encodeURIComponent(currentTree) + "?recursive=1"),
+    codeGhApi(env, "https://api.github.com/repos/" + targetRepo + "/git/trees/" + encodeURIComponent(targetTree) + "?recursive=1")
   ]);
   if (!currentTreeData.ok || !targetTreeData.ok || currentTreeData.data.truncated || targetTreeData.data.truncated) {
     return { ok: false, msg: "读取完整文件树失败或结果被截断，未执行回滚" };
@@ -1088,27 +1088,27 @@ async function codeRollbackUnlocked(env, user, body) {
     const entry = targetEntries.get(path);
     treeChanges.push(entry ? { path, mode: entry.mode, type: entry.type, sha: entry.sha } : { path, mode: (currentEntries.get(path) || {}).mode || "100644", type: "blob", sha: null });
   }
-  const restoredTree = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/trees", {
+  const restoredTree = await codeGhApi(env, "https://api.github.com/repos/" + targetRepo + "/git/trees", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ base_tree: currentTree, tree: treeChanges })
   });
   const restoredTreeSha = String(restoredTree.data && restoredTree.data.sha || "");
   if (!restoredTree.ok || !restoredTreeSha) return { ok: false, msg: "创建局部回滚文件树失败：" + (restoredTree.msg || "没有 tree SHA") };
-  const created = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/commits", {
+  const created = await codeGhApi(env, "https://api.github.com/repos/" + targetRepo + "/git/commits", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message: "Rollback: " + String(item.summary || item.id || "previous version").slice(0, 140), tree: restoredTreeSha, parents: [currentSha] })
   });
   const newSha = String(created.data && created.data.sha || "");
   if (!created.ok || !newSha) return { ok: false, msg: "创建回滚提交失败：" + (created.msg || "GitHub 没有返回 commit SHA") };
-  const moved = await codeGhApi(env, codeGitRefWriteUrl(repo, "heads/" + base), {
+  const moved = await codeGhApi(env, codeGitRefWriteUrl(targetRepo, "heads/" + base), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sha: newSha, force: false })
   });
   if (!moved.ok) return { ok: false, msg: "回滚提交已创建，但分支未更新（可能有并发提交）：" + moved.msg };
-  const rec = { id: "rollback-" + Date.now().toString(36), actor: String(user), repo, project: item.project, baseBranch: base, commit_sha: newSha, previous_sha: currentSha, target_sha: item.previous_sha, summary: "回滚：" + item.summary, files: item.files || [], at: new Date().toISOString(), rollback: true };
-  await codeHistorySave(env, user, repo, [rec, ...rows]);
+  const rec = { id: "rollback-" + Date.now().toString(36), actor: String(user), repo: targetRepo, project: item.project, baseBranch: base, commit_sha: newSha, previous_sha: currentSha, target_sha: item.previous_sha, summary: "回滚：" + item.summary, files: item.files || [], at: new Date().toISOString(), rollback: true };
+  await codeHistorySave(env, user, targetRepo, [rec, ...rows]);
   return { ok: true, ...rec, reply: "已创建回滚提交并恢复到目标版本内容：" + newSha.slice(0, 12) };
 }
 async function codeRollback(env, user, body) {
