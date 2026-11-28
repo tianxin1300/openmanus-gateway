@@ -656,3 +656,27 @@ npm test
 **通过条件：** 四项全部执行并通过；未授权仓库不得触发 GitHub 文件读取；合法读取必须返回 SHA，供后续保存时进行版本一致性校验。
 
 **测试边界：** `P2-READ-001～003` 使用隔离 fetch 模拟验证 Worker 实际读取函数；`P2-READ-004` 核对前端读取入口与 Worker 路由契约。它们不代表线上 Worker Secret、真实 GitHub 令牌或生产环境配置已验收。
+
+
+## 20. 第二阶段：多项目待处理修改与审核 claim 隔离（P2-PEND-001～006）
+
+**目标：** 同一登录用户在多个 CODE_REPOS 授权仓库中同时存在待处理修改时，待处理记录、Durable Object claim、确认、拒绝、丢弃和清理必须严格按仓库隔离；切换项目不得读取或操作另一个项目的待处理内容。
+
+**实现约束：**
+- Durable Object 身份由规范化后的用户 ID 与 owner/repo 共同组成，不允许仅按用户 ID 共用一个待处理记录。
+- 每次加载、创建、claim、finish、discard、clear 均必须携带并核验同一个白名单仓库作用域。
+- Worker 必须验证待处理记录内的 repo 与当前仓库作用域一致；Durable Object 对跨仓库 claim/finish/discard/clear 请求失败关闭。
+- 工作台项目切换时清除旧项目的待处理预览，并重新按新项目加载；确认/丢弃请求必须携带所选项目仓库。
+- 不允许通过 KV 旧键或缺少 repo 的请求回退到跨项目共享状态。
+
+**自动化测试：** `tests/code-pending-isolation.test.cjs`：
+- `P2-PEND-001`：DO 身份按用户与规范化仓库隔离；不同用户或不同仓库使用不同 DO ID，非白名单仓库无 DO。
+- `P2-PEND-002`：同一用户在两个授权项目分别创建待处理记录，读取结果互不覆盖。
+- `P2-PEND-003`：对一个仓库创建的待处理记录，不能通过另一个仓库作用域 claim。
+- `P2-PEND-004`：项目创建、替换清理和确认流程统一传递仓库作用域。
+- `P2-PEND-005`：pending 查询与 force-clear API 必须提供明确仓库作用域。
+- `P2-PEND-006`：工作台 UI 发送当前选择仓库，切换项目时刷新待处理预览。
+
+**通过条件：** 六项专属测试全部通过，且 `npm test` 与 `npm run build` 成功。任何缺少仓库作用域或仓库不匹配的操作必须拒绝，不得跨项目读取、覆盖或清理。
+
+**测试边界：** Node 测试直接提取 Worker Durable Object 类与辅助函数，使用隔离 storage/fetch 模拟；它证明代码路径的仓库隔离逻辑，不等同于 Cloudflare 已部署 Durable Object 的真实网络并发验收。真实多项目部署仍需在隔离 Worker Preview 上验证，生产配置与生产数据不参与。
