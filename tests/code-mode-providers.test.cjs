@@ -1743,7 +1743,7 @@ test('Cron Issue Agent: queue selection skips pull requests and rejects closed i
 async function runCronIssueAgentMock(mode = 'success', issueNumber = '') {
   const agentPath = path.join(root, '.github/scripts/issue-agent.mjs');
   let source = fs.readFileSync(agentPath, 'utf8');
-  source = source.replace('import fs from "node:fs/promises";' + String.fromCharCode(10) + 'import path from "node:path";' + String.fromCharCode(10), '');
+  source = source.split(String.fromCharCode(10)).filter(line => !line.startsWith("import fs from ") && !line.startsWith("import path from ")).join(String.fromCharCode(10));
   const bottom = source.lastIndexOf('main().catch(async error => {');
   assert.ok(bottom >= 0, 'agent entrypoint must exist');
   source = source.slice(0, bottom) + 'globalThis.__run = main();';
