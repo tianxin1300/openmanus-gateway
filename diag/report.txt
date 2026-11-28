@@ -1,6 +1,8 @@
-诊断时间(UTC): 2026-11-28T11:38:03+00:00
+诊断时间(UTC): 2026-11-28T11:42:15+00:00
 
 == 最近 12 个提交 ==
+5169d69 Verify inactive deployment status after Worker Preview cleanup
+6e35cd2 diag: refresh current project report
 465db4d [Draft] Verify Worker Preview cleanup after deletion (#80)
 9472062 diag: refresh current project report
 375946e Separate relay workflow ref from Worker Preview project ref (#79)
@@ -11,70 +13,68 @@ ac1ab86 [Draft] Add controlled GitHub workflow dispatch relay (#77)
 f262893 diag: refresh current project report
 0c5e4f8 Merge pull request #76 from tianxin1300/fix/worker-preview-openmanus-isolation-20261128
 fbc5edd Use isolated openmanus-gateway Worker identity
-3b8d64e Fix Worker Preview config for openmanus-gateway
-a498b98 diag: refresh current project report
 
 == 文件 ==
 .:
 total 1092
-drwxr-xr-x 11 runner runner   4096 Nov 28 11:37 .
-drwxr-xr-x  3 runner runner   4096 Nov 28 11:37 ..
-drwxr-xr-x  7 runner runner   4096 Nov 28 11:37 .git
-drwxr-xr-x  3 runner runner   4096 Nov 28 11:37 .github
--rw-r--r--  1 runner runner   8556 Nov 28 11:37 ACCEPTANCE.md
--rw-r--r--  1 runner runner    724 Nov 28 11:37 apply_v106.py
--rw-r--r--  1 runner runner   2686 Nov 28 11:37 apply_v107.py
--rw-r--r--  1 runner runner   4017 Nov 28 11:37 apply_v108.py
--rw-r--r--  1 runner runner   4249 Nov 28 11:37 apply_v109.py
--rw-r--r--  1 runner runner   2497 Nov 28 11:37 dev-run.yml
-drwxr-xr-x  2 runner runner   4096 Nov 28 11:37 diag
--rw-r--r--  1 runner runner   7037 Nov 28 11:37 diag_v110.py
-drwxr-xr-x  3 runner runner   4096 Nov 28 11:37 frontend
--rw-r--r--  1 runner runner    197 Nov 28 11:38 package-lock.json
--rw-r--r--  1 runner runner    338 Nov 28 11:37 package.json
--rw-r--r--  1 runner runner  23105 Nov 28 11:37 studio.js
-drwxr-xr-x  2 runner runner   4096 Nov 28 11:37 tests
-drwxr-xr-x  2 runner runner   4096 Nov 28 11:37 v106
-drwxr-xr-x  2 runner runner   4096 Nov 28 11:37 v107
-drwxr-xr-x  2 runner runner   4096 Nov 28 11:37 v108
-drwxr-xr-x  2 runner runner   4096 Nov 28 11:37 v109
--rw-r--r--  1 runner runner 987514 Nov 28 11:37 worker.js
--rw-r--r--  1 runner runner    512 Nov 28 11:37 wrangler.toml
+drwxr-xr-x 11 runner runner   4096 Nov 28 11:42 .
+drwxr-xr-x  3 runner runner   4096 Nov 28 11:42 ..
+drwxr-xr-x  7 runner runner   4096 Nov 28 11:42 .git
+drwxr-xr-x  3 runner runner   4096 Nov 28 11:42 .github
+-rw-r--r--  1 runner runner   8556 Nov 28 11:42 ACCEPTANCE.md
+-rw-r--r--  1 runner runner    724 Nov 28 11:42 apply_v106.py
+-rw-r--r--  1 runner runner   2686 Nov 28 11:42 apply_v107.py
+-rw-r--r--  1 runner runner   4017 Nov 28 11:42 apply_v108.py
+-rw-r--r--  1 runner runner   4249 Nov 28 11:42 apply_v109.py
+-rw-r--r--  1 runner runner   2497 Nov 28 11:42 dev-run.yml
+drwxr-xr-x  2 runner runner   4096 Nov 28 11:42 diag
+-rw-r--r--  1 runner runner   7037 Nov 28 11:42 diag_v110.py
+drwxr-xr-x  3 runner runner   4096 Nov 28 11:42 frontend
+-rw-r--r--  1 runner runner    197 Nov 28 11:42 package-lock.json
+-rw-r--r--  1 runner runner    338 Nov 28 11:42 package.json
+-rw-r--r--  1 runner runner  23105 Nov 28 11:42 studio.js
+drwxr-xr-x  2 runner runner   4096 Nov 28 11:42 tests
+drwxr-xr-x  2 runner runner   4096 Nov 28 11:42 v106
+drwxr-xr-x  2 runner runner   4096 Nov 28 11:42 v107
+drwxr-xr-x  2 runner runner   4096 Nov 28 11:42 v108
+drwxr-xr-x  2 runner runner   4096 Nov 28 11:42 v109
+-rw-r--r--  1 runner runner 987514 Nov 28 11:42 worker.js
+-rw-r--r--  1 runner runner    512 Nov 28 11:42 wrangler.toml
 
 .github/workflows:
 total 84
-drwxr-xr-x 2 runner runner  4096 Nov 28 11:37 .
-drwxr-xr-x 3 runner runner  4096 Nov 28 11:37 ..
--rw-r--r-- 1 runner runner  2454 Nov 28 11:37 apply-v105.yml
--rw-r--r-- 1 runner runner 13537 Nov 28 11:37 controlled-workflow-dispatch-relay.yml
--rw-r--r-- 1 runner runner  2549 Nov 28 11:37 deploy-branch-preview.yml
--rw-r--r-- 1 runner runner  2724 Nov 28 11:37 deploy-project.yml
--rw-r--r-- 1 runner runner 26163 Nov 28 11:37 deploy-worker-preview.yml
--rw-r--r-- 1 runner runner  4081 Nov 28 11:37 deploy-worker.yml
--rw-r--r-- 1 runner runner  1295 Nov 28 11:37 diag-report.yml
--rw-r--r-- 1 runner runner   700 Nov 28 11:37 test-project.yml
--rw-r--r-- 1 runner runner  2558 Nov 28 11:37 verify-project.yml
--rw-r--r-- 1 runner runner  1022 Nov 28 11:37 workbench-e2e-manual-trigger.yml
+drwxr-xr-x 2 runner runner  4096 Nov 28 11:42 .
+drwxr-xr-x 3 runner runner  4096 Nov 28 11:42 ..
+-rw-r--r-- 1 runner runner  2454 Nov 28 11:42 apply-v105.yml
+-rw-r--r-- 1 runner runner 13537 Nov 28 11:42 controlled-workflow-dispatch-relay.yml
+-rw-r--r-- 1 runner runner  2549 Nov 28 11:42 deploy-branch-preview.yml
+-rw-r--r-- 1 runner runner  2724 Nov 28 11:42 deploy-project.yml
+-rw-r--r-- 1 runner runner 26163 Nov 28 11:42 deploy-worker-preview.yml
+-rw-r--r-- 1 runner runner  4081 Nov 28 11:42 deploy-worker.yml
+-rw-r--r-- 1 runner runner  1295 Nov 28 11:42 diag-report.yml
+-rw-r--r-- 1 runner runner   700 Nov 28 11:42 test-project.yml
+-rw-r--r-- 1 runner runner  2558 Nov 28 11:42 verify-project.yml
+-rw-r--r-- 1 runner runner  1022 Nov 28 11:42 workbench-e2e-manual-trigger.yml
 
 frontend:
 total 868
-drwxr-xr-x  3 runner runner   4096 Nov 28 11:37 .
-drwxr-xr-x 11 runner runner   4096 Nov 28 11:37 ..
--rw-r--r--  1 runner runner     90 Nov 28 11:37 _headers
--rw-r--r--  1 runner runner  20601 Nov 28 11:37 devrun.js
--rw-r--r--  1 runner runner 631125 Nov 28 11:37 index.html
--rw-r--r--  1 runner runner 161913 Nov 28 11:37 openmanus_frontend_file_v99l 2.zip
--rw-r--r--  1 runner runner  26828 Nov 28 11:37 studio.js
--rw-r--r--  1 runner runner  12533 Nov 28 11:37 tasks.js
-drwxr-xr-x  2 runner runner   4096 Nov 28 11:37 vendor
--rw-r--r--  1 runner runner     80 Nov 28 11:37 wrangler.toml
+drwxr-xr-x  3 runner runner   4096 Nov 28 11:42 .
+drwxr-xr-x 11 runner runner   4096 Nov 28 11:42 ..
+-rw-r--r--  1 runner runner     90 Nov 28 11:42 _headers
+-rw-r--r--  1 runner runner  20601 Nov 28 11:42 devrun.js
+-rw-r--r--  1 runner runner 631125 Nov 28 11:42 index.html
+-rw-r--r--  1 runner runner 161913 Nov 28 11:42 openmanus_frontend_file_v99l 2.zip
+-rw-r--r--  1 runner runner  26828 Nov 28 11:42 studio.js
+-rw-r--r--  1 runner runner  12533 Nov 28 11:42 tasks.js
+drwxr-xr-x  2 runner runner   4096 Nov 28 11:42 vendor
+-rw-r--r--  1 runner runner     80 Nov 28 11:42 wrangler.toml
 
 tests:
 total 100
-drwxr-xr-x  2 runner runner  4096 Nov 28 11:37 .
-drwxr-xr-x 11 runner runner  4096 Nov 28 11:37 ..
--rw-r--r--  1 runner runner 88968 Nov 28 11:37 code-mode-providers.test.cjs
--rw-r--r--  1 runner runner   889 Nov 28 11:37 homepage-devbench.test.cjs
+drwxr-xr-x  2 runner runner  4096 Nov 28 11:42 .
+drwxr-xr-x 11 runner runner  4096 Nov 28 11:42 ..
+-rw-r--r--  1 runner runner 88968 Nov 28 11:42 code-mode-providers.test.cjs
+-rw-r--r--  1 runner runner   889 Nov 28 11:42 homepage-devbench.test.cjs
 
 == worker.js ==
 987514 字节, 9556 行, CRLF=False
@@ -312,78 +312,78 @@ crons = ["0 0 * * *"]
 == npm test（node --test tests/*.cjs） ==
 node v22.23.5
 退出码 0
-✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (1.439247ms)
-✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.313321ms)
-✔ editor delivery: pending work is resumable and deployment state is not overstated (0.303577ms)
-✔ project isolation: code edits use a temporary branch before merging to the base branch (0.407203ms)
-✔ web workbench: exposes the local preview control (0.307483ms)
-✔ remote verification: reuses a dispatchable workflow and returns status fields (0.351309ms)
-✔ BUG-07: verification logs preserve file context and expose exact source-line navigation (2.904052ms)
-✔ remote verification UI: green success, red failures, and no invented preview URL (0.616678ms)
-✔ BUG-01: protected media and files never put the login token in URLs or media bodies (1.236712ms)
-✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (0.702948ms)
-✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.091974ms)
-✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (0.693484ms)
-✔ BUG-08: CodeRunnerDO serializes per-user parallel-run claims and owner-only release (67.81338ms)
-✔ persistent runner watchdog polls GitHub and persists terminal state without browser polling (2.322706ms)
-✔ BUG-08: parallel deploy preserves partial dispatch failures and holds lock until remaining run ends (0.209525ms)
-✔ workbench simultaneous start triggers GitHub Actions and renders the full delivery chain (1.705497ms)
-✔ P0-01: local preview is started from the visible control (0.260192ms)
-✔ P0-02/03: expiry and force-clear lock pending before deleting the GitHub branch (0.486422ms)
-✔ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (0.852143ms)
+✔ worker and frontend expose only the requested Groq, OpenRouter and NVIDIA model lists (2.424653ms)
+✔ chat experience: prompt restores natural dialogue and frontend hides routine notes (0.473784ms)
+✔ editor delivery: pending work is resumable and deployment state is not overstated (0.479985ms)
+✔ project isolation: code edits use a temporary branch before merging to the base branch (0.610419ms)
+✔ web workbench: exposes the local preview control (0.483943ms)
+✔ remote verification: reuses a dispatchable workflow and returns status fields (0.527073ms)
+✔ BUG-07: verification logs preserve file context and expose exact source-line navigation (4.504934ms)
+✔ remote verification UI: green success, red failures, and no invented preview URL (0.991189ms)
+✔ BUG-01: protected media and files never put the login token in URLs or media bodies (2.009819ms)
+✔ BUG-02 and BUG-05: verification inputs are validated, runs are correlated, and polling cannot hang (1.337816ms)
+✔ BUG-03/04/06: push confirmation uses Durable Object atomic claim and idempotent operation fields (1.781614ms)
+✔ Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions (1.065377ms)
+✔ BUG-08: CodeRunnerDO serializes per-user parallel-run claims and owner-only release (44.353693ms)
+✔ persistent runner watchdog polls GitHub and persists terminal state without browser polling (4.525642ms)
+✔ BUG-08: parallel deploy preserves partial dispatch failures and holds lock until remaining run ends (0.292396ms)
+✔ workbench simultaneous start triggers GitHub Actions and renders the full delivery chain (2.52465ms)
+✔ P0-01: local preview is started from the visible control (0.372505ms)
+✔ P0-02/03: expiry and force-clear lock pending before deleting the GitHub branch (0.776939ms)
+✔ force-clear: GitHub branch deletion failure retains DO/KV records and returns failure (1.263106ms)
 [code] pending expiry branch deletion failed; claim retained simulated GitHub failure
-✔ force-clear: frontend keeps preview panel visible and reports failure (9.333311ms)
-✔ CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim (1.1494ms)
-✔ CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry (1.197874ms)
-✔ CodeClaimDO alarm: GitHub 404 is treated as already deleted (0.906755ms)
-✔ codeProject refuses to auto-discard an applying pending operation (0.119721ms)
-✔ CodeClaimDO atomically rejects discard while an accept operation is applying (1.925919ms)
-✔ CodeClaimDO uses a versioned discard lock and only clears the locked pending (1.174188ms)
-✔ persistent runner, KV logs and Pages deployment are wired end to end (1.645787ms)
-✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (1.153717ms)
-✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (0.855188ms)
-✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (0.696168ms)
-✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (0.681917ms)
-✔ codeLLM: OpenRouter network errors also never fall back to Toter (0.761046ms)
-✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (0.726253ms)
-✔ codeLLM: first usable custom model succeeds without attempting later models (0.65127ms)
-✔ codeLLM: retains the Groq target loop after OpenRouter (0.788607ms)
-✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (0.742217ms)
-✔ frontend: without studio initialization, ordinary-chat providers remain available (1.493017ms)
-✔ frontend: code mode shows provider-specific code models and hides Toter aliases (0.888357ms)
-✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (2.003296ms)
-✔ frontend: switching off code mode restores buttons and preserves chat model choice (0.986295ms)
-✔ studio.js: syncToggle re-renders providers when code mode changes (0.834361ms)
-✔ studio.js: omStudio state is exposed before eager init (0.762658ms)
-✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (0.680685ms)
-✔ frontend/studio.js: omStudio state is exposed before eager init (0.612673ms)
-✔ local HTTP integration: frontend-style API request reaches the real Worker /api/models route (87.692481ms)
-✔ standalone preview uses the current editor srcdoc without WebContainer (1.646249ms)
-✔ editor wraps long lines and iPad visual viewport resizes the workbench above the keyboard (0.741846ms)
-✔ terminal is a standalone command echo panel and Pages/Worker logs stay separate without WebContainer (2.135124ms)
-✔ devbench exposes one launch button, one run log and a terminal (0.820345ms)
-✔ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (4.234845ms)
-✔ delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once (1.242661ms)
-✔ devbench keeps the editor full-width and opens the independent preview in a separate page (0.789138ms)
-✔ devbench standalone preview keeps independent terminal and run-log panels (3.038675ms)
-✔ ACCEPTANCE AUTO-01: independent preview is built from the current editor source (0.476377ms)
-✔ ACCEPTANCE AUTO-02: independent preview synchronizes results, status chain and run logs (0.366211ms)
-✔ ACCEPTANCE AUTO-03: Monaco and textarea fallback both wrap long lines without horizontal overflow (0.973616ms)
-✔ terminal panels and viewport behavior remain independently testable; terminal acceptance stays unpassed (1.429382ms)
-✔ ACCEPTANCE CHAIN-01: generated state exists before any downstream delivery state (1.457053ms)
-✔ ACCEPTANCE CHAIN-02: submitted state requires a commit or correlated run identifier (2.607946ms)
-✔ ACCEPTANCE CHAIN-03: verified state follows the verification conclusion only (2.556248ms)
-✔ ACCEPTANCE CHAIN-04: deploying state appears only while deployment runs are active (2.369396ms)
-✔ ACCEPTANCE CHAIN-05: deployed state requires both Pages and Worker deployment success (2.473539ms)
-✔ ACCEPTANCE CHAIN-06: online health requires successful deployment and HTTP 200 for its run (3.292881ms)
-✔ ACCEPTANCE.md: ten code acceptance items each map to an executable npm test and exclude manual iPad sign-off (2.086911ms)
-✔ iOS Safari voice input uses MediaRecorder and authenticated server transcription, not Web Speech Recognition (1.49482ms)
-✔ mobile composer auto-grows and app plus terminal follow the visual viewport above the soft keyboard (0.34515ms)
-✔ terminal navigation and shortcut buttons use consistent dimensions and typography (0.218468ms)
-✔ terminal command input auto-grows, wraps long commands, shrinks after clear, and keeps Enter-to-send (0.885032ms)
-✔ homepage studio exposes a real simultaneous-deploy event button with persisted backend status (0.271799ms)
-✔ homepage mobile layout keeps the header toolbar swipeable and compresses chat cards and composer (0.561265ms)
-✔ workbench history loads on tab open and exposes full both Runner state (0.449046ms)
+✔ force-clear: frontend keeps preview panel visible and reports failure (21.725372ms)
+✔ CodeClaimDO alarm: expired pending deletes GitHub branch before deleting claim (2.082594ms)
+✔ CodeClaimDO alarm: GitHub deletion failure retains claim and schedules 60-second retry (1.779319ms)
+✔ CodeClaimDO alarm: GitHub 404 is treated as already deleted (1.697637ms)
+✔ codeProject refuses to auto-discard an applying pending operation (0.196827ms)
+✔ CodeClaimDO atomically rejects discard while an accept operation is applying (2.259264ms)
+✔ CodeClaimDO uses a versioned discard lock and only clears the locked pending (1.882973ms)
+✔ persistent runner, KV logs and Pages deployment are wired end to end (2.300211ms)
+✔ codeLLM: only Toter keys produce no fetch calls and no usable reply (1.661629ms)
+✔ codeLLM: OpenRouter code models remain first and Groq models are available as fallback (1.231066ms)
+✔ codeLLM: when both Toter and OpenRouter are configured, call OpenRouter directly (1.05593ms)
+✔ codeLLM: OpenRouter HTTP failures never fall back to Toter (1.078712ms)
+✔ codeLLM: OpenRouter network errors also never fall back to Toter (1.189639ms)
+✔ codeLLM: CODE_MODELS keeps custom-first order and removes duplicates (1.159462ms)
+✔ codeLLM: first usable custom model succeeds without attempting later models (1.042194ms)
+✔ codeLLM: retains the Groq target loop after OpenRouter (1.350339ms)
+✔ ordinary chat: Toter/Toter2 configuration, custom models and endpoints remain available (1.193777ms)
+✔ frontend: without studio initialization, ordinary-chat providers remain available (2.40187ms)
+✔ frontend: code mode shows provider-specific code models and hides Toter aliases (1.414809ms)
+✔ frontend: each legacy blocked selection is repaired to OpenRouter and persisted (3.186944ms)
+✔ frontend: switching off code mode restores buttons and preserves chat model choice (1.520466ms)
+✔ studio.js: syncToggle re-renders providers when code mode changes (1.118977ms)
+✔ studio.js: omStudio state is exposed before eager init (1.104571ms)
+✔ frontend/studio.js: syncToggle re-renders providers when code mode changes (0.98127ms)
+✔ frontend/studio.js: omStudio state is exposed before eager init (0.944161ms)
+✔ local HTTP integration: frontend-style API request reaches the real Worker /api/models route (86.437658ms)
+✔ standalone preview uses the current editor srcdoc without WebContainer (2.638031ms)
+✔ editor wraps long lines and iPad visual viewport resizes the workbench above the keyboard (1.191582ms)
+✔ terminal is a standalone command echo panel and Pages/Worker logs stay separate without WebContainer (3.290538ms)
+✔ devbench exposes one launch button, one run log and a terminal (1.219515ms)
+✔ delivery chain: generated, verified, submitted, deploying, deployed and live-health states stay distinct (8.78171ms)
+✔ delivery chain: real probePagesHealth logic accepts only HTTP 200 and probes each run once (2.426096ms)
+✔ devbench keeps the editor full-width and opens the independent preview in a separate page (1.231999ms)
+✔ devbench standalone preview keeps independent terminal and run-log panels (5.454275ms)
+✔ ACCEPTANCE AUTO-01: independent preview is built from the current editor source (0.82013ms)
+✔ ACCEPTANCE AUTO-02: independent preview synchronizes results, status chain and run logs (0.527504ms)
+✔ ACCEPTANCE AUTO-03: Monaco and textarea fallback both wrap long lines without horizontal overflow (1.776965ms)
+✔ terminal panels and viewport behavior remain independently testable; terminal acceptance stays unpassed (2.287397ms)
+✔ ACCEPTANCE CHAIN-01: generated state exists before any downstream delivery state (3.279177ms)
+✔ ACCEPTANCE CHAIN-02: submitted state requires a commit or correlated run identifier (5.643347ms)
+✔ ACCEPTANCE CHAIN-03: verified state follows the verification conclusion only (4.756216ms)
+✔ ACCEPTANCE CHAIN-04: deploying state appears only while deployment runs are active (4.505935ms)
+✔ ACCEPTANCE CHAIN-05: deployed state requires both Pages and Worker deployment success (4.099177ms)
+✔ ACCEPTANCE CHAIN-06: online health requires successful deployment and HTTP 200 for its run (5.595177ms)
+✔ ACCEPTANCE.md: ten code acceptance items each map to an executable npm test and exclude manual iPad sign-off (3.551893ms)
+✔ iOS Safari voice input uses MediaRecorder and authenticated server transcription, not Web Speech Recognition (2.147075ms)
+✔ mobile composer auto-grows and app plus terminal follow the visual viewport above the soft keyboard (0.560645ms)
+✔ terminal navigation and shortcut buttons use consistent dimensions and typography (0.363378ms)
+✔ terminal command input auto-grows, wraps long commands, shrinks after clear, and keeps Enter-to-send (1.320694ms)
+✔ homepage studio exposes a real simultaneous-deploy event button with persisted backend status (0.430593ms)
+✔ homepage mobile layout keeps the header toolbar swipeable and compresses chat cards and composer (0.840608ms)
+✔ workbench history loads on tab open and exposes full both Runner state (0.656805ms)
 ℹ tests 71
 ℹ suites 0
 ℹ pass 71
@@ -391,7 +391,7 @@ node v22.23.5
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 316.892318
+ℹ duration_ms 374.511862
 
 == npm run build ==
 退出码 0
