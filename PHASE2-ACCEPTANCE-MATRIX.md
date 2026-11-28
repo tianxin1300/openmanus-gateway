@@ -113,7 +113,8 @@
 |---|---|---|
 | PR #69 完整 Node 测试 | Run #46159210395，258 passed / 0 failed / 0 skipped | 通过 |
 | PR #102 完整 Node 测试 | Run #46164842866，268 passed / 0 failed / 0 skipped | 通过 |
-| Build | 两次 run 的 Build checks 成功 | 通过 |
+| 仓库内构建检查 | 两次基线 run 的 `npm run build`（Worker/前端 JS 语法检查）成功 | 通过 |
+| Cloudflare Workers Builds 外部检查 | #69 head、#102 head 与本矩阵 head 的 `Workers Builds: openmanus-gateway` 状态均为 failure；#69 PR 记录该失败在其 base `466aa18...` 上也存在 | **失败（外部 Cloudflare 检查）**；不得与仓库内 `npm run build` 混为一谈 |
 | Pages Preview | 两次 run 的隔离 Pages 部署与 HTTP 探测步骤成功 | 通过（仅 Pages） |
 | 浏览器 E2E | Chromium iPhone 14、WebKit iPhone 14、WebKit iPhone 13 Pro、WebKit iPad 9th generation 四个项目步骤成功；测试文件定义 10 个场景 | 通过（指定模拟设备/浏览器） |
 | 真实 GitHub PR 生命周期 E2E | Actions job 步骤成功，使用临时 PR/ref 并清理 | 通过（临时资源） |
@@ -126,7 +127,7 @@
 
 1. PR #69 描述中将项目列表接口写为 `GET /api/code/repos`，而当前前端代码与 ACCEPTANCE.md 的 P2-PROJECT 部分使用 `GET /api/code/projects`。以当前分支代码和专属测试为准，后续应统一 PR 描述/验收文档，避免接口契约文档漂移。
 2. ACCEPTANCE.md 的 WORKBENCH-01～17 与 P2-PROJECT/READ/PEND/HISTORY/MEM、PR #102 RUN-ISOLATION 是不同维度；不得把全部编号当作同一测试总数重复相加。
-3. #69/#102 的 test-project 成功包含 Pages Preview 和 GitHub API E2E，但不包含 Worker Preview/生产 DO E2E。
+3. #69/#102 的 test-project 成功包含 Pages Preview 和 GitHub API E2E，但不包含 Worker Preview/生产 DO E2E。另：Cloudflare Workers Builds 外部检查在 #69、#102 和本矩阵 head 上均显示 failure；仓库内 `npm run build` 成功并不能覆盖或解释该外部失败。#69 PR 描述记录该外部失败在其 base commit 上也存在。
 4. #102 修改 `worker.js` 的范围仅限运行记录索引、日志键和查询隔离；后续发现其他 Worker 缺口，必须另行确认授权，不能借此扩大修改范围。
 5. 真实模型调用、AI 自动修复后重验、任务 ID 贯穿十二状态仍是第二阶段关键未闭环项。对当前 PR #102 前端 `frontend/index.html` 的静态核查：全文没有 `task_id` 或 `taskId` 字段；临时分支创建请求只提交 `repo`、`project`、`base`。因此当前 UI 尚未把任务 ID 作为贯穿分支、审核和运行记录的统一关联键，这不是推测，而是本次代码检索结果。
 
