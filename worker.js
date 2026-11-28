@@ -512,17 +512,7 @@ function codeTempBranch(project) {
   const tag = String(project || "project").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "project";
   return "code/" + tag + "-" + Date.now() + "-" + rand(8);
 }
-const codePreviewConfig = (repo) => {
-  const fullName = String(repo || "").toLowerCase();
-  if (fullName === "tianxin1300/openmanus-gateway") return { mode: "pages", workflow_repo: "tianxin1300/openmanus-gateway", workflow_file: "deploy-branch-preview.yml" };
-  if (fullName === "tianxin1300/jiuyibanlv") return { mode: "worker", workflow_repo: "tianxin1300/openmanus-gateway", workflow_file: "deploy-worker-preview.yml", worker_name: "juyiibanlvzhinengai" };
-  return null;
-};
-function codeWorkbenchPreviewName(branch, requestId) {
-  const slug = String(branch || "").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "branch";
-  const suffix = String(requestId || "").replace(/[^a-z0-9]/gi, "").slice(-8).toLowerCase() || "preview01";
-  return ("wb-" + slug + "-" + suffix).slice(0, 53).replace(/-+$/g, "");
-}
+const codePreviewConfig = (repo) => String(repo || "").toLowerCase() === "tianxin1300/openmanus-gateway" ? { mode: "pages", workflow_repo: "tianxin1300/openmanus-gateway", workflow_file: "deploy-branch-preview.yml" } : null;
 async function codeWorkbenchPagesPreviewRefresh(env, record) {
   if (!record || record.preview_mode !== "pages" || !record.preview_request_id) return { ok: true, changed: false };
   const runsUrl = "https://api.github.com/repos/" + record.repo + "/actions/runs?branch=" + encodeURIComponent(record.branch) + "&event=workflow_dispatch&per_page=30";
@@ -555,95 +545,6 @@ async function codeWorkbenchPagesPreviewRefresh(env, record) {
   }
   record.preview_status_updated_at = new Date().toISOString();
   return { ok: true, changed: true, state: run.status === "completed" ? run.conclusion : run.status, run_id: record.preview_run_id };
-}
-async function codeWorkbenchWorkerPreviewRefresh(env, record) {
-  if (!record || record.preview_mode !== "worker" || !record.preview_request_id) return { ok: true, changed: false };
-  const deploymentsUrl = "https://api.github.com/repos/tianxin1300/openmanus-gateway/deployments?ref=main&environment=workbench-preview&per_page=100";
-  const listed = await codeGhApi(env, deploymentsUrl);
-  if (!listed.ok || !Array.isArray(listed.data)) return { ok: false, changed: false, msg: listed.msg || "读取 Worker Preview deployment 失败" };
-  const deployment = listed.data.find((item) => {
-    let payload = item && item.payload;
-    if (typeof payload === "string") { try { payload = JSON.parse(payload); } catch { payload = null; } }
-    return payload && String(payload.request_id || "") === String(record.preview_request_id) &&
-      String(payload.repository || "").toLowerCase() === String(record.repo || "").toLowerCase() &&
-      String(payload.target_ref || "") === String(record.branch || "");
-  });
-  if (!deployment) return { ok: true, changed: false, pending: true };
-  let payload = deployment.payload;
-  if (typeof payload === "string") { try { payload = JSON.parse(payload); } catch { payload = {}; } }
-  const statuses = await codeGhApi(env, "https://api.github.com/repos/tianxin1300/openmanus-gateway/deployments/" + encodeURIComponent(String(deployment.id)) + "/statuses?per_page=10");
-  if (!statuses.ok || !Array.isArray(statuses.data) || !statuses.data.length) return { ok: false, changed: false, msg: statuses.msg || "读取 Worker Preview deployment 状态失败" };
-  const latest = statuses.data[0];
-  const state = String(latest.state || "").toLowerCase();
-  record.preview_deployment_id = String(deployment.id);
-  record.preview_name = String(payload.preview_name || record.preview_name || "");
-  record.preview_kv_namespace_id = String(payload.kv_namespace_id || record.preview_kv_namespace_id || "");
-  record.preview_worker_name = String(payload.worker_name || record.preview_worker_name || "juyiibanlvzhinengai");
-  if (state === "success") {
-    const candidate = String(latest.environment_url || "");
-    const expectedPrefix = "https://" + record.preview_name + "-" + record.preview_worker_name + ".";
-    if (!candidate.startsWith(expectedPrefix) || !candidate.endsWith(".workers.dev")) {
-      record.preview_status = "failed";
-      record.preview_url = "";
-      record.preview_error = "GitHub deployment 返回的 Worker Preview URL 与预期 Worker 不匹配";
-    } else if (record.preview_cleanup_status !== "pending") {
-      record.preview_status = "ready";
-      record.preview_url = candidate;
-      record.preview_error = "";
-    }
-  } else if (state === "failure" || state === "error") {
-    if (record.preview_cleanup_status === "pending") {
-      record.preview_cleanup_status = "failed";
-    } else {
-      record.preview_status = "failed";
-      record.preview_url = "";
-      record.preview_error = String(latest.description || "Worker Preview 创建或验证失败").slice(0, 500);
-    }
-  } else if (state === "inactive") {
-    record.preview_status = "deleted";
-    record.preview_url = "";
-    record.preview_cleanup_status = "done";
-    record.preview_error = "";
-  } else if (record.preview_cleanup_status !== "pending") {
-    record.preview_status = "pending";
-  }
-  record.preview_status_updated_at = new Date().toISOString();
-  return { ok: true, changed: true, state, deployment_id: record.preview_deployment_id };
-}
-async function codeWorkbenchWorkerPreviewCleanup(env, user, repo, record) {
-  if (!record || record.preview_mode !== "worker" || !record.preview_request_id) return { ok: true, done: true };
-  const refreshed = await codeWorkbenchWorkerPreviewRefresh(env, record);
-  if (!refreshed.ok) return { ok: false, pending: false, msg: refreshed.msg };
-  if (record.preview_status === "deleted" || record.preview_cleanup_status === "done") return { ok: true, done: true };
-  if (record.preview_status === "pending" && !record.preview_deployment_id) return { ok: false, pending: true, msg: "Worker Preview 部署仍在启动，暂不删除临时分支" };
-  if (record.preview_status === "pending" && refreshed.state !== "success" && refreshed.state !== "failure" && refreshed.state !== "inactive") {
-    return { ok: false, pending: true, msg: "Worker Preview 部署仍在进行，等待完成后再清理" };
-  }
-  if (record.preview_cleanup_status !== "pending") {
-    if (!record.preview_deployment_id || !record.preview_kv_namespace_id || !record.preview_name) {
-      return { ok: false, pending: true, msg: "Worker Preview 清理信息尚未完整，临时分支记录已保留" };
-    }
-    const dispatched = await codeGhApi(env, "https://api.github.com/repos/tianxin1300/openmanus-gateway/actions/workflows/deploy-worker-preview.yml/dispatches", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ref: "main", inputs: {
-        action: "delete", repository: repo, ref: record.branch, request_id: record.preview_request_id,
-        preview_name: record.preview_name, deployment_id: record.preview_deployment_id,
-        kv_namespace_id: record.preview_kv_namespace_id
-      } })
-    });
-    if (!dispatched.ok) return { ok: false, pending: false, msg: "Worker Preview 清理工作流启动失败：" + (dispatched.msg || ("HTTP " + dispatched.status)) };
-    record.preview_cleanup_status = "pending";
-    record.preview_cleanup_started_at = new Date().toISOString();
-    record.preview_cleanup_started_by = String(user || "");
-    await env.KV.put(codeWorkbenchBranchKey(user, repo), JSON.stringify(record), { expirationTtl: 2592000 });
-    return { ok: false, pending: true, msg: "Worker Preview 清理已启动，临时分支暂时保留；稍后刷新再重试" };
-  }
-  const after = await codeWorkbenchWorkerPreviewRefresh(env, record);
-  if (!after.ok) return { ok: false, pending: false, msg: after.msg };
-  if (record.preview_status === "deleted" || record.preview_cleanup_status === "done") return { ok: true, done: true };
-  if (record.preview_cleanup_status === "failed") return { ok: false, pending: false, msg: "Worker Preview 清理失败，资源和临时分支记录均已保留；可重试清理" };
-  return { ok: false, pending: true, msg: "Worker Preview 正在清理，临时分支暂时保留" };
 }
 function codeTempPreview(branch, repo) {
   if (String(repo || "") !== "tianxin1300/openmanus-gateway") return "";
@@ -796,30 +697,18 @@ async function codeWorkbenchBranchCurrent(env, user, repo) {
   if (!ref.ok) {
     if (ref.status === 404) {
       if (String(record.status || "").startsWith("discard_")) return { ok: true, active: true, ...record, branch_deleted: true, discard_recovery: true };
-      if (record.preview_mode === "worker" && record.preview_request_id) {
-        const previewCleanup = await codeWorkbenchWorkerPreviewCleanup(env, user, repo, record);
-        if (!previewCleanup.ok) {
-          await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }).catch(() => null);
-          return {
-            ok: false, active: true, repo, ...record, branch_deleted: true,
-            preview_cleanup_pending: !!previewCleanup.pending,
-            msg: previewCleanup.msg || "临时分支已不存在，但 Worker Preview 尚未确认清理；恢复记录已保留"
-          };
-        }
-      }
       await env.KV.delete(key);
       return { ok: true, active: false, repo, stale_branch_record: true };
     }
     return { ok: false, active: false, repo, msg: "GitHub 临时分支状态检查失败，已保留本地分支记录：" + (ref.msg || ("HTTP " + ref.status)) };
   }
-  if (record.preview_request_id && (record.preview_status === "pending" || (record.preview_mode === "worker" && record.preview_cleanup_status === "pending"))) {
-    const refreshed = record.preview_mode === "worker"
-      ? await codeWorkbenchWorkerPreviewRefresh(env, record)
-      : (record.preview_mode === "pages" ? await codeWorkbenchPagesPreviewRefresh(env, record) : { ok: true, changed: false });
+  if (record.preview_request_id && record.preview_status === "pending" && record.preview_mode === "pages") {
+    const refreshed = await codeWorkbenchPagesPreviewRefresh(env, record);
     if (refreshed.ok && refreshed.changed) {
       await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 });
     }
   }
+
   return { ok: true, active: true, ...record };
 }
 async function codeWorkbenchBranchCreateUnlocked(env, user, body = {}) {
@@ -941,40 +830,6 @@ async function codeWorkbenchBranchPreviewUnlocked(env, user, repo) {
   if (!previewConfig) return { ok: false, msg: "该项目仓库尚未配置隔离预览能力" };
   const current = await codeWorkbenchBranchCurrent(env, user, repo);
   if (!current.ok || !current.active) return { ok: false, msg: "当前项目没有活动临时分支" };
-  if (previewConfig.mode === "worker") {
-    if (current.preview_status === "ready" && current.preview_url) {
-      return { ok: true, preview_url: current.preview_url, request_id: current.preview_request_id, branch: current.branch, state: "ready", preview_status: "ready" };
-    }
-    if (current.preview_status === "pending") {
-      return { ok: true, preview_url: "", request_id: current.preview_request_id, branch: current.branch, state: "pending", preview_status: "pending", msg: "Worker Preview 正在部署和验证，请稍后刷新" };
-    }
-    if (current.preview_status === "failed" && current.preview_deployment_id) {
-      const cleanup = await codeWorkbenchWorkerPreviewCleanup(env, user, repo, current);
-      if (!cleanup.ok) return { ok: false, preview_status: current.preview_status, preview_cleanup_pending: !!cleanup.pending, msg: cleanup.msg };
-    }
-    const requestId = "workbench-preview-" + Date.now().toString(36) + "-" + rand(8);
-    const previewName = codeWorkbenchPreviewName(current.branch, requestId);
-    const dispatched = await codeGhApi(env, "https://api.github.com/repos/tianxin1300/openmanus-gateway/actions/workflows/deploy-worker-preview.yml/dispatches", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ref: "main", inputs: { action: "create", repository: repo, ref: current.branch, request_id: requestId, preview_name: previewName } })
-    });
-    if (!dispatched.ok) return { ok: false, msg: "Worker Preview 工作流启动失败；请确认 deploy-worker-preview.yml 已在 main 启用：" + (dispatched.msg || ("HTTP " + dispatched.status)) };
-    current.preview_mode = "worker";
-    current.preview_supported = true;
-    current.preview_status = "pending";
-    current.preview_url = "";
-    current.preview_request_id = requestId;
-    current.preview_name = previewName;
-    current.preview_deployment_id = "";
-    current.preview_kv_namespace_id = "";
-    current.preview_cleanup_status = "";
-    current.preview_error = "";
-    current.preview_started_at = new Date().toISOString();
-    current.preview_started_by = String(user);
-    current.preview_events = [...(Array.isArray(current.preview_events) ? current.preview_events : []), { actor: String(user), request_id: requestId, at: current.preview_started_at, mode: "worker" }].slice(-100);
-    await env.KV.put(codeWorkbenchBranchKey(user, repo), JSON.stringify(current), { expirationTtl: 2592000 });
-    return { ok: true, preview_url: "", preview_status: "pending", request_id: requestId, branch: current.branch, state: "dispatched", msg: "Worker Preview 已启动，等待部署完成并通过 HTTP 200 验证" };
-  }
   if (current.preview_status === "ready" && current.preview_url) {
     return { ok: true, preview_url: current.preview_url, request_id: current.preview_request_id, branch: current.branch, state: "ready", preview_status: "ready" };
   }
@@ -1011,10 +866,6 @@ async function codeWorkbenchBranchDiscardUnlocked(env, user, body = {}) {
   const key = codeWorkbenchBranchKey(user, repo), record = await env.KV.get(key, "json").catch(() => null);
   if (!record || !record.branch) return { ok: true, discarded: true, already_absent: true };
   if (body.branch && body.branch !== record.branch) return { ok: false, msg: "临时分支已变化，拒绝删除其他分支" };
-  if (record.preview_mode === "worker" && record.preview_request_id) {
-    const previewCleanup = await codeWorkbenchWorkerPreviewCleanup(env, user, repo, record);
-    if (!previewCleanup.ok) return { ok: false, preview_cleanup_pending: !!previewCleanup.pending, msg: previewCleanup.msg || "Worker Preview 尚未清理，临时分支记录已保留" };
-  }
   const deleted = await codeDeleteBranch(env, repo, record.branch);
   if (!deleted.ok && deleted.status !== 404) return { ok: false, msg: "GitHub 删除临时分支失败，记录保留：" + deleted.msg };
   const auditId = "workbench-discard-" + record.branch;
@@ -1052,7 +903,7 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
   const key = codeWorkbenchBranchKey(user, repo), record = await env.KV.get(key, "json").catch(() => null);
   if (!record || !record.branch || (body.branch && body.branch !== record.branch)) return { ok: false, msg: "当前项目没有匹配的临时分支" };
   if (String(record.status || "").startsWith("discard_")) return { ok: false, discard_recovery: true, msg: "临时分支已删除，当前仅允许重试丢弃清理，不能保存或合并" };
-  if (["merged_cleanup_failed", "merged_history_failed", "merged_record_cleanup_failed", "merged_preview_cleanup_pending"].includes(record.status)) {
+  if (["merged_cleanup_failed", "merged_history_failed", "merged_record_cleanup_failed"].includes(record.status)) {
     if (record.status === "merged_history_failed" && record.history_row) {
       try {
         const savedHistory = await codeHistoryLoad(env, user);
@@ -1066,15 +917,6 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
       try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); }
       catch (recordError) {
         return { ok: false, merged: true, history_saved: true, branch_deleted: false, msg: "历史已补写，但清理状态保存失败；临时分支保留：" + (recordError && recordError.message || "KV 写入失败") };
-      }
-    }
-    if (record.preview_mode === "worker" && record.preview_request_id) {
-      const previewCleanup = await codeWorkbenchWorkerPreviewCleanup(env, user, repo, record);
-      if (!previewCleanup.ok) {
-        record.status = previewCleanup.pending ? "merged_preview_cleanup_pending" : "merged_cleanup_failed";
-        record.updated_at = new Date().toISOString();
-        await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }).catch(() => null);
-        return { ok: false, merged: true, branch_deleted: false, preview_cleanup_pending: !!previewCleanup.pending, msg: previewCleanup.msg || "Worker Preview 清理尚未完成，临时分支保留" };
       }
     }
     let cleanup;
@@ -1119,10 +961,6 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
     files = fileChanges.map((f) => f.filename);
   }
   if (!files.length) {
-    if (record.preview_mode === "worker" && record.preview_request_id) {
-      const previewCleanup = await codeWorkbenchWorkerPreviewCleanup(env, user, repo, record);
-      if (!previewCleanup.ok) return { ok: false, no_changes: true, branch_deleted: false, preview_cleanup_pending: !!previewCleanup.pending, msg: previewCleanup.msg || "Worker Preview 清理尚未完成，临时分支保留" };
-    }
     const deleted = await codeDeleteBranch(env, repo, record.branch);
     if (!deleted.ok && deleted.status !== 404) return { ok: false, msg: "没有文件改动，但临时分支删除失败：" + deleted.msg };
     await env.KV.delete(key);
@@ -1155,17 +993,6 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
     record.status = "merged_history_failed"; record.commit_sha = commitSha; record.history_row = row; record.updated_at = new Date().toISOString();
     try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); } catch (_) {}
     return { ok: false, merged: true, history_saved: false, branch_deleted: false, commit_sha: commitSha, files, msg: "GitHub 已合并，但历史记录保存失败；临时分支已保留，重试将先补写历史，不会再次合并：" + (historyError && historyError.message || "历史写入失败") };
-  }
-  if (record.preview_mode === "worker" && record.preview_request_id) {
-    const previewCleanup = await codeWorkbenchWorkerPreviewCleanup(env, user, repo, record);
-    if (!previewCleanup.ok) {
-      record.status = previewCleanup.pending ? "merged_preview_cleanup_pending" : "merged_cleanup_failed";
-      record.commit_sha = commitSha;
-      record.history_row = row;
-      record.updated_at = new Date().toISOString();
-      try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); } catch (_) {}
-      return { ok: false, merged: true, history_saved: true, branch_deleted: false, preview_cleanup_pending: !!previewCleanup.pending, commit_sha: commitSha, files, msg: previewCleanup.msg || "合并已完成，Worker Preview 清理尚未完成；临时分支保留" };
-    }
   }
   let deleted;
   try { deleted = await codeDeleteBranch(env, repo, record.branch); }
