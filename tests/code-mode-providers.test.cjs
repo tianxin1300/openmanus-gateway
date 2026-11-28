@@ -1622,3 +1622,104 @@ test('workbench history loads on tab open and exposes full both Runner state', (
   assert.ok(!script.includes('else renderVerifyResult({...j,state:j.state||x.state,fromHistory:true})'));
   assert.ok(script.includes('历史记录加载失败'));
 });
+
+test('Cron Issue Agent: codeLLM rotates existing providers with 60-second per-model timeout and bounded budget', () => {
+  const agent = fs.readFileSync(path.join(root, '.github/scripts/issue-agent.mjs'), 'utf8');
+  const workflow = fs.readFileSync(path.join(root, '.github/workflows/cron-issue-agent.yml'), 'utf8');
+  const docs = fs.readFileSync(path.join(root, '.github/CRON-ISSUE-AGENT.md'), 'utf8');
+  assert.ok(workerSource.includes('signal: T(Math.min(60000, left))'));
+  assert.ok(workerSource.includes('async function codeAssist(env, user, raw, history, budgetMs)'));
+  assert.ok(workerSource.includes('], budgetMs);'));
+  assert.ok(workerSource.includes('budgetMs: Math.min(420000, Math.max(15000, Number(b.code_budget_ms) || 110000))'));
+  assert.ok(agent.includes('code_budget_ms: 420000'));
+  assert.ok(agent.includes('signal: AbortSignal.timeout(8 * 60 * 1000)'));
+  assert.ok(agent.includes('全部限流超时，下一轮再试'));
+  assert.ok(agent.includes('await labels(issueNumber, ["bot:ready"], ["bot:running", "bot:failed"])'));
+  assert.ok(agent.includes('per_page=1'));
+  assert.ok(workflow.includes('timeout-minutes: 10'));
+  assert.ok(docs.includes('Schedule: every 30 minutes'));
+  assert.ok(docs.includes('per_page=1'));
+  assert.doesNotMatch(agent, /CODE_OR_MODELS|CODE_GROQ_MODELS|CODE_NVIDIA_MODELS/);
+});
+
+test('codeLLM: a model timeout is cut at 60 seconds and advances to the next existing provider', async () => {
+  const start = workerSource.indexOf('async function codeLLM(');
+  const end = workerSource.indexOf('// GitHub 读写：', start);
+  assert.ok(start >= 0 && end > start, 'codeLLM source must exist');
+  const source = workerSource.slice(start, end);
+  const calls = [], timeouts = [];
+  const sandbox = {
+    CODE_OR_MODELS: ['or-model-a', 'or-model-b'],
+    CODE_GROQ_MODELS: ['groq-model-a'],
+    CODE_NVIDIA_MODELS: ['nvidia-model-a'],
+    getKeys: value => String(value || '').split(',').map(x => x.trim()).filter(Boolean),
+    T: ms => { timeouts.push(ms); return { timeoutMs: ms }; },
+    Date: class FixedDate extends Date { static now() { return 1700000000000; } },
+    fetch: async (url, options) => {
+      const model = JSON.parse(options.body).model;
+      calls.push({url, model, timeoutMs: options.signal.timeoutMs});
+      if (calls.length === 1) throw Object.assign(new Error('request timed out'), {name: 'TimeoutError'});
+      if (calls.length === 2) return {ok: false, status: 429};
+      return {ok: true, json: async () => ({choices: [{message: {content: 'fallback provider worked'}, finish_reason: 'stop'}]})};
+    }
+  };
+  vm.runInNewContext(source + '\nglobalThis.testCodeLLM = codeLLM;', sandbox);
+  const result = await sandbox.testCodeLLM({
+    OPENROUTER_KEYS: 'or-key',
+    GROQ_KEYS: 'groq-key',
+    NVIDIA_KEYS: 'nvidia-key'
+  }, messages, 180000);
+  assert.equal(result.text, 'fallback provider worked');
+  assert.equal(result.from, 'Groq · groq-model-a');
+  assert.deepEqual(calls.map(x => x.model), ['or-model-a', 'or-model-b', 'groq-model-a']);
+  assert.deepEqual(timeouts, [60000, 60000, 60000]);
+  assert.ok(calls.every(x => x.timeoutMs === 60000));
+});
+
+test('codeLLM: exhausted model pool ends after one pass without retrying candidates', async () => {
+  const start = workerSource.indexOf('async function codeLLM(');
+  const end = workerSource.indexOf('// GitHub 读写：', start);
+  const source = workerSource.slice(start, end);
+  const calls = [];
+  const sandbox = {
+    CODE_OR_MODELS: ['or-model-a', 'or-model-b'],
+    CODE_GROQ_MODELS: ['groq-model-a'],
+    CODE_NVIDIA_MODELS: ['nvidia-model-a'],
+    getKeys: value => String(value || '').split(',').map(x => x.trim()).filter(Boolean),
+    T: ms => ({timeoutMs: ms}),
+    Date: class FixedDate extends Date { static now() { return 1700000000000; } },
+    fetch: async (url, options) => {
+      calls.push(JSON.parse(options.body).model);
+      return {ok: false, status: 429};
+    }
+  };
+  vm.runInNewContext(source + '\nglobalThis.testCodeLLM = codeLLM;', sandbox);
+  const result = await sandbox.testCodeLLM({
+    OPENROUTER_KEYS: 'or-key',
+    GROQ_KEYS: 'groq-key',
+    NVIDIA_KEYS: 'nvidia-key'
+  }, messages, 180000);
+  assert.equal(result.text, '');
+  assert.equal(calls.length, 4);
+  assert.deepEqual(calls, ['or-model-a', 'or-model-b', 'groq-model-a', 'nvidia-model-a']);
+  assert.equal(result.tried.length, 4);
+});
+
+test('Cron Issue Agent: exhausted model pool restores bot:ready and logs the retry message', async () => {
+  const agent = fs.readFileSync(path.join(root, '.github/scripts/issue-agent.mjs'), 'utf8');
+  const start = agent.indexOf('async function requeueForModelPool(');
+  const end = agent.indexOf('async function main()', start);
+  assert.ok(start >= 0 && end > start, 'requeue helper source must exist');
+  const calls = [], events = [];
+  const sandbox = {
+    labels: async (...args) => calls.push(args),
+    log: (event, details) => events.push({event, details})
+  };
+  vm.runInNewContext(agent.slice(start, end) + '\nglobalThis.testRequeue = requeueForModelPool;', sandbox);
+  await sandbox.testRequeue(314, 'model_pool_exhausted', {detail: 'all providers exhausted'});
+  assert.equal(JSON.stringify(calls), JSON.stringify([[314, ['bot:ready'], ['bot:running', 'bot:failed']]]));
+  assert.equal(events[0].event, 'model_pool_exhausted');
+  assert.equal(events[0].details.message, '全部限流超时，下一轮再试');
+  assert.equal(events[1].event, 'issue_requeued');
+  assert.equal(events[1].details.reason, 'model_pool_exhausted');
+});
