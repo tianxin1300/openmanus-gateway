@@ -128,7 +128,7 @@
 2. ACCEPTANCE.md 的 WORKBENCH-01～17 与 P2-PROJECT/READ/PEND/HISTORY/MEM、PR #102 RUN-ISOLATION 是不同维度；不得把全部编号当作同一测试总数重复相加。
 3. #69/#102 的 test-project 成功包含 Pages Preview 和 GitHub API E2E，但不包含 Worker Preview/生产 DO E2E。
 4. #102 修改 `worker.js` 的范围仅限运行记录索引、日志键和查询隔离；后续发现其他 Worker 缺口，必须另行确认授权，不能借此扩大修改范围。
-5. 真实模型调用、AI 自动修复后重验、任务 ID 贯穿十二状态仍是第二阶段关键未闭环项。
+5. 真实模型调用、AI 自动修复后重验、任务 ID 贯穿十二状态仍是第二阶段关键未闭环项。对当前 PR #102 前端 `frontend/index.html` 的静态核查：全文没有 `task_id` 或 `taskId` 字段；临时分支创建请求只提交 `repo`、`project`、`base`。因此当前 UI 尚未把任务 ID 作为贯穿分支、审核和运行记录的统一关联键，这不是推测，而是本次代码检索结果。
 
 ## 7. 下一步按单缺口闭环
 
