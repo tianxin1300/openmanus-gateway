@@ -957,6 +957,7 @@ async function codeWorkbenchBranchPreviewUnlocked(env, user, repo) {
     current.preview_deployment_id = "";
     current.preview_kv_namespace_id = "";
     current.preview_cleanup_status = "";
+    current.preview_error = "";
     current.preview_started_at = new Date().toISOString();
     current.preview_started_by = String(user);
     current.preview_events = [...(Array.isArray(current.preview_events) ? current.preview_events : []), { actor: String(user), request_id: requestId, at: current.preview_started_at, mode: "worker" }].slice(-100);
@@ -982,6 +983,7 @@ async function codeWorkbenchBranchPreviewUnlocked(env, user, repo) {
   current.preview_supported = true;
   current.preview_run_id = "";
   current.preview_run_url = "";
+  current.preview_error = "";
   current.preview_started_at = new Date().toISOString();
   current.preview_started_by = String(user);
   current.preview_events = [...(Array.isArray(current.preview_events) ? current.preview_events : []), { actor: String(user), request_id: requestId, at: current.preview_started_at, mode: "pages" }].slice(-100);
