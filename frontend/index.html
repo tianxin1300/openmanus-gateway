@@ -6227,7 +6227,7 @@ function updateWorkbenchBranchUI() {
   if (g("wb-save")) g("wb-save").disabled = !active || discardRecovery || mergeRecovery;
   if (g("wb-push")) g("wb-push").disabled = !active || discardRecovery;
   if (g("wb-discard")) g("wb-discard").disabled = !active || mergeRecovery;
-  if (g("wb-branch-preview")) { const supported = !!(activeBranchRecord && (activeBranchRecord.preview_supported || activeBranchRecord.preview_url)); const previewPending = !!(activeBranchRecord && activeBranchRecord.preview_status === "pending"); const cleanupPending = !!(activeBranchRecord && activeBranchRecord.preview_cleanup_status === "pending"); g("wb-branch-preview").disabled = !active || discardRecovery || !supported; g("wb-branch-preview").textContent = cleanupPending ? "预览清理中…" : (activeBranchRecord && activeBranchRecord.preview_mode === "worker" && previewPending ? "预览部署中…" : (activeBranchRecord && activeBranchRecord.preview_url && activeBranchRecord.preview_mode !== "worker" ? "打开预览" : (activeBranchRecord && activeBranchRecord.preview_status === "ready" ? "打开预览" : "临时预览"))); g("wb-branch-preview").title = discardRecovery ? "当前只允许重试丢弃审计清理" : (cleanupPending ? "独立 Worker 预览正在清理" : (previewPending ? "正在等待独立 Worker 预览部署与 HTTP 200 验证" : (supported ? "构建或打开当前项目临时分支的隔离预览" : "当前仓库尚未配置可验证的预览能力"))); }
+  if (g("wb-branch-preview")) { const supported = !!(activeBranchRecord && (activeBranchRecord.preview_supported || activeBranchRecord.preview_url)); const previewPending = !!(activeBranchRecord && activeBranchRecord.preview_status === "pending"); const cleanupPending = !!(activeBranchRecord && activeBranchRecord.preview_cleanup_status === "pending"); g("wb-branch-preview").disabled = !active || discardRecovery || !supported; g("wb-branch-preview").textContent = cleanupPending ? "预览清理中…" : (activeBranchRecord && previewPending && !activeBranchRecord.preview_url ? "预览部署中…" : (activeBranchRecord && activeBranchRecord.preview_url && activeBranchRecord.preview_mode !== "worker" ? "打开预览" : (activeBranchRecord && activeBranchRecord.preview_status === "ready" ? "打开预览" : "临时预览"))); g("wb-branch-preview").title = discardRecovery ? "当前只允许重试丢弃审计清理" : (cleanupPending ? "独立 Worker 预览正在清理" : (previewPending ? "正在等待独立 Worker 预览部署与 HTTP 200 验证" : (supported ? "构建或打开当前项目临时分支的隔离预览" : "当前仓库尚未配置可验证的预览能力"))); }
   if (g("wb-new-branch")) g("wb-new-branch").hidden = active;
 }
 async function ensureWorkbenchBranch() {
@@ -6427,26 +6427,26 @@ async function createWorkbenchBranch() {
     say("已为项目创建独立临时分支：" + REPO.branch);
   } catch (error) { say("创建临时分支失败：" + (error.message || String(error)), true); }
 }
-async function waitForWorkbenchWorkerPreview() {
-  for (let attempt = 0; attempt < 15; attempt++) {
-    await new Promise(resolve => setTimeout(resolve, 2000));
+async function waitForWorkbenchPreview() {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 3000));
     const repo = workbenchRepoFull();
     const current = await wbApi("/api/code/branch/current?repo=" + encodeURIComponent(repo), { cache: "no-store" });
     if (!current.active) throw new Error("临时分支已不存在，停止等待预览");
     activeBranchRecord = current;
     updateWorkbenchBranchUI();
     if (current.preview_status === "ready" && current.preview_url) {
-      say("独立 Worker 预览已通过 HTTP 200 验证。再次点击「打开预览」即可查看。");
+      say("独立预览已通过 HTTP 200 验证。再次点击「打开预览」即可查看。");
       return true;
     }
     if (current.preview_status === "failed") {
-      throw new Error(current.preview_error || "Worker Preview 部署或验证失败");
+      throw new Error(current.preview_error || "预览部署或验证失败");
     }
     if (current.preview_status === "deleted") {
-      throw new Error("Worker Preview 已被清理");
+      throw new Error("预览已被清理");
     }
   }
-  say("Worker 预览仍在部署；稍后再次点击预览按钮可刷新状态。");
+  say("预览仍在部署；稍后再次点击预览按钮可刷新状态。");
   return false;
 }
 async function previewWorkbenchBranch() {
@@ -6456,14 +6456,14 @@ async function previewWorkbenchBranch() {
   if (workerPreview && activeBranchRecord.preview_cleanup_status === "pending") {
     return say("Worker 预览正在清理，请稍后刷新后再操作。", true);
   }
-  if (workerPreview && activeBranchRecord.preview_status === "ready" && activeBranchRecord.preview_url) {
+  if (activeBranchRecord.preview_status === "ready" && activeBranchRecord.preview_url) {
     window.open(activeBranchRecord.preview_url, "_blank", "noopener");
-    return say("已打开通过验证的独立 Worker 预览。");
+    return say("已打开通过 HTTP 200 验证的独立预览。");
   }
-  if (workerPreview && activeBranchRecord.preview_status === "pending") {
-    say("Worker 预览部署中，正在等待真实部署结果…");
-    try { await waitForWorkbenchWorkerPreview(); }
-    catch (error) { say("Worker 预览状态检查失败：" + (error.message || String(error)), true); }
+  if (activeBranchRecord.preview_status === "pending") {
+    say("预览部署中，正在等待真实部署和验证结果…");
+    try { await waitForWorkbenchPreview(); }
+    catch (error) { say("预览状态检查失败：" + (error.message || String(error)), true); }
     return;
   }
   try {
@@ -6473,11 +6473,11 @@ async function previewWorkbenchBranch() {
       window.open(result.preview_url, "_blank", "noopener");
       return;
     }
-    if (workerPreview && result.preview_status === "pending") {
+    if (result.preview_status === "pending") {
       activeBranchRecord = { ...activeBranchRecord, preview_status: "pending", preview_request_id: result.request_id, preview_url: "" };
       updateWorkbenchBranchUI();
-      say("独立 Worker 预览已启动，等待部署完成与 HTTP 200 验证…");
-      await waitForWorkbenchWorkerPreview();
+      say("独立预览已启动，等待部署完成与 HTTP 200 验证…");
+      await waitForWorkbenchPreview();
       return;
     }
     say(result.msg || "预览部署已启动。");
