@@ -649,9 +649,12 @@ async function codeHistoryLoad(env, user, repo) {
   if (migrated.length) await env.KV.put(codeHistoryKey(user, repo), JSON.stringify(migrated), { expirationTtl: 31536000 }).catch(() => {});
   return migrated;
 }
-async function codeHistorySave(env, user, repo, rows) {
+async function codeHistorySave(env, user, repoOrRows, maybeRows) {
+  const rows = Array.isArray(repoOrRows) && maybeRows === undefined ? repoOrRows : maybeRows;
+  const firstRepoRow = Array.isArray(rows) ? rows.find((row) => row && row.repo) : null;
+  const repo = Array.isArray(repoOrRows) && maybeRows === undefined ? String(firstRepoRow && firstRepoRow.repo || "") : String(repoOrRows || "");
   if (!env.KV || !codeRepoOk(env, repo)) throw new Error("历史记录仓库不在 CODE_REPOS 授权名单内");
-  const scoped = (Array.isArray(rows) ? rows : []).filter((row) => row && String(row.repo || "").toLowerCase() === String(repo).trim().toLowerCase());
+  const scoped = (Array.isArray(rows) ? rows : []).filter((row) => row && String(row.repo || "").toLowerCase() === repo.trim().toLowerCase());
   await env.KV.put(codeHistoryKey(user, repo), JSON.stringify(scoped.slice(0, 20)), { expirationTtl: 31536000 });
 }
 const codeWorkbenchBranchKey = (user, repo) => "code:workbench-branch:" + String(user || "").slice(0, 120) + ":" + String(repo || "").slice(0, 120);
@@ -1000,7 +1003,7 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
   const history = await codeHistoryLoad(env, user, repo);
   const row = { id: "workbench-" + Date.now().toString(36), kind: "commit", actor: String(user), repo, project: record.project, baseBranch: record.baseBranch, commit_sha: commitSha, previous_sha: previousSha, at: new Date().toISOString(), summary: String(body.summary || "开发台推送"), files, preview_url: record.preview_url || "" };
   try {
-    await codeHistorySave(env, user, repo, [row, ...history]);
+    await codeHistorySave(env, user, [row, ...history]);
   } catch (historyError) {
     record.status = "merged_history_failed"; record.commit_sha = commitSha; record.history_row = row; record.updated_at = new Date().toISOString();
     try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); } catch (_) {}
