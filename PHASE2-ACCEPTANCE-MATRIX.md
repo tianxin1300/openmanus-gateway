@@ -125,7 +125,7 @@
 
 ## 6. 已发现的文档与验收风险
 
-1. PR #69 描述中将项目列表接口写为 `GET /api/code/repos`，而当前前端代码与 ACCEPTANCE.md 的 P2-PROJECT 部分使用 `GET /api/code/projects`。以当前分支代码和专属测试为准，后续应统一 PR 描述/验收文档，避免接口契约文档漂移。
+1. PR #69 原描述曾将项目列表接口写为 `GET /api/code/repos`，与当前前端代码及 ACCEPTANCE.md 的 `GET /api/code/projects` 不一致；本轮已将 PR #69 描述修正为 `GET /api/code/projects`。这是文档契约漂移，已修正，不是当前代码路由缺陷。
 2. ACCEPTANCE.md 的 WORKBENCH-01～17 与 P2-PROJECT/READ/PEND/HISTORY/MEM、PR #102 RUN-ISOLATION 是不同维度；不得把全部编号当作同一测试总数重复相加。
 3. #69/#102 的 test-project 成功包含 Pages Preview 和 GitHub API E2E，但不包含 Worker Preview/生产 DO E2E。另：Cloudflare Workers Builds 外部检查在 #69、#102 和本矩阵 head 上均显示 failure；仓库内 `npm run build` 成功并不能覆盖或解释该外部失败。#69 PR 描述记录该外部失败在其 base commit 上也存在。
 4. #102 修改 `worker.js` 的范围仅限运行记录索引、日志键和查询隔离；后续发现其他 Worker 缺口，必须另行确认授权，不能借此扩大修改范围。
