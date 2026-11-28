@@ -9484,7 +9484,7 @@ async function handle(request, env, ctx) {
       const user = await userFromReq(request, env, url, "");
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
       const g = await codeGetFile(env, String(url.searchParams.get("repo") || ""), String(url.searchParams.get("path") || ""), String(url.searchParams.get("ref") || ""));
-      return json(g.ok ? { ok: true, exists: !!g.exists, size: g.size || 0, content: g.text || "" } : g, g.ok ? 200 : 400);
+      return json(g.ok ? { ok: true, exists: !!g.exists, size: g.size || 0, sha: g.sha || "", content: g.text || "" } : g, g.ok ? 200 : 400);
     }
     if (path === "/api/code/branch/current" && request.method === "GET") {
       const user = await userFromReq(request, env, url, "");
