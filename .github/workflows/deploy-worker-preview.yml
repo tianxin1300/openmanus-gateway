@@ -267,7 +267,7 @@ jobs:
           set -euo pipefail
           cleanup_failed=0
           cat > wrangler.cleanup.toml <<'EOF'
-          name = "juyiibanlvzhinengai"
+          name = "openmanus-gateway"
           main = "worker.js"
           compatibility_date = "2024-11-01"
           EOF
@@ -325,7 +325,7 @@ jobs:
         shell: bash
         run: |
           cat > wrangler.delete.toml <<'EOF'
-          name = "juyiibanlvzhinengai"
+          name = "openmanus-gateway"
           main = "worker.js"
           compatibility_date = "2024-11-01"
           EOF
@@ -356,7 +356,7 @@ jobs:
               repository: process.env.TARGET_REPOSITORY,
               target_ref: process.env.TARGET_REF,
               preview_name: process.env.PREVIEW_NAME,
-              worker_name: "juyiibanlvzhinengai",
+              worker_name: "openmanus-gateway",
               kv_namespace_id: process.env.KV_NAMESPACE_ID
             };
             if (deployment.environment !== "workbench-preview" ||
