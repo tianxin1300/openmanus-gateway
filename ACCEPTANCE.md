@@ -1,6 +1,6 @@
 # OpenManus Gateway — 代码自动化验收规程
 
-> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前关键测试源文件静态声明数：`code-mode-providers.test.cjs` 87、`workbench-acceptance.test.cjs` 49、`workbench-project-registry.test.cjs` 9、`workbench-project-read.test.cjs` 4、`code-pending-isolation.test.cjs` 7、`code-history-isolation.test.cjs` 5、`code-memory-isolation.test.cjs` 7。静态声明数不替代运行统计；完整 Node TAP 以 Actions 输出为准。最近一次完整 PR 验收 Run #46158155695（SHA `0187fa4`）为 258 项通过、0 项失败、0 项跳过。Playwright UI 文件有 10 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
+> 本文件是代码工作台验收索引，区分 Node.js 自动化测试、Playwright UI E2E 和尚未具备专属自动化测试的待验项。当前关键测试源文件静态声明数：`code-mode-providers.test.cjs` 87、`workbench-acceptance.test.cjs` 49、`workbench-project-registry.test.cjs` 9、`workbench-project-read.test.cjs` 4、`code-pending-isolation.test.cjs` 7、`code-history-isolation.test.cjs` 5、`code-memory-isolation.test.cjs` 7。静态声明数不替代运行统计；完整 Node TAP 以 Actions 输出为准。最近一次完整 PR 验收 Run #46158528428（SHA `47a6cf4`）为 258 项通过、0 项失败、0 项跳过。Playwright UI 文件有 10 个场景，分别在 Chromium/iPhone 14 与 WebKit/iPhone 14 项目执行；不计入 Node TAP 项数。
 
 ## 1. 唯一执行入口与判定规则
 
@@ -403,7 +403,7 @@ npm test
 | 合并 CAS 与 Git ref 边界 | `ACCEPTANCE MERGE-CAS-01`～`MERGE-CAS-07`、`ACCEPTANCE GIT-REF-WRITE-01`、`ACCEPTANCE WORKBENCH-CAS-CONFLICT-01` |
 | 多项目切换 | `ACCEPTANCE WORKBENCH-PROJECT-01`、`ACCEPTANCE WORKBENCH-PROJECT-02` |
 
-**计数说明：** 上述分组对应文件内 49 个静态 `test(...)` 声明。实际运行数以 `npm test` 的 TAP 汇总为准；最近一次完整 PR 验收 Run #46158155695 输出 258 项通过、0 项失败、0 项跳过。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
+**计数说明：** 上述分组对应文件内 49 个静态 `test(...)` 声明。实际运行数以 `npm test` 的 TAP 汇总为准；最近一次完整 PR 验收 Run #46158528428 输出 258 项通过、0 项失败、0 项跳过。编号范围表达的是测试名称前缀，不代表每个数字只对应一个测试。特别是 WORKBENCH-15 的 CAS 验收由 7 个用例覆盖，另外还有 Git ref 写入端点和 422 冲突映射两个补充边界用例。
 
 ### 14.2 Playwright UI E2E（10 个场景 × 2 个浏览器项目）
 
