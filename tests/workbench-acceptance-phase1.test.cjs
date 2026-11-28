@@ -25,7 +25,7 @@ function evaluate(source, expose, globals = {}) {
   return sandbox.__out;
 }
 const validators = evaluate(
-  sliceSource('const codeRepoOk', 'const codeVerifyKey') +
+  sliceSource('const codeRepoList', 'const codeVerifyKey') +
   sliceSource('function codePathProtected', '// 口令：消息里写'),
   'codeRepoOk,codePathOk,codeVerifyRef,codePathProtected,codePushGuard',
   { getKeys: value => String(value).split(',').map(x => x.trim()).filter(Boolean) }
