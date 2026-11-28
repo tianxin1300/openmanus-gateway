@@ -216,7 +216,7 @@ test('ACCEPTANCE RETRY-ROLLBACK-01: retry reuses failed run and rollback restore
       throw new Error('unexpected rollback API ' + url);
     }
   });
-  const rolled = await rollback({}, 'owner', { id: 'history-1' });
+  const rolled = await rollback({}, 'owner', { repo: 'tianxin1300/openmanus-gateway', id: 'history-1' });
   assert.equal(rolled.ok, true);
   assert.equal(createdCommit.tree, 'restored-tree');
   assert.equal(createdCommit.parents[0], 'current-commit');
@@ -350,12 +350,13 @@ test('ACCEPTANCE WORKBENCH-ROLLBACK-LOCK-01: history rollback acquires the repos
   const calls = [];
   const rollback = runFunction(sourceOf('async function codeRollbackUnlocked(', 'const CODE_DEPLOY_WORKFLOW'), 'codeRollback', {
     codeHistoryLoad: async () => [{ id: 'history-locked', repo: 'owner/repo', previous_sha: 'previous' }],
+    codeRepoOk: () => true,
     codeWorkbenchWithLock: async (_env, user, repo, operation, run) => {
       calls.push({ user, repo, operation });
       return { ok: true, locked: true };
     }
   });
-  const result = await rollback({}, 'owner', { id: 'history-locked' });
+  const result = await rollback({}, 'owner', { repo: 'owner/repo', id: 'history-locked' });
   assert.equal(result.ok, true);
   assert.equal(result.locked, true);
   assert.deepEqual(calls, [{ user: 'owner', repo: 'owner/repo', operation: 'rollback' }]);
