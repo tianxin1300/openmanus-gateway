@@ -343,6 +343,58 @@ test('ACCEPTANCE WORKBENCH-WORKER-PREVIEW-04: cleanup dispatch retains branch me
 });
 
 
+
+test('ACCEPTANCE WORKBENCH-WORKER-PREVIEW-05: discard retains the temporary branch until preview cleanup completes', async () => {
+  const repo = 'tianxin1300/jiuyibanlv';
+  const record = { repo, project: 'jiuyibanlv', branch: 'code/discard-preview', preview_mode: 'worker', preview_request_id: 'request-12345678' };
+  let branchDeletes = 0;
+  const discard = runFunction(sourceOf('async function codeWorkbenchBranchDiscardUnlocked(', 'async function codeWorkbenchBranchDiscard('), 'codeWorkbenchBranchDiscardUnlocked', {
+    codeRepoOk: () => true,
+    codePushGuard: () => '',
+    codeWorkbenchBranchKey: () => 'discard-key',
+    codeWorkbenchWorkerPreviewCleanup: async () => ({ ok: false, pending: true, msg: 'cleanup pending' }),
+    codeDeleteBranch: async () => { branchDeletes++; return { ok: true }; },
+    codeHistoryLoad: async () => [],
+    codeHistorySave: async () => {}
+  });
+  const env = { KV: {
+    get: async () => record,
+    put: async (_key, value) => Object.assign(record, JSON.parse(value)),
+    delete: async () => { throw new Error('must not delete record while preview cleanup is pending'); }
+  } };
+  const result = await discard(env, 'owner', { repo });
+  assert.equal(result.ok, false);
+  assert.equal(result.preview_cleanup_pending, true);
+  assert.equal(branchDeletes, 0);
+  assert.equal(record.branch, 'code/discard-preview');
+});
+
+test('ACCEPTANCE WORKBENCH-WORKER-PREVIEW-06: merge is not finalized until preview cleanup is confirmed', async () => {
+  const outcomes = [
+    { ok: false, pending: true, msg: 'preview cleanup pending' },
+    { ok: true, done: true }
+  ];
+  const h = makeMergeHarness({
+    globals: { codeWorkbenchWorkerPreviewCleanup: async () => outcomes.shift() }
+  });
+  h.state.record.preview_mode = 'worker';
+  h.state.record.preview_request_id = 'request-12345678';
+  const first = await h.merge(h.env, 'owner', { repo: 'owner/repo' });
+  assert.equal(first.ok, false);
+  assert.equal(first.merged, true);
+  assert.equal(first.preview_cleanup_pending, true);
+  assert.equal(first.branch_deleted, false);
+  assert.equal(h.state.record.status, 'merged_preview_cleanup_pending');
+  assert.equal(h.state.deleteCalls, 0);
+  const second = await h.merge(h.env, 'owner', { repo: 'owner/repo' });
+  assert.equal(second.ok, true);
+  assert.equal(second.cleanup_retry, true);
+  assert.equal(second.branch_deleted, true);
+  assert.equal(h.state.deleteCalls, 1);
+  assert.equal(h.state.kvDeleteCalls, 1);
+});
+
+
 test('ACCEPTANCE WORKBENCH-SAVE-CAS-01: editor saves share the repository lock and reject stale file SHA', async () => {
   let currentSha = 'a'.repeat(40), writes = 0;
   const lockOperations = [];
