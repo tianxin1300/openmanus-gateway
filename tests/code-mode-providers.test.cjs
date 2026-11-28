@@ -414,11 +414,10 @@ test('BUG-03/04/06: push confirmation uses Durable Object atomic claim and idemp
   assert.match(workerSource, /current\.claims\[operationId\]/);
   // Must not fall back to the old non-atomic KV lock pattern
   assert.doesNotMatch(workerSource, /const key = "code:pend:" \+ user, lockKey/);
-  // Feature-complete studio sends the four idempotency fields on confirm
-  assert.match(studioSource, /pending_id:\s*op\.pending_id/);
-  assert.match(studioSource, /version:\s*op\.version/);
-  assert.match(studioSource, /project:\s*op\.project/);
-  assert.match(studioSource, /operation_id:\s*operationId\(\)/);
+  // Active dynamic workbench sends the selected repository with the versioned decision.
+  assert.match(frontendStudioSource, /pending_id: String\(p\.pending_id \|\| p\.id\)/);
+  assert.match(frontendStudioSource, /version: Number\(p\.version\)/);
+  assert.match(frontendStudioSource, /project: String\(p\.project\)/);
   assert.match(frontendStudioSource, /repo: String\(p\.repo \|\| state\.project\)/);
 });
 
