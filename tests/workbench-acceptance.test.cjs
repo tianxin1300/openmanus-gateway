@@ -591,7 +591,7 @@ test('ACCEPTANCE CLEANUP-01: failed deletion retains recoverable state; successf
     codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
     codeDeleteBranch: async () => { deletes++; return deleteFails ? { ok: false, status: 500, msg: 'simulated failure' } : { ok: true }; },
     codeHistoryLoad: async () => history,
-    codeHistorySave: async (_env, _user, rows) => { history.splice(0, history.length, ...rows); }
+    codeHistorySave: async (_env, _user, _repo, rows) => { history.splice(0, history.length, ...rows); }
   });
   const env = { KV: kv };
   const failed = await discard(env, 'owner', { repo, branch: record.branch });
@@ -632,7 +632,7 @@ test('ACCEPTANCE DISCARD-AUDIT-RECOVERY-01: deleted branches retain a durable au
     codeRepoOk: () => true, codePushGuard: () => '', codeWorkbenchBranchKey: () => 'key',
     codeDeleteBranch: async () => { deletes++; return deletes === 1 ? { ok: true } : { ok: false, status: 404 }; },
     codeHistoryLoad: async () => history,
-    codeHistorySave: async (_env, _user, rows) => {
+    codeHistorySave: async (_env, _user, _repo, rows) => {
       if (auditFails) { auditFails = false; throw new Error('simulated history outage'); }
       history.splice(0, history.length, ...rows);
     }
