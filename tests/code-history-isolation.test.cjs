@@ -78,3 +78,11 @@ test('P2-HISTORY-005: history and rollback frontend requests carry the selected 
   assert.match(worker, /url\.searchParams\.get\("repo"\)/);
   assert.match(worker, /codeHistoryLoad\(env, user, repo\)/);
 });
+
+test('P2-HISTORY-006: legacy three-argument history writer infers repo from the scoped record', async () => {
+  const api = harness(), kv = kvHarness();
+  const env = { KV: kv, CODE_REPOS: 'owner/alpha,owner/beta' };
+  await api.codeHistorySave(env, 'user-1', [{ id: 'a1', repo: 'owner/alpha', commit_sha: 'a'.repeat(40) }]);
+  assert.deepEqual(kv.data.get(api.codeHistoryKey('user-1', 'owner/alpha')).map(x => x.id), ['a1']);
+  assert.equal(kv.data.has(api.codeHistoryKey('user-1', 'owner/beta')), false);
+});
