@@ -9700,6 +9700,7 @@ async function handle(request, env, ctx) {
 
     // ---- v108：强制清空（改动预览面板右上角按钮）——清 KV/DO 待处理记录 + 删临时分支，一步到位 ----
     if (path === "/api/code/force-clear" && request.method === "POST") {
+      const b = await request.json().catch(() => ({}));
       const user = await userFromReq(request, env, url, "");
       if (!user) return json({ ok: false, msg: "未登录，token失效" }, 401);
       const r = await codePendingDiscard(env, user, String(b.repo || ""));
