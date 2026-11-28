@@ -47,7 +47,7 @@ function claimClassHarness() {
   assert.ok(start >= 0 && end > start, 'CodeClaimDO definition exists');
   const source = worker.slice(start, end).replace('export class CodeClaimDO', 'class CodeClaimDO');
   const sandbox = {
-    Response, URL, Date, JSON, String, Number, Array, Object, Math, Promise, Set, Map,
+    Request, Response, URL, Date, JSON, String, Number, Array, Object, Math, Promise, Set, Map,
     CODE_PENDING_TTL_MS: 600000,
     codePendingView: p => p || null,
     codeDeleteBranch: async () => ({ ok: true })
@@ -86,7 +86,7 @@ test('P2-PEND-002: two projects keep independent pending records for the same us
           const storage = createStorage();
           objects.set(id, { instance: new DO({ storage }, env), storage });
         }
-        return { fetch: request => objects.get(id).instance.fetch(request) };
+        return { fetch: (url, init) => objects.get(id).instance.fetch(new Request(url, init)) };
       }
     }
   };
@@ -113,15 +113,15 @@ test('P2-PEND-003: a repository-scoped claim cannot operate on another repositor
   const DO = claimClassHarness();
   const storage = createStorage();
   const instance = new DO({ storage }, {});
-  const created = await instance.fetch('https://code-claims/create', {
+  const created = await instance.fetch(new Request('https://code-claims/create', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ repo: 'owner/alpha', pending: { id: 'p1', project: 'alpha', repo: 'owner/alpha', branch: 'code/test', edits: [{ path: 'a.js' }] } })
-  });
+  }));
   assert.equal((await created.json()).ok, true);
-  const response = await instance.fetch('https://code-claims/claim', {
+  const response = await instance.fetch(new Request('https://code-claims/claim', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ repo: 'owner/beta', pending_id: 'p1', version: 1, project: 'alpha', operation_id: 'op1', yes: true })
-  });
+  }));
   assert.equal(response.status, 409);
   assert.equal((await response.json()).ok, false);
   assert.notEqual(api.codeClaimStub({ CODE_REPOS: 'owner/alpha,owner/beta', CODE_CLAIMS: { idFromName: x => x, get: x => ({ id: x }) } }, 'user-1', 'owner/alpha').id,
