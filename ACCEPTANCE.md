@@ -616,7 +616,7 @@ npm test
 **本阶段安全边界：** 独立分支 `code/workbench-acceptance-phase1-20261128`；只允许改 `ACCEPTANCE.md` 与 `tests/workbench-acceptance-phase1.test.cjs`。PR #32、PR #60 不修改；不合并、不部署生产。
 
 
-## 18. 第二阶段：动态项目注册表与 CODE_REPOS 唯一准入（P2-PROJECT-001～P2-PROJECT-009）
+## 18. 第二阶段：动态项目注册表与 CODE_REPOS 唯一准入（P2-PROJECT-001～P2-PROJECT-011）
 
 **目标：** 工作台与代码模式项目选择器只能展示 Worker 环境变量 `CODE_REPOS` 明确授权的仓库；未授权仓库不得读取文件、创建分支或执行任何写操作。
 
@@ -630,5 +630,11 @@ npm test
 **测试：** `tests/workbench-project-registry.test.cjs` 的 P2-PROJECT-001～009 覆盖空白名单拒绝、格式过滤、大小写去重、动态项目列表、未授权项目拒绝、登录保护、前端动态加载、文件读取路径与无默认授权。既有项目切换测试已更新为使用完整 `owner/repo` 标识。
 
 **测试类型边界：** 这些测试验证真实源码函数与前端请求契约，但项目列表使用隔离环境变量，不读取线上 Worker Secret；不代表已核验生产环境实际配置了哪些仓库，也不代表对任意仓库执行过真实 GitHub 写操作。
+
+**新增文件读取授权行为测试：**
+- `P2-PROJECT-010`：直接执行 Worker 的 `codeGetFile`，验证 `CODE_REPOS` 为空或目标仓库未列入时，在发起任何 GitHub 请求前拒绝读取。
+- `P2-PROJECT-011`：验证白名单内文件读取使用指定 ref，并返回 GitHub 文件 SHA 与内容；不以仅有前端静态调用作为授权通过依据。
+
+**通过条件：** P2-PROJECT-001～011 全部执行并通过。新增两项仍使用隔离的 GitHub fetch 模拟，不代表线上 Worker Secret 或真实 GitHub 访问已验收。
 
 **预览边界：** 本次仅完成动态授权仓库列表和读写准入收口。独立 Pages 预览仍需逐仓库确认部署工作流、Cloudflare Pages 项目和预览 URL 契约；不得因仓库进入 `CODE_REPOS` 就假定它已具备可部署预览。
