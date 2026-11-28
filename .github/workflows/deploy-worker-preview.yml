@@ -1,0 +1,473 @@
+name: deploy-worker-preview
+run-name: Worker Preview ${{ inputs.action }} · ${{ inputs.repository }} · ${{ inputs.preview_name }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Create or delete an isolated Worker Preview
+        required: true
+        type: choice
+        options:
+          - create
+          - delete
+      repository:
+        description: CODE_REPOS-authorized project repository
+        required: true
+        type: string
+      ref:
+        description: Project branch or commit to preview
+        required: true
+        type: string
+      request_id:
+        description: Workbench preview request ID
+        required: true
+        type: string
+      preview_name:
+        description: Unique Cloudflare Worker Preview name
+        required: true
+        type: string
+      deployment_id:
+        description: Existing GitHub deployment ID (delete only)
+        required: false
+        type: string
+      kv_namespace_id:
+        description: Isolated preview KV namespace ID (delete only)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: workbench-worker-preview-${{ inputs.repository }}-${{ inputs.preview_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate preview request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Validate inputs and supported preview target
+        env:
+          ACTION_NAME: ${{ inputs.action }}
+          TARGET_REPOSITORY: ${{ inputs.repository }}
+          TARGET_REF: ${{ inputs.ref }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          PREVIEW_NAME: ${{ inputs.preview_name }}
+          DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+          KV_NAMESPACE_ID: ${{ inputs.kv_namespace_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$TARGET_REPOSITORY" = "tianxin1300/jiuyibanlv" || { echo "No Worker Preview configuration exists for this repository." >&2; exit 1; }
+          python3 - <<'PY'
+          import os, re
+          action = os.environ["ACTION_NAME"]
+          ref = os.environ["TARGET_REF"]
+          request_id = os.environ["REQUEST_ID"]
+          preview = os.environ["PREVIEW_NAME"]
+          deployment_id = os.environ["DEPLOYMENT_ID"]
+          kv_id = os.environ["KV_NAMESPACE_ID"]
+          if action not in ("create", "delete"):
+              raise SystemExit("Invalid action")
+          if not ref.startswith("code/") or not 1 <= len(ref) <= 120 or ref != ref.strip() or not re.fullmatch(r"[A-Za-z0-9._/-]+", ref) or any(x in ("", ".", "..") for x in ref.split("/")):
+              raise SystemExit("Invalid target ref")
+          if not re.fullmatch(r"[A-Za-z0-9._:-]{8,160}", request_id):
+              raise SystemExit("Invalid request ID")
+          if not re.fullmatch(r"wb-[a-z0-9][a-z0-9-]{1,48}", preview):
+              raise SystemExit("Invalid preview name")
+          if action == "delete":
+              if not re.fullmatch(r"[0-9]+", deployment_id):
+                  raise SystemExit("Delete requires a numeric deployment ID")
+              if not re.fullmatch(r"[0-9a-f]{32}", kv_id):
+                  raise SystemExit("Delete requires the isolated KV namespace ID")
+          PY
+
+  create:
+    name: Create isolated Worker Preview
+    if: inputs.action == 'create'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout authorized project branch
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.ref }}
+          path: project
+          persist-credentials: false
+
+      - name: Create per-preview isolated KV namespace
+        id: kv
+        working-directory: project
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PREVIEW_NAME: ${{ inputs.preview_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          (async () => {
+            const token = process.env.CLOUDFLARE_API_TOKEN || '';
+            const account = process.env.CLOUDFLARE_ACCOUNT_ID || '';
+            const preview = process.env.PREVIEW_NAME || '';
+            if (!token || !account || !preview) throw new Error('Cloudflare credentials or preview name are missing');
+            const title = `wbp-${preview}`;
+            const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/storage/kv/namespaces`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ title })
+            });
+            const body = await response.json().catch(() => ({}));
+            const id = body?.result?.id;
+            if (!response.ok || body.success !== true || !id) {
+              const errors = Array.isArray(body.errors) ? body.errors.map(x => x.message || x.code).join('; ') : '';
+              throw new Error(`Preview KV namespace creation failed (HTTP ${response.status})${errors ? `: ${errors}` : ''}`);
+            }
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `namespace_id=${id}\n`);
+            fs.appendFileSync(process.env.GITHUB_ENV, `PREVIEW_KV_NAMESPACE_ID=${id}\n`);
+            fs.appendFileSync(process.env.GITHUB_ENV, `PREVIEW_NAME=${preview}\n`);
+            console.log('Created a new KV namespace dedicated to this project branch preview.');
+          })().catch(error => { console.error(error.message); process.exitCode = 1; });
+          NODE
+
+      - name: Generate preview-only Wrangler configuration
+        working-directory: project
+        env:
+          PREVIEW_KV_NAMESPACE_ID: ${{ steps.kv.outputs.namespace_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PREVIEW_KV_NAMESPACE_ID"
+          cat > wrangler.preview.toml <<EOF
+          name = "juyiibanlvzhinengai"
+          main = "worker.js"
+          compatibility_date = "2024-11-01"
+          workers_dev = true
+
+          [[migrations]]
+          tag = "v1"
+          new_sqlite_classes = ["CareTask"]
+
+          [assets]
+          directory = "./frontend"
+          run_worker_first = ["/api/*"]
+
+          [previews.vars]
+          APP_ENV = "preview"
+
+          [[previews.kv_namespaces]]
+          binding = "KV"
+          id = "$PREVIEW_KV_NAMESPACE_ID"
+
+          [[previews.durable_objects.bindings]]
+          name = "CARE_TASKS"
+          class_name = "CareTask"
+          EOF
+
+      - name: Create GitHub deployment record
+        id: deployment
+        uses: actions/github-script@v7
+        env:
+          TARGET_REPOSITORY: ${{ inputs.repository }}
+          TARGET_REF: ${{ inputs.ref }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          PREVIEW_NAME: ${{ inputs.preview_name }}
+          PREVIEW_KV_NAMESPACE_ID: ${{ steps.kv.outputs.namespace_id }}
+        with:
+          script: |
+            const [owner, repo] = context.repo.owner ? [context.repo.owner, context.repo.repo] : ["", ""];
+            const payload = {
+              request_id: process.env.REQUEST_ID,
+              repository: process.env.TARGET_REPOSITORY,
+              target_ref: process.env.TARGET_REF,
+              preview_name: process.env.PREVIEW_NAME,
+              worker_name: "juyiibanlvzhinengai",
+              kv_namespace_id: process.env.PREVIEW_KV_NAMESPACE_ID
+            };
+            const created = await github.rest.repos.createDeployment({
+              owner, repo, ref: "main", task: "workbench-worker-preview",
+              auto_merge: false, required_contexts: [], environment: "workbench-preview",
+              transient_environment: true, production_environment: false,
+              description: "Isolated Worker Preview for " + payload.repository + "@" + payload.target_ref,
+              payload
+            });
+            await github.rest.repos.createDeploymentStatus({
+              owner, repo, deployment_id: created.data.id, state: "in_progress",
+              description: "Creating isolated Worker Preview"
+            });
+            core.setOutput("deployment_id", String(created.data.id));
+            core.setOutput("payload", JSON.stringify(payload));
+
+      - name: Create Cloudflare Worker Preview (never deploy production)
+        id: preview
+        working-directory: project
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PREVIEW_NAME: ${{ inputs.preview_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.135.0 preview --config wrangler.preview.toml --name "$PREVIEW_NAME" --ignore-base-config --json > /tmp/worker-preview.json 2>&1
+          cat /tmp/worker-preview.json
+          PREVIEW_URL="$(node -e 'const fs=require("node:fs");const s=fs.readFileSync("/tmp/worker-preview.json","utf8");const start=s.indexOf("{\n  \"preview\":");if(start<0)throw new Error("Wrangler JSON result was not found");const d=JSON.parse(s.slice(start));const u=d.preview?.urls?.[0];if(!u)throw new Error("Wrangler did not return preview.urls[0]");process.stdout.write(u);')"
+          case "$PREVIEW_URL" in https://*) ;; *) echo "Preview URL is not HTTPS" >&2; exit 1 ;; esac
+          echo "PREVIEW_URL=$PREVIEW_URL" >> "$GITHUB_ENV"
+          echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Worker Preview HTTP 200
+        shell: bash
+        run: |
+          set -euo pipefail
+          HTTP_CODE="$(curl -sS -o /tmp/preview-index.html -w "%{http_code}" "$PREVIEW_URL/")"
+          echo "Worker Preview HTTP status: $HTTP_CODE"
+          test "$HTTP_CODE" = "200"
+          test -s /tmp/preview-index.html
+
+      - name: Mark GitHub deployment ready
+        uses: actions/github-script@v7
+        env:
+          DEPLOYMENT_ID: ${{ steps.deployment.outputs.deployment_id }}
+          PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner, repo: context.repo.repo,
+              deployment_id: Number(process.env.DEPLOYMENT_ID), state: "success",
+              environment_url: process.env.PREVIEW_URL,
+              log_url: context.serverUrl + "/" + context.repo.owner + "/" + context.repo.repo + "/actions/runs/" + context.runId,
+              description: "Isolated Worker Preview verified with HTTP 200"
+            });
+
+      - name: Cleanup preview resources after failed creation
+        if: failure()
+        working-directory: project
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PREVIEW_NAME: ${{ inputs.preview_name }}
+          PREVIEW_KV_NAMESPACE_ID: ${{ steps.kv.outputs.namespace_id }}
+          DEPLOYMENT_ID: ${{ steps.deployment.outputs.deployment_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup_failed=0
+          cat > wrangler.cleanup.toml <<'EOF'
+          name = "juyiibanlvzhinengai"
+          main = "worker.js"
+          compatibility_date = "2024-11-01"
+          EOF
+          if [ -n "${PREVIEW_NAME:-}" ]; then
+            if ! npx --yes wrangler@4.135.0 preview delete --config wrangler.cleanup.toml --name "$PREVIEW_NAME" --skip-confirmation > /tmp/preview-delete.log 2>&1; then
+              cat /tmp/preview-delete.log
+              if ! grep -qiE 'not found|does not exist|404|10025' /tmp/preview-delete.log; then cleanup_failed=1; fi
+            fi
+          fi
+          if [ -n "${PREVIEW_KV_NAMESPACE_ID:-}" ] && [ "$cleanup_failed" -eq 0 ]; then
+            node -e 'const token=process.env.CLOUDFLARE_API_TOKEN||"";const account=process.env.CLOUDFLARE_ACCOUNT_ID||"";const id=process.env.PREVIEW_KV_NAMESPACE_ID||"";(async()=>{if(!token||!account||!id)throw new Error("Missing credentials or namespace ID for cleanup");const r=await fetch("https://api.cloudflare.com/client/v4/accounts/"+account+"/storage/kv/namespaces/"+id,{method:"DELETE",headers:{Authorization:"Bearer "+token}});const d=await r.json().catch(()=>({}));if(!r.ok&&r.status!==404)throw new Error("Preview KV cleanup failed (HTTP "+r.status+")");if(r.ok&&d.success!==true)throw new Error("Preview KV cleanup response was not successful");console.log("Deleted the failed preview KV namespace.");})().catch(e=>{console.error(e.message);process.exitCode=1;});'
+          elif [ "$cleanup_failed" -ne 0 ]; then
+            echo "Preview deletion failed; KV namespace retained for safe recovery." >&2
+          fi
+          if [ -n "${DEPLOYMENT_ID:-}" ]; then
+            echo "Preview deployment failed; cleanup_failed=$cleanup_failed" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$cleanup_failed"
+
+      - name: Mark failed deployment
+        if: failure() && steps.deployment.outputs.deployment_id != ''
+        uses: actions/github-script@v7
+        env:
+          DEPLOYMENT_ID: ${{ steps.deployment.outputs.deployment_id }}
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner, repo: context.repo.repo,
+              deployment_id: Number(process.env.DEPLOYMENT_ID), state: "failure",
+              description: "Worker Preview creation or verification failed; inspect workflow logs"
+            });
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Isolated Worker Preview"
+            echo
+            echo "- Repository: ${{ inputs.repository }}"
+            echo "- Ref: ${{ inputs.ref }}"
+            echo "- Preview: ${{ inputs.preview_name }}"
+            echo "- URL: ${PREVIEW_URL:-not-verified}"
+            echo "- Production KV/DO: not used"
+            echo "- Result: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  delete:
+    name: Delete isolated Worker Preview
+    if: inputs.action == 'delete'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Generate minimal preview deletion config
+        shell: bash
+        run: |
+          cat > wrangler.delete.toml <<'EOF'
+          name = "juyiibanlvzhinengai"
+          main = "worker.js"
+          compatibility_date = "2024-11-01"
+          EOF
+
+      - name: Verify deployment identity before deletion
+        uses: actions/github-script@v7
+        env:
+          DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+          TARGET_REPOSITORY: ${{ inputs.repository }}
+          TARGET_REF: ${{ inputs.ref }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          PREVIEW_NAME: ${{ inputs.preview_name }}
+          KV_NAMESPACE_ID: ${{ inputs.kv_namespace_id }}
+        with:
+          script: |
+            const deploymentId = Number(process.env.DEPLOYMENT_ID);
+            if (!Number.isSafeInteger(deploymentId) || deploymentId <= 0) throw new Error("Invalid deployment ID");
+            const response = await github.rest.repos.getDeployment({
+              owner: context.repo.owner, repo: context.repo.repo, deployment_id: deploymentId
+            });
+            const deployment = response.data;
+            let payload = deployment.payload;
+            if (typeof payload === "string") {
+              try { payload = JSON.parse(payload); } catch { throw new Error("Deployment payload is not valid JSON"); }
+            }
+            const expected = {
+              request_id: process.env.REQUEST_ID,
+              repository: process.env.TARGET_REPOSITORY,
+              target_ref: process.env.TARGET_REF,
+              preview_name: process.env.PREVIEW_NAME,
+              worker_name: "juyiibanlvzhinengai",
+              kv_namespace_id: process.env.KV_NAMESPACE_ID
+            };
+            if (deployment.environment !== "workbench-preview" ||
+                deployment.transient_environment !== true ||
+                deployment.production_environment !== false) {
+              throw new Error("Refusing deletion: deployment is not a transient workbench-preview environment");
+            }
+            for (const [key, value] of Object.entries(expected)) {
+              if (String(payload?.[key] || "") !== String(value || "")) {
+                throw new Error("Refusing deletion: deployment payload mismatch for " + key);
+              }
+            }
+            core.info("Verified deployment identity and exact preview resource metadata.");
+
+      - name: Verify isolated KV namespace ownership before deletion
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PREVIEW_NAME: ${{ inputs.preview_name }}
+          PREVIEW_KV_NAMESPACE_ID: ${{ inputs.kv_namespace_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          (async () => {
+            const token = process.env.CLOUDFLARE_API_TOKEN || '';
+            const account = process.env.CLOUDFLARE_ACCOUNT_ID || '';
+            const id = process.env.PREVIEW_KV_NAMESPACE_ID || '';
+            const preview = process.env.PREVIEW_NAME || '';
+            if (!token || !account || !id || !preview) throw new Error('Missing credentials or preview resource identity');
+            const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/storage/kv/namespaces/${id}`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (response.status === 404) {
+              console.log('Isolated KV namespace is already absent; cleanup remains idempotent.');
+              return;
+            }
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || body.success !== true || String(body.result?.id || '') !== id) {
+              throw new Error(`Could not verify isolated KV namespace ownership (HTTP ${response.status})`);
+            }
+            if (String(body.result?.title || '') !== `wbp-${preview}`) {
+              throw new Error('Refusing deletion: KV namespace title does not match this preview name');
+            }
+            console.log('Verified KV namespace title matches the isolated preview name.');
+          })().catch(error => { console.error(error.message); process.exitCode = 1; });
+          NODE
+
+      - name: Mark cleanup in progress
+        uses: actions/github-script@v7
+        env:
+          DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner, repo: context.repo.repo,
+              deployment_id: Number(process.env.DEPLOYMENT_ID), state: "in_progress",
+              description: "Deleting Worker Preview and isolated KV namespace"
+            });
+
+      - name: Delete Worker Preview
+        id: delete_preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PREVIEW_NAME: ${{ inputs.preview_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! npx --yes wrangler@4.135.0 preview delete --config wrangler.delete.toml --name "$PREVIEW_NAME" --skip-confirmation > /tmp/preview-delete.log 2>&1; then
+            cat /tmp/preview-delete.log
+            if ! grep -qiE 'not found|does not exist|404|10025' /tmp/preview-delete.log; then exit 1; fi
+          fi
+          echo "Worker Preview deleted or already absent."
+
+      - name: Delete isolated KV namespace
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PREVIEW_KV_NAMESPACE_ID: ${{ inputs.kv_namespace_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e 'const token=process.env.CLOUDFLARE_API_TOKEN||"";const account=process.env.CLOUDFLARE_ACCOUNT_ID||"";const id=process.env.PREVIEW_KV_NAMESPACE_ID||"";(async()=>{if(!token||!account||!id)throw new Error("Missing credentials or isolated KV namespace ID");const r=await fetch("https://api.cloudflare.com/client/v4/accounts/"+account+"/storage/kv/namespaces/"+id,{method:"DELETE",headers:{Authorization:"Bearer "+token}});const d=await r.json().catch(()=>({}));if(!r.ok&&r.status!==404)throw new Error("Preview KV deletion failed (HTTP "+r.status+")");if(r.ok&&d.success!==true)throw new Error("Preview KV deletion response was not successful");console.log("Isolated preview KV namespace deleted or already absent.");})().catch(e=>{console.error(e.message);process.exitCode=1;});'
+
+      - name: Mark cleanup failure
+        if: failure()
+        uses: actions/github-script@v7
+        env:
+          DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner, repo: context.repo.repo,
+              deployment_id: Number(process.env.DEPLOYMENT_ID), state: "failure",
+              description: "Worker Preview cleanup failed; isolated resources were retained where safe"
+            });
+
+      - name: Mark deployment inactive
+        uses: actions/github-script@v7
+        env:
+          DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner, repo: context.repo.repo,
+              deployment_id: Number(process.env.DEPLOYMENT_ID), state: "inactive",
+              description: "Worker Preview and isolated KV namespace deleted"
+            });
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Worker Preview cleanup"
+            echo
+            echo "- Repository: ${{ inputs.repository }}"
+            echo "- Preview: ${{ inputs.preview_name }}"
+            echo "- Deployment ID: ${{ inputs.deployment_id }}"
+            echo "- Result: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
