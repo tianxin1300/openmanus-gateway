@@ -259,8 +259,13 @@ jobs:
         run: |
           set -euo pipefail
           cleanup_failed=0
+          cat > wrangler.cleanup.toml <<'EOF'
+          name = "juyiibanlvzhinengai"
+          main = "worker.js"
+          compatibility_date = "2024-11-01"
+          EOF
           if [ -n "${PREVIEW_NAME:-}" ]; then
-            if ! npx --yes wrangler@4.135.0 preview delete --config wrangler.preview.toml --name "$PREVIEW_NAME" --skip-confirmation > /tmp/preview-delete.log 2>&1; then
+            if ! npx --yes wrangler@4.135.0 preview delete --config wrangler.cleanup.toml --name "$PREVIEW_NAME" --skip-confirmation > /tmp/preview-delete.log 2>&1; then
               cat /tmp/preview-delete.log
               if ! grep -qiE 'not found|does not exist|404|10025' /tmp/preview-delete.log; then cleanup_failed=1; fi
             fi
