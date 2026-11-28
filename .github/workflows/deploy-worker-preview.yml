@@ -118,7 +118,7 @@ jobs:
             const account = process.env.CLOUDFLARE_ACCOUNT_ID || '';
             const preview = process.env.PREVIEW_NAME || '';
             if (!token || !account || !preview) throw new Error('Cloudflare credentials or preview name are missing');
-            const title = `workbench-preview-${preview}`;
+            const title = `wbp-${preview}`;
             const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/storage/kv/namespaces`, {
               method: 'POST',
               headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -235,7 +235,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           DEPLOYMENT_ID: ${{ steps.deployment.outputs.deployment_id }}
-          PREVIEW_URL: ${{ env.PREVIEW_URL }}
+          PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
         with:
           script: |
             await github.rest.repos.createDeploymentStatus({
@@ -260,7 +260,7 @@ jobs:
           set -euo pipefail
           cleanup_failed=0
           if [ -n "${PREVIEW_NAME:-}" ]; then
-            if ! npx --yes wrangler@4.135.0 preview delete --name "$PREVIEW_NAME" --worker-name juyiibanlvzhinengai --skip-confirmation > /tmp/preview-delete.log 2>&1; then
+            if ! npx --yes wrangler@4.135.0 preview delete --config wrangler.preview.toml --name "$PREVIEW_NAME" --skip-confirmation > /tmp/preview-delete.log 2>&1; then
               cat /tmp/preview-delete.log
               if ! grep -qiE 'not found|does not exist|404|10025' /tmp/preview-delete.log; then cleanup_failed=1; fi
             fi
@@ -342,6 +342,19 @@ jobs:
         run: |
           set -euo pipefail
           node -e 'const token=process.env.CLOUDFLARE_API_TOKEN||"";const account=process.env.CLOUDFLARE_ACCOUNT_ID||"";const id=process.env.PREVIEW_KV_NAMESPACE_ID||"";(async()=>{if(!token||!account||!id)throw new Error("Missing credentials or isolated KV namespace ID");const r=await fetch("https://api.cloudflare.com/client/v4/accounts/"+account+"/storage/kv/namespaces/"+id,{method:"DELETE",headers:{Authorization:"Bearer "+token}});const d=await r.json().catch(()=>({}));if(!r.ok&&r.status!==404)throw new Error("Preview KV deletion failed (HTTP "+r.status+")");if(r.ok&&d.success!==true)throw new Error("Preview KV deletion response was not successful");console.log("Isolated preview KV namespace deleted or already absent.");})().catch(e=>{console.error(e.message);process.exitCode=1;});'
+
+      - name: Mark cleanup failure
+        if: failure()
+        uses: actions/github-script@v7
+        env:
+          DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner, repo: context.repo.repo,
+              deployment_id: Number(process.env.DEPLOYMENT_ID), state: "failure",
+              description: "Worker Preview cleanup failed; isolated resources were retained where safe"
+            });
 
       - name: Mark deployment inactive
         uses: actions/github-script@v7
