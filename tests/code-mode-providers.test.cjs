@@ -27,10 +27,10 @@ function loadCodePendingDiscard({ pending, deleteBranch, claimCall, kvDelete }) 
   assert.ok(start >= 0 && end > start, 'codePendingDiscard source must exist');
   const source = workerSource.slice(start, end);
   const sandbox = {
-    codePendingLoad: async () => pending,
+    codePendingRepo: (_env, repo) => String(repo || pending.repo).toLowerCase(),\n    codePendingLoad: async () => pending,
     codeClaimState: async () => ({ ok: true, pending, version: 1 }),
     codeDeleteBranch: deleteBranch,
-    codeClaimCall: claimCall,
+    codeClaimCall: async (_env, _user, _repo, action, body) => claimCall(_env, _user, action, body),
     CODE_PENDING_TTL_MS: 600000,
     env: null,
     console
@@ -44,7 +44,7 @@ function loadFrontendForceClear(stubs) {
   const end = frontendStudioSource.indexOf('  /* ---------- 读取待推送的修改 ---------- */', start);
   assert.ok(start >= 0 && end > start, 'frontend force-clear handlers must exist');
   const source = frontendStudioSource.slice(start, end);
-  const sandbox = { api: stubs.api, busy: stubs.busy, say: stubs.say, hide: stubs.hide, toast: stubs.toast };
+  const sandbox = { api: stubs.api, busy: stubs.busy, say: stubs.say, hide: stubs.hide, toast: stubs.toast, currentPending: { repo: "owner/repo" }, state: { project: "owner/repo" } };
   vm.runInNewContext(source + String.fromCharCode(10) + 'globalThis.testForceClear = forceClear;', sandbox);
   return sandbox.testForceClear;
 }
@@ -405,7 +405,7 @@ test('BUG-03/04/06: push confirmation uses Durable Object atomic claim and idemp
   assert.match(wrangler, /name = "CODE_CLAIMS"/);
   assert.match(wrangler, /class_name = "CodeClaimDO"/);
   assert.match(workerSource, /export class CodeClaimDO/);
-  assert.match(workerSource, /codeClaimCall\(env, user, "claim"/);
+  assert.match(workerSource, /codeClaimCall\(env, user, scopeRepo, "claim"/);
   // Required claim fields exist (wording of error message may vary)
   assert.match(workerSource, /pending_id.*version.*project.*operation_id|operation_id.*pending_id/);
   assert.match(workerSource, /p\.status = "applying"/);
@@ -414,10 +414,10 @@ test('BUG-03/04/06: push confirmation uses Durable Object atomic claim and idemp
   // Must not fall back to the old non-atomic KV lock pattern
   assert.doesNotMatch(workerSource, /const key = "code:pend:" \+ user, lockKey/);
   // Feature-complete studio sends the four idempotency fields on confirm
-  assert.match(studioSource, /pending_id:\s*op\.pending_id/);
-  assert.match(studioSource, /version:\s*op\.version/);
-  assert.match(studioSource, /project:\s*op\.project/);
-  assert.match(studioSource, /operation_id:\s*operationId\(\)/);
+  assert.match(frontendStudioSource, /pending_id:\s*op\.pending_id/);
+  assert.match(frontendStudioSource, /version:\s*op\.version/);
+  assert.match(frontendStudioSource, /project:\s*op\.project/);
+  assert.match(frontendStudioSource, /operation_id:\s*operationId\(\)/);\n  assert.match(frontendStudioSource, /repo: String\(p\.repo \|\| state\.project\)/);
 });
 
 test('Trae batch 1: isolated branches, history/rollback/preview, and file-level decisions', () => {
@@ -560,8 +560,8 @@ test('P0-01: local preview is started from the visible control', () => {
 });
 test('P0-02/03: expiry and force-clear lock pending before deleting the GitHub branch', () => {
   const discard = workerSource.slice(workerSource.indexOf('async function codePendingDiscard('), workerSource.indexOf('// v108：cron 扫 KV'));
-  assert.ok(discard.indexOf('codeClaimCall(env, user, "discard"') < discard.indexOf('codeDeleteBranch'));
-  assert.ok(discard.indexOf('codeDeleteBranch') < discard.indexOf('codeClaimCall(env, user, "clear"'));
+  assert.ok(discard.indexOf('codeClaimCall(env, user, scopeRepo, "discard"') < discard.indexOf('codeDeleteBranch'));
+  assert.ok(discard.indexOf('codeDeleteBranch') < discard.indexOf('codeClaimCall(env, user, scopeRepo, "clear"'));
   assert.match(discard, /discard-release/);
   assert.match(discard, /GitHub 临时分支删除失败，待处理记录已保留/);
   assert.match(workerSource, /上一项修改正在执行接受操作/);
@@ -688,7 +688,7 @@ test('CodeClaimDO atomically rejects discard while an accept operation is applyi
   const instance = new DO({ storage }, {});
   const response = await instance.fetch(new Request('https://code-claims/discard', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pending_id: 'busy-1', version: 1 })
+    body: JSON.stringify({ repo: 'owner/repo', pending_id: 'busy-1', version: 1 })
   }));
   const result = await response.json();
   assert.equal(response.status, 409);
@@ -716,13 +716,13 @@ test('CodeClaimDO uses a versioned discard lock and only clears the locked pendi
   const instance = new DO({ storage }, {});
   const lock = await instance.fetch(new Request('https://code-claims/discard', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pending_id: 'discard-1', version: 1 })
+    body: JSON.stringify({ repo: 'owner/repo', pending_id: 'discard-1', version: 1 })
   }));
   assert.equal(lock.status, 200);
   assert.equal(storage.value.pending.status, 'discarding');
   const staleClear = await instance.fetch(new Request('https://code-claims/clear', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pending_id: 'wrong-id', version: 1 })
+    body: JSON.stringify({ repo: 'owner/repo', pending_id: 'wrong-id', version: 1 })
   }));
   assert.equal(staleClear.status, 409);
   assert.ok(storage.value);
