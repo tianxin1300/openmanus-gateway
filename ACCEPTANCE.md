@@ -614,3 +614,17 @@ npm test
 **通过判定：** 87 个新增 `node:test` 用例全部执行并通过；`npm test` 总数以 Actions TAP 实际输出为准；`npm run build` 必须通过。若测试失败，保留真实失败日志，先修复测试夹具/断言，不通过弱化预期或删除用例来变绿。模拟测试结果不得标记为真实 GitHub/DO 验收通过。
 
 **本阶段安全边界：** 独立分支 `code/workbench-acceptance-phase1-20261128`；只允许改 `ACCEPTANCE.md` 与 `tests/workbench-acceptance-phase1.test.cjs`。PR #32、PR #60 不修改；不合并、不部署生产。
+
+## 19. 第二阶段：工作台文件读取白名单闭环（P2-READ-001～004）
+
+**目标：** 工作台读取文件必须经过已登录的 Worker API，并由 Worker 的 `CODE_REPOS` 唯一准入规则授权；不允许前端通过独立 MCP 文件读取通道绕过仓库白名单。
+
+**自动化测试：**
+- `P2-READ-001`：`CODE_REPOS` 未配置时，文件读取在任何 GitHub 请求前被拒绝。
+- `P2-READ-002`：目标仓库不在 `CODE_REPOS` 时，文件读取在任何 GitHub 请求前被拒绝。
+- `P2-READ-003`：白名单内文件读取使用指定临时分支 ref，并返回文件 SHA 与内容。
+- `P2-READ-004`：工作台 `mcpGet` 通过已登录的 `/api/code/file` 读取；路由先验证登录身份，再调用受 `codeRepoOk` 保护的 `codeGetFile`。
+
+**通过条件：** 四项全部执行并通过；未授权仓库不得触发 GitHub 文件读取；合法读取必须返回 SHA，供后续保存时进行版本一致性校验。
+
+**测试边界：** `P2-READ-001～003` 使用隔离 fetch 模拟验证 Worker 实际读取函数；`P2-READ-004` 核对前端读取入口与 Worker 路由契约。它们不代表线上 Worker Secret、真实 GitHub 令牌或生产环境配置已验收。
