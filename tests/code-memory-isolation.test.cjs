@@ -90,3 +90,24 @@ test('P2-MEM-005: each repository keeps its own newest 20 memory entries', async
   const beta = await api.codeMemoryPrompt(env, 'user-1', 'owner/beta');
   assert.doesNotMatch(beta, /ALPHA_ENTRY_/);
 });
+
+test('P2-MEM-006: code-assist routes confirmation, user and AI memory through the resolved project repository', () => {
+  const start = worker.indexOf('async function codeAssist(env, user, raw, history)');
+  const end = worker.indexOf('const CODE_PROJECTS =', start);
+  assert.ok(start >= 0 && end > start);
+  const codeAssist = worker.slice(start, end);
+  assert.match(codeAssist, /const memRepo = d\.repo \|\| String\(env\.CODE_REPOS/);
+  assert.match(codeAssist, /codeMemoryPrompt\(env, user, memRepo\)/);
+  assert.equal((codeAssist.match(/codeMemoryAppend\(env, user, memRepo,/g) || []).length, 3);
+  assert.doesNotMatch(codeAssist, /codeMemoryAppend\(env, user, \{/);
+});
+
+test('P2-MEM-007: project chat memory no longer reads or writes the shared workbench history key', () => {
+  const start = worker.indexOf('const codeMemoryKey =');
+  const end = worker.indexOf('async function codeRollbackUnlocked', start);
+  const memory = worker.slice(start, end);
+  assert.match(memory, /code:memory:/);
+  assert.match(memory, /codeMemoryLoad\(env, user, repo\)/);
+  assert.match(memory, /codeMemorySave\(env, user, repo,/);
+  assert.doesNotMatch(memory, /codeHistoryLoad|codeHistorySave/);
+});
