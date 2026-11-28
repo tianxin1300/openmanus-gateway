@@ -1635,10 +1635,10 @@ test('Cron Issue Agent: codeLLM rotates existing providers with 60-second per-mo
   assert.ok(agent.includes('signal: AbortSignal.timeout(8 * 60 * 1000)'));
   assert.ok(agent.includes('全部限流超时，下一轮再试'));
   assert.ok(agent.includes('await labels(issueNumber, ["bot:ready"], ["bot:running", "bot:failed"])'));
-  assert.ok(agent.includes('per_page=1'));
+  assert.ok(agent.includes('per_page=100'));
   assert.ok(workflow.includes('timeout-minutes: 10'));
   assert.ok(docs.includes('Schedule: every 30 minutes'));
-  assert.ok(docs.includes('per_page=1'));
+  assert.ok(docs.includes('per_page=100'));
   assert.doesNotMatch(agent, /CODE_OR_MODELS|CODE_GROQ_MODELS|CODE_NVIDIA_MODELS/);
 });
 
@@ -1722,4 +1722,20 @@ test('Cron Issue Agent: exhausted model pool restores bot:ready and logs the ret
   assert.equal(events[0].details.message, '全部限流超时，下一轮再试');
   assert.equal(events[1].event, 'issue_requeued');
   assert.equal(events[1].details.reason, 'model_pool_exhausted');
+});
+
+test('Cron Issue Agent: queue selection skips pull requests and rejects closed issues', () => {
+  const agent = fs.readFileSync(path.join(root, '.github/scripts/issue-agent.mjs'), 'utf8');
+  const start = agent.indexOf('function selectQueueIssue(');
+  const end = agent.indexOf('async function main()', start);
+  assert.ok(start >= 0 && end > start, 'queue selection helper source must exist');
+  const sandbox = {};
+  vm.runInNewContext(agent.slice(start, end) + '\nglobalThis.selectQueueIssue = selectQueueIssue;', sandbox);
+  const selected = sandbox.selectQueueIssue([
+    { number: 41, state: 'open', pull_request: { url: 'https://api.github.com/repos/x/y/pulls/41' } },
+    { number: 42, state: 'open', labels: [{ name: 'bot:ready' }] }
+  ]);
+  assert.equal(selected.number, 42);
+  assert.equal(sandbox.selectQueueIssue([{ number: 43, state: 'open', pull_request: {} }]), null);
+  assert.equal(sandbox.selectQueueIssue({ number: 44, state: 'closed' }), null);
 });

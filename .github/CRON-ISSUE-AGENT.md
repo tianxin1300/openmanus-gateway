@@ -4,7 +4,7 @@ This workflow is an external-cron-triggered queue worker for GitHub Issues.
 
 ## Queue
 - Add `bot:ready` to an open issue to enqueue it.
-- One issue is claimed per workflow run; the queue query uses `per_page=1`.
+- One issue is claimed per workflow run; the queue query uses `per_page=100`.
 - The worker changes labels to `bot:running`, then `bot:done` or `bot:failed`.
 - It posts the result as an issue comment and uploads a 30-day execution log artifact.
 - A workflow concurrency group prevents overlapping runs in this repository.
