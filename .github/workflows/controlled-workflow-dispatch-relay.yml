@@ -1,0 +1,224 @@
+name: controlled-workflow-dispatch-relay
+run-name: Dispatch relay · ${{ github.event_name }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_workflow:
+        description: Allowlisted test, preview, E2E, or verification workflow filename
+        required: true
+        type: string
+      target_ref:
+        description: Branch or commit ref for the target workflow
+        required: true
+        type: string
+      target_inputs:
+        description: JSON object of target workflow inputs
+        required: false
+        default: "{}"
+        type: string
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  dispatch:
+    name: Validate and dispatch one authorized phase workflow
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.number == 77 &&
+        github.event.issue.pull_request != null &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+        startsWith(github.event.comment.body, '/dispatch ')
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Parse and validate dispatch request
+        id: request
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CURRENT_REPOSITORY: ${{ github.repository }}
+          MANUAL_WORKFLOW: ${{ inputs.target_workflow }}
+          MANUAL_REF: ${{ inputs.target_ref }}
+          MANUAL_INPUTS: ${{ inputs.target_inputs }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_NUMBER: ${{ github.event.issue.number }}
+          COMMENT_IS_PULL_REQUEST: ${{ github.event.issue.pull_request != null }}
+          COMMENT_ASSOCIATION: ${{ github.event.comment.author_association }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, json, os, re
+          if os.environ.get("CURRENT_REPOSITORY") != "tianxin1300/openmanus-gateway":
+              raise SystemExit("Relay is restricted to tianxin1300/openmanus-gateway")
+          if os.environ["EVENT_NAME"] == "issue_comment":
+              if os.environ.get("COMMENT_NUMBER") != "77" or os.environ.get("COMMENT_IS_PULL_REQUEST") != "true":
+                  raise SystemExit("Dispatch comments are accepted only on the relay PR thread")
+              if os.environ.get("COMMENT_ASSOCIATION") not in {"OWNER", "MEMBER", "COLLABORATOR"}:
+                  raise SystemExit("Comment author is not an authorized repository collaborator")
+              body = os.environ.get("COMMENT_BODY", "")
+              if not body.startswith("/dispatch ") or len(body) > 12000:
+                  raise SystemExit("Expected /dispatch followed by a JSON request")
+              try:
+                  request = json.loads(body[len("/dispatch "):])
+              except json.JSONDecodeError:
+                  raise SystemExit("Dispatch comment must contain valid JSON")
+              if not isinstance(request, dict) or set(request) - {"workflow", "ref", "inputs"}:
+                  raise SystemExit("Dispatch comment has unsupported fields")
+              workflow = request.get("workflow")
+              ref = request.get("ref")
+              inputs = request.get("inputs", {})
+          else:
+              workflow = os.environ.get("MANUAL_WORKFLOW", "")
+              ref = os.environ.get("MANUAL_REF", "")
+              try:
+                  inputs = json.loads(os.environ.get("MANUAL_INPUTS") or "{}")
+              except json.JSONDecodeError:
+                  raise SystemExit("Target inputs must be valid JSON")
+          if not isinstance(workflow, str) or not isinstance(ref, str) or not isinstance(inputs, dict):
+              raise SystemExit("Workflow, ref, and inputs have invalid types")
+          if not re.fullmatch(r"[A-Za-z0-9._/-]{1,120}", ref) or ref.startswith("/") or ref.endswith("/") or "//" in ref or any(p in ("", ".", "..") for p in ref.split("/")):
+              raise SystemExit("Invalid target ref")
+          if len(inputs) > 25:
+              raise SystemExit("GitHub workflow_dispatch supports at most 25 inputs")
+          for key, value in inputs.items():
+              if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,63}", str(key)):
+                  raise SystemExit("Invalid workflow input name")
+              if not isinstance(value, (str, int, float, bool)):
+                  raise SystemExit("Workflow input values must be scalar")
+              if len(str(value)) > 1000 or any(ord(c) < 32 for c in str(value)):
+                  raise SystemExit("Invalid workflow input value")
+          filename = workflow.rsplit("/", 1)[-1]
+          if workflow != filename or not re.fullmatch(r"[A-Za-z0-9._-]+\.ya?ml", filename):
+              raise SystemExit("Target must be a workflow filename, not a path or URL")
+          lower = filename.lower()
+          blocked = {"deploy-worker.yml", "deploy-project.yml", "apply-v105.yml"}
+          if lower in blocked or re.search(r"(?:^|[-_])(prod|production|release|publish|live)(?:[-_.]|$)", lower):
+              raise SystemExit("Production/release/live workflows are never dispatchable through this relay")
+          explicit_preview = lower in {"deploy-worker-preview.yml", "deploy-branch-preview.yml"}
+          category_patterns = (
+              r"^test[-_].*\.ya?ml$",
+              r".*[-_]tests?\.ya?ml$",
+              r".*e2e.*\.ya?ml$",
+              r"^verify[-_].*\.ya?ml$",
+              r".*[-_]verify\.ya?ml$",
+              r"^validate[-_].*\.ya?ml$",
+              r".*[-_]validation\.ya?ml$",
+              r"^preview[-_].*\.ya?ml$",
+              r".*[-_]preview\.ya?ml$",
+          )
+          if not explicit_preview and not any(re.fullmatch(p, lower) for p in category_patterns):
+              raise SystemExit("Workflow filename is outside the test/preview/E2E/verification allowlist")
+          if lower == "deploy-worker-preview.yml":
+              required = {"action", "repository", "ref", "request_id", "preview_name"}
+              allowed = required | {"deployment_id", "kv_namespace_id"}
+              if not required.issubset(inputs) or set(inputs) - allowed:
+                  raise SystemExit("Worker Preview inputs do not match the approved schema")
+              if inputs["action"] not in {"create", "delete"} or inputs["repository"] != "tianxin1300/openmanus-gateway" or inputs["ref"] != ref:
+                  raise SystemExit("Worker Preview target identity mismatch")
+              if not re.fullmatch(r"[A-Za-z0-9._:-]{8,160}", str(inputs["request_id"])) or not re.fullmatch(r"wb-[a-z0-9][a-z0-9-]{1,48}", str(inputs["preview_name"])):
+                  raise SystemExit("Invalid Worker Preview request identity")
+              if inputs["action"] == "delete":
+                  if not re.fullmatch(r"[0-9]+", str(inputs.get("deployment_id", ""))) or not re.fullmatch(r"[0-9a-f]{32}", str(inputs.get("kv_namespace_id", ""))):
+                      raise SystemExit("Worker Preview delete requires deployment_id and kv_namespace_id")
+          if lower == "deploy-branch-preview.yml":
+              if set(inputs) - {"ref", "request_id"} or inputs.get("ref") != ref:
+                  raise SystemExit("Branch Preview requires only ref/request_id and matching ref")
+              if "request_id" in inputs and len(str(inputs["request_id"])) > 160:
+                  raise SystemExit("Invalid Branch Preview request ID")
+          if lower == "verify-project.yml":
+              if set(inputs) - {"ref", "request_id"} or inputs.get("ref") != ref:
+                  raise SystemExit("verify-project requires only ref/request_id and matching ref")
+          if lower == "workbench-e2e-manual-trigger.yml":
+              if set(inputs) != {"target_ref"} or inputs.get("target_ref") != ref:
+                  raise SystemExit("workbench-e2e requires only target_ref matching the requested ref")
+          if lower == "test-project.yml" and inputs:
+              raise SystemExit("test-project does not accept workflow inputs")
+          encoded = base64.b64encode(json.dumps({"workflow": filename, "ref": ref, "inputs": inputs}, separators=(",", ":")).encode()).decode()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write("request_b64=" + encoded + "\n")
+          print("Dispatch request passed repository, workflow-category, ref, and input validation.")
+          PY
+
+      - name: Dispatch through GitHub API using repository secret
+        env:
+          DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          CURRENT_REPOSITORY: ${{ github.repository }}
+          REQUEST_B64: ${{ steps.request.outputs.request_b64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          test -n "${DISPATCH_TOKEN:-}" || {
+            echo "DISPATCH_TOKEN secret is not configured." >&2
+            exit 1
+          }
+          python3 - <<'PY'
+          import base64, json, os, urllib.error, urllib.request
+          repo = "tianxin1300/openmanus-gateway"
+          if os.environ.get("CURRENT_REPOSITORY") != repo:
+              raise SystemExit("Relay is restricted to tianxin1300/openmanus-gateway")
+          token = os.environ["DISPATCH_TOKEN"]
+          request = json.loads(base64.b64decode(os.environ["REQUEST_B64"]))
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": "Bearer " + token,
+              "X-GitHub-Api-Version": "2022-11-28",
+              "Content-Type": "application/json",
+              "User-Agent": "openmanus-controlled-dispatch-relay",
+          }
+          # Resolve the workflow against the repository's actual Actions inventory.
+          url = f"https://api.github.com/repos/{repo}/actions/workflows?per_page=100"
+          workflows = []
+          while url:
+              req = urllib.request.Request(url, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as response:
+                      page = json.loads(response.read())
+                      workflows.extend(page.get("workflows", []))
+                      links = response.headers.get("Link", "")
+                      url = None
+                      for part in links.split(","):
+                          if 'rel="next"' in part:
+                              url = part[part.find("<")+1:part.find(">")]
+                              break
+              except Exception:
+                  raise SystemExit("Could not verify the target workflow in GitHub Actions inventory")
+          expected_path = ".github/workflows/" + request["workflow"]
+          match = next((w for w in workflows if w.get("path") == expected_path and w.get("state") == "active"), None)
+          if not match:
+              raise SystemExit("Target workflow is missing, inactive, or not in the approved workflow directory")
+          endpoint = f"https://api.github.com/repos/{repo}/actions/workflows/{request['workflow']}/dispatches"
+          body = json.dumps({"ref": request["ref"], "inputs": request["inputs"]}).encode()
+          req = urllib.request.Request(endpoint, data=body, headers=headers, method="POST")
+          try:
+              with urllib.request.urlopen(req, timeout=20) as response:
+                  if response.status != 204:
+                      raise SystemExit(f"GitHub dispatch returned unexpected HTTP {response.status}")
+          except urllib.error.HTTPError as error:
+              raise SystemExit(f"GitHub workflow dispatch failed (HTTP {error.code})")
+          except Exception:
+              raise SystemExit("GitHub workflow dispatch request failed")
+          print("GitHub accepted the workflow dispatch request (HTTP 204).")
+          PY
+
+      - name: Summary
+        if: always()
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          JOB_RESULT: ${{ job.status }}
+        shell: bash
+        run: |
+          {
+            echo "## Controlled workflow dispatch relay"
+            echo
+            echo "- Repository: tianxin1300/openmanus-gateway"
+            echo "- Trigger: $EVENT_NAME"
+            echo "- Result: $JOB_RESULT"
+            echo "- Token: read from DISPATCH_TOKEN at runtime; never printed"
+          } >> "$GITHUB_STEP_SUMMARY"
