@@ -6222,10 +6222,11 @@ function updateWorkbenchBranchUI() {
   const active = !!(activeBranchRecord && activeBranchRecord.branch);
   const label = g("wb-branch");
   const discardRecovery = !!(active && activeBranchRecord.discard_recovery);
-  if (label) { label.textContent = active ? (activeBranchRecord.branch + (discardRecovery ? " · 审计待补写" : "")) : "无活动临时分支"; label.title = active ? activeBranchRecord.branch : ""; }
-  if (g("wb-save")) g("wb-save").disabled = !active || discardRecovery;
+  const mergeRecovery = !!(active && String(activeBranchRecord.status || "").startsWith("merged_"));
+  if (label) { label.textContent = active ? (activeBranchRecord.branch + (discardRecovery ? " · 审计待补写" : (mergeRecovery ? " · 合并后清理待完成" : ""))) : "无活动临时分支"; label.title = active ? activeBranchRecord.branch : ""; }
+  if (g("wb-save")) g("wb-save").disabled = !active || discardRecovery || mergeRecovery;
   if (g("wb-push")) g("wb-push").disabled = !active || discardRecovery;
-  if (g("wb-discard")) g("wb-discard").disabled = !active;
+  if (g("wb-discard")) g("wb-discard").disabled = !active || mergeRecovery;
   if (g("wb-branch-preview")) { const supported = !!(activeBranchRecord && (activeBranchRecord.preview_supported || activeBranchRecord.preview_url)); const previewPending = !!(activeBranchRecord && activeBranchRecord.preview_status === "pending"); const cleanupPending = !!(activeBranchRecord && activeBranchRecord.preview_cleanup_status === "pending"); g("wb-branch-preview").disabled = !active || discardRecovery || !supported; g("wb-branch-preview").textContent = cleanupPending ? "预览清理中…" : (activeBranchRecord && activeBranchRecord.preview_mode === "worker" && previewPending ? "预览部署中…" : (activeBranchRecord && activeBranchRecord.preview_url && activeBranchRecord.preview_mode !== "worker" ? "打开预览" : (activeBranchRecord && activeBranchRecord.preview_status === "ready" ? "打开预览" : "临时预览"))); g("wb-branch-preview").title = discardRecovery ? "当前只允许重试丢弃审计清理" : (cleanupPending ? "独立 Worker 预览正在清理" : (previewPending ? "正在等待独立 Worker 预览部署与 HTTP 200 验证" : (supported ? "构建或打开当前项目临时分支的隔离预览" : "当前仓库尚未配置可验证的预览能力"))); }
   if (g("wb-new-branch")) g("wb-new-branch").hidden = active;
 }
@@ -6357,7 +6358,7 @@ async function mergeWorkbenchBranch() {
   if (activeBranchRecord.discard_recovery) return say("当前临时分支已删除，只能重试丢弃审计清理，不能保存或合并。", true);
   if (dirty) { await save(); if (dirty) return; }
   const accepted = workbenchChanges.filter(file => workbenchDecisions[file.path] === true).map(file => file.path);
-  if (!accepted.length && !["merged_cleanup_failed", "merged_history_failed", "merged_record_cleanup_failed"].includes(activeBranchRecord.status)) return say("还没有接受任何文件。请在改动预览里逐个接受文件，或直接丢弃分支。", true);
+  if (!accepted.length && !["merged_cleanup_failed", "merged_history_failed", "merged_record_cleanup_failed", "merged_preview_cleanup_pending"].includes(activeBranchRecord.status)) return say("还没有接受任何文件。请在改动预览里逐个接受文件，或直接丢弃分支。", true);
   const button = g("wb-push"); if (button) button.disabled = true;
   try {
     const result = await wbApi("/api/code/branch/merge", { method: "POST", body: JSON.stringify({ repo: workbenchRepoFull(), branch: activeBranchRecord.branch, accepted_paths: accepted, summary: "Workbench: " + accepted.length + " files" }) });
@@ -6374,8 +6375,11 @@ async function mergeWorkbenchBranch() {
     const details = error.data && Array.isArray(error.data.files) ? error.data.files.join("\n") : "";
     if (error.data && error.data.merged === true) {
       const branchDeleted = error.data.branch_deleted === true;
-      if (activeBranchRecord && !branchDeleted) activeBranchRecord.status = error.data.history_saved === false ? "merged_history_failed" : "merged_cleanup_failed";
-      card("已合并到 main，恢复处理待完成", (error.message || "GitHub 已完成合并，但后续历史/清理步骤尚未完成") + (branchDeleted
+      if (activeBranchRecord && !branchDeleted) activeBranchRecord.status = error.data.preview_cleanup_pending ? "merged_preview_cleanup_pending" : (error.data.history_saved === false ? "merged_history_failed" : "merged_cleanup_failed");
+      const recoveryMessage = error.data.preview_cleanup_pending
+        ? "main 已完成合并，正在清理独立 Worker 预览；临时分支暂时保留。"
+        : "GitHub 已完成合并，但后续历史/清理步骤尚未完成";
+      card("已合并到 main，恢复处理待完成", (error.message || recoveryMessage) + (branchDeleted
         ? "\n\n临时分支已删除，正在核对并清理本地状态记录。"
         : "\n\n临时分支与恢复记录已保留。可再次点击「推」完成恢复清理，不会重复创建合并提交。"), true);
       if (branchDeleted) {
@@ -6410,7 +6414,8 @@ async function discardWorkbenchBranch() {
     workbenchChanges = []; Object.keys(workbenchDecisions).forEach(key => delete workbenchDecisions[key]);
     await Promise.all([loadWorkbenchTree(), loadWorkbenchChanges(), loadWorkbenchVersions(), loadFile()]);
   } catch (error) {
-    if (error.data && error.data.discarded && error.data.branch_deleted) card("临时分支已删除，审计/状态清理待完成", error.message || "分支已删除，审计记录或本地状态仍待恢复；再次点击「丢弃」可重试清理。", true);
+    if (error.data && error.data.preview_cleanup_pending) card("独立 Worker 预览清理中", error.message || "预览资源正在清理，临时分支暂时保留；稍后再次点击「丢弃」完成删除。", true);
+    else if (error.data && error.data.discarded && error.data.branch_deleted) card("临时分支已删除，审计/状态清理待完成", error.message || "分支已删除，审计记录或本地状态仍待恢复；再次点击「丢弃」可重试清理。", true);
     else say("删除临时分支失败，记录保留：" + (error.message || String(error)), true);
   }
   finally { if (button) button.disabled = !activeBranchRecord; }
@@ -6476,7 +6481,7 @@ async function previewWorkbenchBranch() {
       return;
     }
     say(result.msg || "预览部署已启动。");
-  } catch (error) { say("临时预览启动失败：" + (error.message || String(error)), true); }
+  } catch (error) { if (error.data && error.data.preview_cleanup_pending) say(error.message || "上一次 Worker 预览正在清理，稍后再试。", true); else say("临时预览启动失败：" + (error.message || String(error)), true); }
 }
 async function switchWorkbenchProject(repoFullName) {
   const project = WORKBENCH_PROJECTS[repoFullName];
