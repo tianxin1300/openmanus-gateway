@@ -156,3 +156,11 @@ test('P2-PEND-006: active workbench UI sends the selected repository and refresh
   assert.match(frontend, /repo: String\(\(currentPending && currentPending\.repo\) \|\| state\.project \|\| ""\)/);
   assert.match(frontend, /currentPending = null; hide\(\); .*refreshPending\(true\)/);
 });
+
+test('P2-PEND-007: discard cleanup deletes only the selected repository pending KV key', () => {
+  const discardStart = worker.indexOf('async function codePendingDiscard(');
+  const discardEnd = worker.indexOf('// v108：cron 扫 KV', discardStart);
+  const discard = worker.slice(discardStart, discardEnd);
+  assert.match(discard, /env\.KV\.delete\("code:pend:" \+ user \+ ":" \+ scopeRepo\)/);
+  assert.doesNotMatch(discard, /env\.KV\.delete\("code:pend:" \+ user\)/);
+});
