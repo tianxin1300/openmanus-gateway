@@ -693,6 +693,10 @@ button.om-ic-only .om-ic{margin:0;width:16px;height:16px}
   #wb-runlogs .wb-logbox{min-height:0}
   #wb-runlogs pre{max-height:64px;min-height:28px;overflow:auto}
 }
+  .settings-token-section{display:flex;flex-direction:column;gap:10px;margin:16px 0;padding:14px;border:1px solid var(--line,#e5e7eb);border-radius:12px;min-width:0}
+  .settings-token-section>strong{font-size:14px}
+  .settings-token-value{display:block;width:100%;min-height:76px;box-sizing:border-box;resize:vertical;overflow-wrap:anywhere;word-break:break-all;padding:10px;border:1px solid var(--line,#d1d5db);border-radius:8px;background:var(--panel,#f8fafc);color:var(--text,#111827);font:12px/1.5 ui-monospace,SFMono-Regular,monospace;-webkit-user-select:text;user-select:text}
+  .settings-token-copy{align-self:flex-start;min-height:38px;padding:8px 18px}
 </style>
 </head>
 <body>
@@ -3206,6 +3210,21 @@ function showSettings(view = "main") {
   if (view === "profile") {
     const user = lsGet(OWNER_KEY);
     box.append(setRow("账号", artEl("b", "", user || (authToken ? "已登录" : "未登录"))), setRow("本地对话", artEl("b", "", chats.length + " 个")), setRow("历史同步", artEl("b", "", authToken ? (cloudReady ? "已与云端同步" : "等待同步") : "未登录")));
+    const tokenSection = artEl("section", "settings-token-section");
+    const tokenTitle = artEl("strong", "", "登录令牌");
+    tokenSection.appendChild(tokenTitle);
+    if (authToken) {
+      const tokenValue = artEl("textarea", "settings-token-value");
+      tokenValue.value = authToken; tokenValue.readOnly = true; tokenValue.setAttribute("aria-label", "当前登录令牌"); tokenValue.setAttribute("autocomplete", "off"); tokenValue.setAttribute("autocapitalize", "off"); tokenValue.spellcheck = false;
+      tokenSection.appendChild(tokenValue);
+      tokenSection.appendChild(setBtn("复制", () => copy(authToken), "settings-token-copy"));
+      const hint = artEl("small", "settings-note", "这是当前账号的完整登录令牌。请妥善保管，不要发给他人。");
+      tokenSection.appendChild(hint);
+    } else {
+      tokenSection.appendChild(artEl("div", "settings-note", "当前没有登录令牌。请重新登录，系统会通过原有登录流程生成新令牌。"));
+      tokenSection.appendChild(setBtn("重新登录并生成令牌", () => { closeSettings(); showAuth("请登录当前账号以生成新的登录令牌"); }, "settings-token-copy"));
+    }
+    box.appendChild(tokenSection);
     box.appendChild(setRow(authToken ? "退出当前账号" : "重新登录", setBtn(authToken ? "退出登录" : "去登录", () => { closeSettings(); logout(authToken ? "已退出登录" : ""); })));
   } else if (view === "billing") {
     note("当前通过 OpenManus 网关使用免费额度（例如生成图片的次数），前端不展示账单明细。额度用完时会在对应功能里提示。");
