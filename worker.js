@@ -956,6 +956,10 @@ async function codeWorkbenchBranchDiscardUnlocked(env, user, body = {}) {
   const key = codeWorkbenchBranchKey(user, repo), record = await env.KV.get(key, "json").catch(() => null);
   if (!record || !record.branch) return { ok: true, discarded: true, already_absent: true };
   if (body.branch && body.branch !== record.branch) return { ok: false, msg: "临时分支已变化，拒绝删除其他分支" };
+  if (record.preview_mode === "worker" && record.preview_request_id) {
+    const previewCleanup = await codeWorkbenchWorkerPreviewCleanup(env, user, repo, record);
+    if (!previewCleanup.ok) return { ok: false, preview_cleanup_pending: !!previewCleanup.pending, msg: previewCleanup.msg || "Worker Preview 尚未清理，临时分支记录已保留" };
+  }
   const deleted = await codeDeleteBranch(env, repo, record.branch);
   if (!deleted.ok && deleted.status !== 404) return { ok: false, msg: "GitHub 删除临时分支失败，记录保留：" + deleted.msg };
   const auditId = "workbench-discard-" + record.branch;
@@ -993,7 +997,7 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
   const key = codeWorkbenchBranchKey(user, repo), record = await env.KV.get(key, "json").catch(() => null);
   if (!record || !record.branch || (body.branch && body.branch !== record.branch)) return { ok: false, msg: "当前项目没有匹配的临时分支" };
   if (String(record.status || "").startsWith("discard_")) return { ok: false, discard_recovery: true, msg: "临时分支已删除，当前仅允许重试丢弃清理，不能保存或合并" };
-  if (["merged_cleanup_failed", "merged_history_failed", "merged_record_cleanup_failed"].includes(record.status)) {
+  if (["merged_cleanup_failed", "merged_history_failed", "merged_record_cleanup_failed", "merged_preview_cleanup_pending"].includes(record.status)) {
     if (record.status === "merged_history_failed" && record.history_row) {
       try {
         const savedHistory = await codeHistoryLoad(env, user);
@@ -1007,6 +1011,15 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
       try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); }
       catch (recordError) {
         return { ok: false, merged: true, history_saved: true, branch_deleted: false, msg: "历史已补写，但清理状态保存失败；临时分支保留：" + (recordError && recordError.message || "KV 写入失败") };
+      }
+    }
+    if (record.preview_mode === "worker" && record.preview_request_id) {
+      const previewCleanup = await codeWorkbenchWorkerPreviewCleanup(env, user, repo, record);
+      if (!previewCleanup.ok) {
+        record.status = previewCleanup.pending ? "merged_preview_cleanup_pending" : "merged_cleanup_failed";
+        record.updated_at = new Date().toISOString();
+        await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }).catch(() => null);
+        return { ok: false, merged: true, branch_deleted: false, preview_cleanup_pending: !!previewCleanup.pending, msg: previewCleanup.msg || "Worker Preview 清理尚未完成，临时分支保留" };
       }
     }
     let cleanup;
@@ -1051,6 +1064,10 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
     files = fileChanges.map((f) => f.filename);
   }
   if (!files.length) {
+    if (record.preview_mode === "worker" && record.preview_request_id) {
+      const previewCleanup = await codeWorkbenchWorkerPreviewCleanup(env, user, repo, record);
+      if (!previewCleanup.ok) return { ok: false, no_changes: true, branch_deleted: false, preview_cleanup_pending: !!previewCleanup.pending, msg: previewCleanup.msg || "Worker Preview 清理尚未完成，临时分支保留" };
+    }
     const deleted = await codeDeleteBranch(env, repo, record.branch);
     if (!deleted.ok && deleted.status !== 404) return { ok: false, msg: "没有文件改动，但临时分支删除失败：" + deleted.msg };
     await env.KV.delete(key);
@@ -1083,6 +1100,17 @@ async function codeWorkbenchBranchMergeUnlocked(env, user, body = {}) {
     record.status = "merged_history_failed"; record.commit_sha = commitSha; record.history_row = row; record.updated_at = new Date().toISOString();
     try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); } catch (_) {}
     return { ok: false, merged: true, history_saved: false, branch_deleted: false, commit_sha: commitSha, files, msg: "GitHub 已合并，但历史记录保存失败；临时分支已保留，重试将先补写历史，不会再次合并：" + (historyError && historyError.message || "历史写入失败") };
+  }
+  if (record.preview_mode === "worker" && record.preview_request_id) {
+    const previewCleanup = await codeWorkbenchWorkerPreviewCleanup(env, user, repo, record);
+    if (!previewCleanup.ok) {
+      record.status = previewCleanup.pending ? "merged_preview_cleanup_pending" : "merged_cleanup_failed";
+      record.commit_sha = commitSha;
+      record.history_row = row;
+      record.updated_at = new Date().toISOString();
+      try { await env.KV.put(key, JSON.stringify(record), { expirationTtl: 2592000 }); } catch (_) {}
+      return { ok: false, merged: true, history_saved: true, branch_deleted: false, preview_cleanup_pending: !!previewCleanup.pending, commit_sha: commitSha, files, msg: previewCleanup.msg || "合并已完成，Worker Preview 清理尚未完成；临时分支保留" };
+    }
   }
   let deleted;
   try { deleted = await codeDeleteBranch(env, repo, record.branch); }
