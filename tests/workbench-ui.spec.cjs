@@ -48,6 +48,9 @@ async function installApiFixtures(page, state) {
       body: JSON.stringify(data)
     });
 
+    if (path === "/api/code/projects" && method === "GET") {
+      return json({ ok: true, source: "CODE_REPOS", projects: [{ repo: REPO, owner: "tianxin1300", name: "openmanus-gateway", label: "聚合体" }] });
+    }
     if (path === "/api/code/file" && method === "GET") {
       return json({ ok: true, exists: true, repo: REPO, path: url.searchParams.get("path") || "", ref: url.searchParams.get("ref") || "main", sha: "fixture-blob-sha", content: "<!doctype html><html><body>Playwright preview fixture</body></html>" });
     }
