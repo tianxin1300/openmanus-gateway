@@ -300,31 +300,6 @@ jobs:
               description: "Worker Preview creation or verification failed; inspect workflow logs"
             });
 
-      - name: Verify latest GitHub Deployment status is inactive
-        uses: actions/github-script@v7
-        env:
-          DEPLOYMENT_ID: ${{ inputs.deployment_id }}
-        with:
-          script: |
-            const deploymentId = Number(process.env.DEPLOYMENT_ID);
-            if (!Number.isSafeInteger(deploymentId) || deploymentId <= 0) {
-              throw new Error("Invalid deployment ID for status verification");
-            }
-            const response = await github.rest.repos.listDeploymentStatuses({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              deployment_id: deploymentId,
-              per_page: 100
-            });
-            const statuses = response.data.slice().sort((a, b) =>
-              Date.parse(b.created_at) - Date.parse(a.created_at)
-            );
-            const latest = statuses[0];
-            if (!latest || latest.state !== "inactive") {
-              throw new Error("GitHub Deployment latest status is not inactive; observed: " + (latest?.state || "no statuses"));
-            }
-            core.info("Verified: GitHub Deployment latest status is inactive.");
-
       - name: Summary
         if: always()
         run: |
@@ -535,6 +510,31 @@ jobs:
               deployment_id: Number(process.env.DEPLOYMENT_ID), state: "inactive",
               description: "Worker Preview and isolated KV namespace deleted"
             });
+
+      - name: Verify latest GitHub Deployment status is inactive
+        uses: actions/github-script@v7
+        env:
+          DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+        with:
+          script: |
+            const deploymentId = Number(process.env.DEPLOYMENT_ID);
+            if (!Number.isSafeInteger(deploymentId) || deploymentId <= 0) {
+              throw new Error("Invalid deployment ID for status verification");
+            }
+            const response = await github.rest.repos.listDeploymentStatuses({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: deploymentId,
+              per_page: 100
+            });
+            const statuses = response.data.slice().sort((a, b) =>
+              Date.parse(b.created_at) - Date.parse(a.created_at)
+            );
+            const latest = statuses[0];
+            if (!latest || latest.state !== "inactive") {
+              throw new Error("GitHub Deployment latest status is not inactive; observed: " + (latest?.state || "no statuses"));
+            }
+            core.info("Verified: GitHub Deployment latest status is inactive.");
 
       - name: Summary
         if: always()
