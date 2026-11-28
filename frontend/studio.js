@@ -319,7 +319,7 @@
   var fileDecision = {}, conflictChoices = {};
   function selectedPaths() { return Object.keys(fileDecision).filter(function (p) { return fileDecision[p] !== false; }); }
   function loadHistory(host) {
-    api("/api/code/history", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
+    api("/api/code/history?repo=" + encodeURIComponent(state.project), { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
       clear(host);
       (j.history || []).filter(function (h) { return h && h.commit_sha; }).slice(0, 30).forEach(function (h) {
         var row = el("div", "om-history-row");
@@ -328,7 +328,7 @@
         b.addEventListener("click", function () {
           if (!window.confirm("确定创建新回滚提交，恢复到这个版本之前的文件内容？不会重写或删除 main 历史。")) return;
           b.disabled = true;
-          api("/api/code/rollback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: h.id }) })
+          api("/api/code/rollback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: h.id, repo: String(h.repo || state.project) }) })
             .then(function (x) { return x.json(); }).then(function (d) { toast(d.reply || d.msg || (d.ok ? "回滚提交已创建" : "回滚失败")); if (d.ok) loadHistory(host); else b.disabled = false; })
             .catch(function () { b.disabled = false; toast("回滚请求失败，结果未确认"); });
         });
