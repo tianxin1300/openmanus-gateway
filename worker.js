@@ -1015,23 +1015,33 @@ async function codeWorkbenchBranchMerge(env, user, body = {}) {
   const repo = String(body.repo || "");
   return codeWorkbenchWithLock(env, user, repo, "merge", () => codeWorkbenchBranchMergeUnlocked(env, user, body));
 }
-async function codeMemoryAppend(env, user, row) {   // 代码模式的上下文记忆：用户消息 / AI 回复 / 接受 / 拒绝，只留最近 20 条
-  const rows = await codeHistoryLoad(env, user);
-  const rec = Object.assign({ id: "chat-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6), kind: "chat", at: new Date().toISOString() }, row);
-  await codeHistorySave(env, user, [rec, ...rows]);
+const codeMemoryKey = (user, repo) => "code:memory:" + String(user || "").slice(0, 120) + ":" + String(repo || "").trim().toLowerCase().slice(0, 160);
+async function codeMemoryLoad(env, user, repo) {
+  if (!env.KV || !codeRepoOk(env, repo)) return [];
+  return (await env.KV.get(codeMemoryKey(user, repo), "json").catch(() => null) || []);
+}
+async function codeMemorySave(env, user, repo, rows) {
+  if (!env.KV || !codeRepoOk(env, repo)) throw new Error("代码记忆仓库不在 CODE_REPOS 授权名单内");
+  await env.KV.put(codeMemoryKey(user, repo), JSON.stringify(rows.slice(0, 20)), { expirationTtl: 31536000 });
+}
+async function codeMemoryAppend(env, user, repo, row) {   // 代码模式上下文记忆按用户 + 白名单仓库隔离
+  if (!codeRepoOk(env, repo)) return null;
+  const rows = await codeMemoryLoad(env, user, repo);
+  const rec = Object.assign({ id: "chat-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6), kind: "chat", repo: String(repo).trim().toLowerCase(), at: new Date().toISOString() }, row);
+  await codeMemorySave(env, user, repo, [rec, ...rows]);
   return rec;
 }
-async function codeMemoryPrompt(env, user, repo) {   // 拼进 prompt：最近 20 条记忆 + 最近 5 个 commit + 文件列表
-  const rows = (await codeHistoryLoad(env, user)).filter((x) => x && x.kind === "chat").slice(0, 20);
-  const hist = rows.length ? rows.map((x) => "- [" + (x.action || "对话") + "] " + String(x.text || "").replace(/\s+/g, " ").slice(0, 200)).join("\n") : "（还没有历史）";
+async function codeMemoryPrompt(env, user, repo) {   // 只注入当前仓库的最近 20 条记忆
+  const rows = (await codeMemoryLoad(env, user, repo)).filter((x) => x && x.kind === "chat" && String(x.repo || "").toLowerCase() === String(repo || "").trim().toLowerCase()).slice(0, 20);
+  const hist = rows.length ? rows.map((x) => "- [" + (x.action || "对话") + "] " + String(x.text || "").replace(/\\s+/g, " ").slice(0, 200)).join("\\n") : "（还没有历史）";
   let commits = "（读不到）", files = "（读不到）";
   if (repo && codeRepoOk(env, repo)) {
     const c = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/commits?per_page=5");
-    if (c.ok && Array.isArray(c.data)) commits = c.data.map((x) => "- " + String(x.sha || "").slice(0, 8) + " " + String((x.commit && x.commit.message) || "").split("\n")[0].slice(0, 80)).join("\n") || "（没有 commit）";
+    if (c.ok && Array.isArray(c.data)) commits = c.data.map((x) => "- " + String(x.sha || "").slice(0, 8) + " " + String((x.commit && x.commit.message) || "").split("\\n")[0].slice(0, 80)).join("\\n") || "（没有 commit）";
     const t = await codeGhApi(env, "https://api.github.com/repos/" + repo + "/git/trees/" + encodeURIComponent(String(env.CODE_PUSH_BRANCH || "main")) + "?recursive=1");
-    if (t.ok && t.data && Array.isArray(t.data.tree)) files = t.data.tree.filter((x) => x.type === "blob").map((x) => x.path).slice(0, 200).join("\n") || "（空仓库）";
+    if (t.ok && t.data && Array.isArray(t.data.tree)) files = t.data.tree.filter((x) => x.type === "blob").map((x) => x.path).slice(0, 200).join("\\n") || "（空仓库）";
   }
-  return "\n\n【上下文记忆：最近 20 条对话 / 接受 / 拒绝】\n" + hist + "\n\n【最近 5 个 commit】\n" + commits + "\n\n【仓库文件列表】\n" + files + "\n\n硬规则：你上一次已经拒绝过删 worker.js，不要再生成删 worker.js 的改动；也不要再重复用户已经拒绝过的改法。";
+  return "\\n\\n【上下文记忆：当前仓库最近 20 条对话 / 接受 / 拒绝】\\n" + hist + "\\n\\n【最近 5 个 commit】\\n" + commits + "\\n\\n【仓库文件列表】\\n" + files + "\\n\\n硬规则：你上一次已经拒绝过删 worker.js，不要再生成删 worker.js 的改动；也不要再重复用户已经拒绝过的改法。";
 }
 async function codeRollbackUnlocked(env, user, body) {
   const rows = await codeHistoryLoad(env, user), item = rows.find((x) => x.id === String(body && body.id || "")) || rows[Number(body && body.index)];
@@ -1430,11 +1440,11 @@ function codeBlocks(text) { const out = [], re = /```[^\n`]*\n([\s\S]*?)```/g; l
 async function codeAssist(env, user, raw, history) {
   const d = codeParse(raw), notes = [], branch = String(env.CODE_PUSH_BRANCH || "main");
   if (!d.text) return { ok: false, reply: "请告诉我要写什么代码。" };
-  if (CODE_CONFIRM_RE.test(d.text)) await codeMemoryAppend(env, user, { action: "用户", text: /不推|别推|取消/.test(d.text) ? "用户拒绝了推送（含删 worker.js 的改动）" : "用户接受了推送" }).catch(() => {});
-  let cur = null, sys = CODE_SYSTEM_PROMPT;
   const memRepo = d.repo || String(env.CODE_REPOS || "").split(",").map((s) => s.trim()).filter(Boolean)[0] || "";
+  if (CODE_CONFIRM_RE.test(d.text)) await codeMemoryAppend(env, user, memRepo, { action: "用户", text: /不推|别推|取消/.test(d.text) ? "用户拒绝了推送（含删 worker.js 的改动）" : "用户接受了推送" }).catch(() => {});
+  let cur = null, sys = CODE_SYSTEM_PROMPT;
   try { sys += await codeMemoryPrompt(env, user, memRepo); } catch (_) {}
-  await codeMemoryAppend(env, user, { action: "用户", text: d.text.slice(0, 500) }).catch(() => {});
+  await codeMemoryAppend(env, user, memRepo, { action: "用户", text: d.text.slice(0, 500) }).catch(() => {});
   if (d.repo && d.path) {
     const g = await codeGetFile(env, d.repo, d.path, branch);
     if (!g.ok) return { ok: false, reply: "❌ 读文件失败：" + g.msg };
@@ -1459,7 +1469,7 @@ async function codeAssist(env, user, raw, history) {
     }
   }
   const finalReply = r.text + (notes.length ? "\n\n" + notes.join("\n") : "");
-  await codeMemoryAppend(env, user, { action: "AI", text: finalReply.slice(0, 800) }).catch(() => {});
+  await codeMemoryAppend(env, user, memRepo, { action: "AI", text: finalReply.slice(0, 800) }).catch(() => {});
   return { ok: true, pushed, model: r.from, reply: finalReply };
 }
 // ===== v101：说“改就医伴侣 / 改聚合体”→ 自动读前端+后端 → 出修改块 → 问“要推上去吗？” → 回“推”才推 =====
