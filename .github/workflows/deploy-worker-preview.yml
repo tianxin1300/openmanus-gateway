@@ -62,7 +62,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$TARGET_REPOSITORY" = "tianxin1300/jiuyibanlv" || { echo "No Worker Preview configuration exists for this repository." >&2; exit 1; }
+          test "$TARGET_REPOSITORY" = "tianxin1300/openmanus-gateway" || { echo "No Worker Preview configuration exists for this repository." >&2; exit 1; }
           python3 - <<'PY'
           import os, re
           action = os.environ["ACTION_NAME"]
@@ -146,14 +146,17 @@ jobs:
           set -euo pipefail
           test -n "$PREVIEW_KV_NAMESPACE_ID"
           cat > wrangler.preview.toml <<EOF
-          name = "juyiibanlvzhinengai"
+          name = "openmanus-gateway"
           main = "worker.js"
           compatibility_date = "2024-11-01"
           workers_dev = true
 
           [[migrations]]
-          tag = "v1"
-          new_sqlite_classes = ["CareTask"]
+          tag = "code-claims-v1"
+          new_sqlite_classes = ["CodeClaimDO"]
+          [[migrations]]
+          tag = "code-runner-v1"
+          new_sqlite_classes = ["CodeRunnerDO"]
 
           [assets]
           directory = "./frontend"
@@ -167,8 +170,12 @@ jobs:
           id = "$PREVIEW_KV_NAMESPACE_ID"
 
           [[previews.durable_objects.bindings]]
-          name = "CARE_TASKS"
-          class_name = "CareTask"
+          name = "CODE_CLAIMS"
+          class_name = "CodeClaimDO"
+
+          [[previews.durable_objects.bindings]]
+          name = "CODE_RUNNER"
+          class_name = "CodeRunnerDO"
           EOF
 
       - name: Create GitHub deployment record
@@ -188,7 +195,7 @@ jobs:
               repository: process.env.TARGET_REPOSITORY,
               target_ref: process.env.TARGET_REF,
               preview_name: process.env.PREVIEW_NAME,
-              worker_name: "juyiibanlvzhinengai",
+              worker_name: "openmanus-gateway",
               kv_namespace_id: process.env.PREVIEW_KV_NAMESPACE_ID
             };
             const created = await github.rest.repos.createDeployment({
