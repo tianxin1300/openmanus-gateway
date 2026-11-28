@@ -1630,7 +1630,7 @@ async function codePendingDiscard(env, user, repo, pending) {
   if (!cleared.ok) return { ok: false, branch_deleted: !!branch.ok, branch_already_gone: branchGone, cleared: false,
     status: 503, msg: cleared.msg || "Durable Object 清理失败", reply: "临时分支已处理，但待处理记录清除失败；请重试。" };
   if (env.KV) {
-    try { await env.KV.delete("code:pend:" + user); }
+    try { await env.KV.delete("code:pend:" + user + ":" + scopeRepo); }
     catch (e) { return { ok: false, branch_deleted: !!branch.ok, branch_already_gone: branchGone, cleared: false,
       status: 503, msg: "KV 清理失败：" + (e && e.message || e), reply: "临时分支已处理，但旧待处理记录清除失败；请重试。" }; }
   }
