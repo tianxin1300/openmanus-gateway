@@ -1,0 +1,24 @@
+name: validate-worker-preview-workflow
+on:
+  push:
+    branches:
+      - code/worker-preview-workflow-20261128
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Validate Worker Preview workflow
+        run: actionlint -color .github/workflows/deploy-worker-preview.yml
