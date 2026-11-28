@@ -239,7 +239,45 @@ test('ACCEPTANCE WORKBENCH-PREVIEW-AUDIT-01: preview dispatch records the authen
   assert.equal(result.ok, true);
   assert.equal(record.preview_started_by, 'owner');
   assert.equal(record.preview_events[0].actor, 'owner');
-  assert.equal(record.preview_url, 'https://preview.example.test');
+  assert.equal(record.preview_url, '');
+  assert.equal(record.preview_status, 'pending');
+  assert.ok(record.preview_request_id);
+});
+
+
+
+test('ACCEPTANCE WORKBENCH-PAGES-PREVIEW-01: Pages preview is pending until its matching Actions run succeeds', async () => {
+  const repo = 'tianxin1300/openmanus-gateway';
+  const record = { repo, branch: 'code/pages-preview', preview_mode: 'pages', preview_request_id: 'request-pages-12345678', preview_status: 'pending' };
+  const refresh = runFunction(sourceOf('async function codeWorkbenchPagesPreviewRefresh(', 'async function codeWorkbenchWorkerPreviewRefresh('), 'codeWorkbenchPagesPreviewRefresh', {
+    codeGhApi: async (_env, url) => {
+      assert.match(url, /actions\/runs\?branch=code%2Fpages-preview&event=workflow_dispatch/);
+      return { ok: true, data: { workflow_runs: [{
+        id: 8801, name: 'branch preview', display_title: 'branch preview · code/pages-preview · request-pages-12345678',
+        status: 'completed', conclusion: 'success', html_url: 'https://github.com/tianxin1300/openmanus-gateway/actions/runs/8801'
+      }] } };
+    },
+    codeTempPreview: () => 'https://code-pages-preview.zhineng-et5.pages.dev'
+  });
+  const result = await refresh({}, record);
+  assert.equal(result.ok, true);
+  assert.equal(record.preview_status, 'ready');
+  assert.equal(record.preview_url, 'https://code-pages-preview.zhineng-et5.pages.dev');
+  assert.equal(record.preview_run_id, '8801');
+});
+
+test('ACCEPTANCE WORKBENCH-PAGES-PREVIEW-02: failed Pages workflow never exposes a preview URL', async () => {
+  const record = { repo: 'tianxin1300/openmanus-gateway', branch: 'code/pages-preview', preview_mode: 'pages', preview_request_id: 'request-pages-12345678', preview_status: 'pending' };
+  const refresh = runFunction(sourceOf('async function codeWorkbenchPagesPreviewRefresh(', 'async function codeWorkbenchWorkerPreviewRefresh('), 'codeWorkbenchPagesPreviewRefresh', {
+    codeGhApi: async () => ({ ok: true, data: { workflow_runs: [{
+      id: 8802, display_title: 'branch preview · request-pages-12345678', status: 'completed', conclusion: 'failure'
+    }] } }),
+    codeTempPreview: () => 'https://code-pages-preview.zhineng-et5.pages.dev'
+  });
+  await refresh({}, record);
+  assert.equal(record.preview_status, 'failed');
+  assert.equal(record.preview_url, '');
+  assert.match(record.preview_error, /workflow 失败/);
 });
 
 
