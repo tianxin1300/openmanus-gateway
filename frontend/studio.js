@@ -297,7 +297,7 @@
   function refreshPending(quiet) {
     if (refreshBusy) return Promise.resolve(); refreshBusy = true;
     if (stEl && !quiet) say("正在刷新待处理改动…");
-    return api("/api/code/pending", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
+    return api("/api/code/pending?repo=" + encodeURIComponent(state.project), { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
       if (j && j.ok && j.pending && j.pending.edits && j.pending.edits.length) { currentPending = j.pending; render(j.pending); if (panelCollapsed) { panel.hidden = true; if (reopenBtn) reopenBtn.classList.add("on"); } }
       else { currentPending = null; hide(); if (!quiet) toast("当前没有待处理的改动"); }
     }).catch(function (e) { if (!quiet) toast("刷新失败：" + (e && e.message || e)); })
@@ -438,6 +438,7 @@
     var operationId = "studio-" + (window.crypto && typeof window.crypto.randomUUID === "function" ? window.crypto.randomUUID() : Date.now().toString(36) + "-" + Math.random().toString(36).slice(2));
     var payload = {
       yes: !!yes,
+      repo: String(p.repo || state.project),
       pending_id: String(p.pending_id || p.id),
       version: Number(p.version),
       project: String(p.project),
@@ -451,7 +452,7 @@
       .then(function (j) {
         var message = j.reply || j.msg || (j.ok ? "操作完成" : "操作失败");
         if (j.conflicts && j.conflicts.length) renderConflicts(j.conflicts);
-        return api("/api/code/pending", { cache: "no-store" }).then(function (r) { return r.json(); }).catch(function () { return null; }).then(function (pj) {
+        return api("/api/code/pending?repo=" + encodeURIComponent(state.project), { cache: "no-store" }).then(function (r) { return r.json(); }).catch(function () { return null; }).then(function (pj) {
           var still = !!(pj && pj.ok && pj.pending && pj.pending.edits && pj.pending.edits.length);
           if (still) currentPending = pj.pending;
           else if (j.ok) currentPending = null;
@@ -463,7 +464,7 @@
 
   /* ---------- v108：强制清空 / 自动过期时清服务器里的暂存 ---------- */
   function clearOnServer() {
-    return api("/api/code/force-clear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) })
+    return api("/api/code/force-clear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repo: String((currentPending && currentPending.repo) || state.project || "") }) })
       .then(function (r) { return r.json().catch(function () { return { ok: false, msg: "服务器返回的不是 JSON（HTTP " + r.status + "）" }; }); });
   }
   function forceClear() {
