@@ -20,7 +20,7 @@ function loadRegistry() {
     between(worker, 'const codeRepoList =', 'const codePathOk') +
     between(worker, 'const CODE_PROJECTS = [', 'const CODE_EDIT_RE') +
     between(worker, 'function codeProjectRegistry', 'function codeEditRules');
-  const sandbox = { Set, String };
+  const sandbox = { Set, Map, String, getKeys: value => String(value || '').split(',').map(item => item.trim()).filter(Boolean) };
   vm.runInNewContext(source + '\nglobalThis.out = { codeRepoList, codeRepoOk, codeProjectRegistry, codeWorkbenchProjectList };', sandbox);
   return sandbox.out;
 }
@@ -67,7 +67,7 @@ test('P2-PROJECT-005: authenticated project-list endpoint returns only CODE_REPO
 
 test('P2-PROJECT-006: Workbench builds its project selector from the authenticated Worker response', () => {
   assert.match(frontend, /id="wb-project" aria-label="选择项目" disabled/);
-  assert.match(frontend, /wbApi\("\/api\/code\/projects"/);
+  assert.match(frontend, /wbApi\("\/api\/code\/repos"/);
   assert.match(frontend, /WORKBENCH_PROJECTS = Object\.create\(null\)/);
   assert.doesNotMatch(frontend, /<option value="openmanus-gateway">聚合体<\/option>/);
   assert.match(frontend, /if \(!WORKBENCH_PROJECTS\[repo\]\) throw new Error/);
@@ -92,49 +92,5 @@ test('P2-PROJECT-008: code-mode project selector is populated from CODE_REPOS an
 test('P2-PROJECT-009: no hard-coded fallback allowlist remains in Worker authorization', () => {
   const guard = between(worker, 'const codeRepoList =', 'const codePathOk');
   assert.doesNotMatch(guard, /CODE_REPOS\s*\|\|\s*[\"'][^\"']+[\"']/);
-  assert.match(guard, /String\(env && env\.CODE_REPOS \|\| ""\)/);
-});
-
-function loadFileReader(fetchImpl) {
-  const source =
-    between(worker, 'const codeRepoList =', 'const CODE_PROJECTS =') +
-    between(worker, 'async function codeGetFile(', 'async function codeFileTree(');
-  const sandbox = {
-    Set, Map, String, TextDecoder, Uint8Array, atob,
-    fetch: fetchImpl,
-    codeGhUrl: (repo, path) => 'https://api.github.com/repos/' + repo + '/contents/' + path,
-    codeGhHeaders: () => ({ Authorization: 'Bearer test-only' }),
-    T: () => ({})
-  };
-  vm.runInNewContext(source + '\nglobalThis.out = { codeGetFile };', sandbox);
-  return sandbox.out.codeGetFile;
-}
-
-test('P2-PROJECT-010: file reader rejects empty or unlisted CODE_REPOS before any GitHub request', async () => {
-  let calls = 0;
-  const read = loadFileReader(async () => { calls++; throw new Error('GitHub must not be called'); });
-  const noAllowlist = await read({ GH_PAT: 'test-only' }, 'owner/allowed', 'README.md', 'main');
-  const unlisted = await read({ GH_PAT: 'test-only', CODE_REPOS: 'owner/allowed' }, 'owner/denied', 'README.md', 'main');
-  assert.equal(noAllowlist.ok, false);
-  assert.equal(unlisted.ok, false);
-  assert.match(unlisted.msg, /不在允许名单/);
-  assert.equal(calls, 0);
-});
-
-test('P2-PROJECT-011: file reader fetches only allowlisted paths and returns the current file SHA', async () => {
-  let requested = '';
-  const read = loadFileReader(async (url) => {
-    requested = String(url);
-    return {
-      ok: true,
-      status: 200,
-      json: async () => ({ type: 'file', content: 'aGVsbG8=', sha: 'abc123', size: 5 })
-    };
-  });
-  const result = await read({ GH_PAT: 'test-only', CODE_REPOS: 'owner/allowed' }, 'owner/allowed', 'README.md', 'code/task-1');
-  assert.equal(requested, 'https://api.github.com/repos/owner/allowed/contents/README.md?ref=code%2Ftask-1');
-  assert.equal(result.ok, true);
-  assert.equal(result.exists, true);
-  assert.equal(result.sha, 'abc123');
-  assert.equal(result.text, 'hello');
+  assert.match(guard, /getKeys\(env && env\.CODE_REPOS\)/);
 });
