@@ -95,7 +95,7 @@ test("RUN-ISOLATION-09: same repository and Actions run ID cannot collide across
 });
 test("RUN-ISOLATION-10: short commit SHA is not mislabeled as a branch or full head SHA", async () => {
   const f = loadRunFunctions(), env = makeEnv();
-  await f.codePersistRun(env, "user-1", run("owner/alpha", "abcdef1234567"));
+  await f.codePersistRun(env, "user-1", run("owner/alpha", "abcdef1234567", { head_sha: "" }));
   const { runs } = await f.codeRuns(env, "user-1", "owner/alpha");
   assert.equal(runs[0].branch, "");
   assert.equal(runs[0].head_sha, "");
@@ -131,5 +131,5 @@ test('RUN-ISOLATION-07: repo-less records are not persisted into a guessed proje
 });
 test('RUN-ISOLATION-08: Durable Object watcher uses the same repo-scoped index writer', () => {
   assert.match(worker, /await codeRunIndexSave\(this\.env, user, record\)/);
-  assert.match(worker, /codeRunLogKey\(runId, record\.repo\)/);
+  assert.match(worker, /codeRunLogKey\(runId, user, record\.repo\)/);
 });
