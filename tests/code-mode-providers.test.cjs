@@ -278,7 +278,7 @@ test('workbench branch APIs persist project isolation, reject files on branch, a
   assert.match(workerSource, /previousSha !== record\.baseCommit/);
   assert.match(workerSource, /base_advanced: true/);
   assert.match(workerSource, /为防止旧基线覆盖新修改，已阻止合并/);
-  assert.match(workerSource, /codeHistorySave\(env, user, repo, \[row, \.\.\.history\]\)/);
+  assert.match(workerSource, /codeHistorySave\(env, user, \[row, \.\.\.history\]\)/);
   assert.match(workerSource, /main_untouched: true/);
   assert.match(workerSource, /path === "\/api\/code\/branch\/create"/);
   assert.match(workerSource, /path === "\/api\/code\/branch\/merge"/);
