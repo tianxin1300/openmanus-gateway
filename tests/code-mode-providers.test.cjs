@@ -1153,6 +1153,8 @@ for (const relativeFile of ['studio.js', 'frontend/studio.js']) {
     const context = vm.createContext({
       state, window, box: null, check() {}, hide() {},
       document: { readyState: 'complete' },
+      PROJECTS: [],
+      loadProjects() { return Promise.resolve(); },
       setTimeout() {},
       mountToggle() {
         mounts++;
